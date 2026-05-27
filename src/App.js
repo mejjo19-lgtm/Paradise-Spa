@@ -204,10 +204,7 @@ useEffect(() => {
       if (email) {
         setIsLoggedIn(true);
         setLoggedInUser(getDisplayNameFromEmail(email) || "مستخدم");
-        setTimeout(() => {
-          fetchClients();
-          fetchSharedClientLists();
-        }, 200);
+        // التحميل يتم من useEffect مرة واحدة بعد تسجيل الدخول لتجنب سحب البيانات مرتين.
       } else {
         setIsLoggedIn(false);
         setLoggedInUser("");
@@ -293,7 +290,7 @@ useEffect(() => {
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "referred_clients" },
-      () => fetchManualReferrals()
+      applyReferralChangeFromRealtime
     )
     .subscribe();
 
@@ -302,7 +299,7 @@ useEffect(() => {
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "potential_clients" },
-      () => fetchPotentialClients()
+      applyPotentialChangeFromRealtime
     )
     .subscribe();
 
@@ -311,7 +308,7 @@ useEffect(() => {
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "gift_clients" },
-      () => fetchGiftClients()
+      applyGiftChangeFromRealtime
     )
     .subscribe();
 
@@ -525,6 +522,102 @@ async function fetchGiftClients() {
   );
 }
 
+
+const normalizeManualReferralRecord = (referral) => ({
+  id: referral.id,
+  name: referral.name || "",
+  phone: referral.phone || "",
+  sourceClientId: referral.source_client_id || null,
+  sourceClientName: referral.source_client_name || "",
+  sourceClientPhone: referral.source_client_phone || "",
+  sourceReferralId: referral.source_referral_id || null,
+  createdAt: referral.created_at || "",
+  manual: true,
+});
+
+const normalizePotentialClientRecord = (client) => ({
+  id: client.id,
+  name: client.name || "",
+  phone: client.phone || "",
+  status: client.status || "إلغاء موعد",
+  createdAt: client.created_at || "",
+});
+
+const normalizeGiftClientRecord = (gift) => ({
+  id: gift.id,
+  fromName: gift.from_name || "",
+  fromPhone: gift.from_phone || "",
+  toName: gift.to_name || "",
+  toPhone: gift.to_phone || "",
+  giftDate: gift.gift_date || gift.items?.giftDate || gift.created_at || "",
+  service: gift.service || "",
+  items: gift.items || { balloon: false, flowers: false, cake: false },
+  giftTaken: Boolean(gift.items?.giftTaken),
+  createdAt: gift.created_at || "",
+});
+
+const upsertByIdNewestFirst = (setter, nextRecord) => {
+  setter((prev) => {
+    const exists = prev.some((item) => String(item.id) === String(nextRecord.id));
+    const nextItems = exists
+      ? prev.map((item) => String(item.id) === String(nextRecord.id) ? nextRecord : item)
+      : [nextRecord, ...prev];
+
+    return nextItems.sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
+  });
+};
+
+const removeById = (setter, removedRecord) => {
+  if (!removedRecord?.id) return;
+
+  setter((prev) =>
+    prev.filter((item) => String(item.id) !== String(removedRecord.id))
+  );
+};
+
+const applyReferralChangeFromRealtime = (payload) => {
+  if (payload.eventType === "DELETE") {
+    removeById(setManualReferrals, payload.old);
+    return;
+  }
+
+  if (payload.new) {
+    upsertByIdNewestFirst(
+      setManualReferrals,
+      normalizeManualReferralRecord(payload.new)
+    );
+  }
+};
+
+const applyPotentialChangeFromRealtime = (payload) => {
+  if (payload.eventType === "DELETE") {
+    removeById(setPotentialClients, payload.old);
+    return;
+  }
+
+  if (payload.new) {
+    upsertByIdNewestFirst(
+      setPotentialClients,
+      normalizePotentialClientRecord(payload.new)
+    );
+  }
+};
+
+const applyGiftChangeFromRealtime = (payload) => {
+  if (payload.eventType === "DELETE") {
+    removeById(setGiftClients, payload.old);
+    return;
+  }
+
+  if (payload.new) {
+    upsertByIdNewestFirst(
+      setGiftClients,
+      normalizeGiftClientRecord(payload.new)
+    );
+  }
+};
+
+
 function fetchSharedClientLists() {
   fetchManualReferrals();
   fetchPotentialClients();
@@ -615,10 +708,7 @@ function fetchSharedClientLists() {
     }), {})
   );
 
-  const [scheduleData, setScheduleData] = useState(() => {
-    const savedSchedule = localStorage.getItem("paradise-schedule-data");
-    return savedSchedule ? JSON.parse(savedSchedule) : {};
-  });
+  const [scheduleData, setScheduleData] = useState({});
 
   const [dailyManualData, setDailyManualData] = useState(() => {
     const savedDaily = localStorage.getItem("paradise-daily-manual-data");
@@ -648,7 +738,6 @@ function fetchSharedClientLists() {
   ];
 
   const sharedDataLocalStorageKeys = {
-    scheduleData: "paradise-schedule-data",
     dailyManualData: "paradise-daily-manual-data",
     scheduleSettings: "paradise-schedule-settings",
     financeMonthlySettings: "paradise-finance-monthly-settings",
@@ -867,7 +956,10 @@ function fetchSharedClientLists() {
           schema: "public",
           table: "app_data",
         },
-        () => {
+        (payload) => {
+          const changedKey = payload?.new?.data_key || payload?.old?.data_key || "";
+          if (!sharedDataKeys.includes(changedKey)) return;
+
           loadSharedData();
         }
       )
@@ -880,16 +972,9 @@ function fetchSharedClientLists() {
   }, [isLoggedIn]);
 
 
-  // 💾 SAVE SCHEDULE LOCAL CACHE ONLY
-  // الجدول الفعلي لا ينحفظ في app_data نهائيًا.
-  // أي تعديل في المواعيد ينحفظ كسطر واحد فقط داخل schedule_rows عبر queueScheduleRowSave.
-  useEffect(() => {
-    localStorage.setItem(
-      "paradise-schedule-data",
-      JSON.stringify(scheduleData)
-    );
-  }, [scheduleData]);
-
+  // 💾 SCHEDULE DATA
+  // الجدول لا ينحفظ في localStorage ولا app_data.
+  // الحفظ الحقيقي للمواعيد يتم فقط داخل schedule_rows، صف بصف.
   // 💾 SAVE DAILY MANUAL DATA
   useEffect(() => {
     localStorage.setItem(
@@ -1623,11 +1708,28 @@ if (error) {
 
   const applyScheduleRowFromRemote = (record) => {
     if (!record?.schedule_date && !record?.id) return;
+    if (record?.updated_by === sharedDataDeviceIdRef.current) return;
 
     const date = record.schedule_date || String(record.id || "").split("-").slice(0, 3).join("-");
     const rowIndex = Number(record.row_index);
 
     if (!date || !Number.isInteger(rowIndex)) return;
+
+    if (typeof document !== "undefined") {
+      const activeElement = document.activeElement;
+      const activeTag = activeElement?.tagName;
+      const activeCell = activeElement?.getAttribute?.("data-schedule-cell") || "";
+      const activeRowIndex = Number(String(activeCell).split("-")[0]);
+
+      if (
+        ["INPUT", "SELECT", "TEXTAREA"].includes(activeTag) &&
+        date === selectedScheduleDate &&
+        Number.isInteger(activeRowIndex) &&
+        activeRowIndex === rowIndex
+      ) {
+        return;
+      }
+    }
 
     setScheduleData((prev) => {
       const dayData = prev[date] || {};
@@ -1700,7 +1802,7 @@ if (error) {
         row_data: rowData || createEmptyAppointmentRow(timeSlots[numericRowIndex] || ""),
         cell_styles: getScheduleRowCellStyles(cellStyles, numericRowIndex),
         updated_at: Date.now(),
-        updated_by: loggedInUser || sharedDataDeviceIdRef.current,
+        updated_by: sharedDataDeviceIdRef.current,
       },
       { onConflict: "id" }
     );
@@ -6695,10 +6797,7 @@ if (!isLoggedIn) {
             setLoggedInUser(getDisplayNameFromEmail(data.session.user.email) || "مستخدم");
             setIsLoggedIn(true);
             setAuthReady(true);
-            setTimeout(() => {
-              fetchClients();
-              fetchSharedClientLists();
-            }, 200);
+            // التحميل يتم من useEffect مرة واحدة بعد تسجيل الدخول لتجنب سحب البيانات مرتين.
           }}
           style={{
             ...buttonStyle,
