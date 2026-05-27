@@ -798,7 +798,6 @@ function fetchSharedClientLists() {
       return;
     }
 
-    const scheduleRow = data?.find((row) => row.data_key === "scheduleData");
     const dailyRow = data?.find((row) => row.data_key === "dailyManualData");
     const settingsRow = data?.find((row) => row.data_key === "scheduleSettings");
     const financeSettingsRow = data?.find((row) => row.data_key === "financeMonthlySettings");
@@ -812,9 +811,6 @@ function fetchSharedClientLists() {
 
     const now = Date.now();
     const userIsEditingSharedData = isSharedDataInputFocused();
-    const recentlyEditedSchedule =
-      userIsEditingSharedData ||
-      now - scheduleLastEditRef.current < sharedDataEditProtectionDelay;
     const recentlyEditedDailyManual =
       userIsEditingSharedData ||
       now - dailyManualLastEditRef.current < sharedDataEditProtectionDelay;
@@ -824,12 +820,6 @@ function fetchSharedClientLists() {
     const recentlyEditedFinanceSettings =
       userIsEditingSharedData ||
       now - financeSettingsLastEditRef.current < sharedDataEditProtectionDelay;
-
-    if (scheduleRow?.data && !recentlyEditedSchedule) {
-      setScheduleData(scheduleRow.data);
-      localStorage.setItem("paradise-schedule-data", JSON.stringify(scheduleRow.data));
-      saveSharedDataLocalBackup("scheduleData", scheduleRow.data, "after-load-supabase");
-    }
 
     if (dailyRow?.data && !recentlyEditedDailyManual) {
       setDailyManualData(dailyRow.data);
@@ -890,21 +880,15 @@ function fetchSharedClientLists() {
   }, [isLoggedIn]);
 
 
-  // 💾 SAVE SCHEDULE
+  // 💾 SAVE SCHEDULE LOCAL CACHE ONLY
+  // الجدول الفعلي لا ينحفظ في app_data نهائيًا.
+  // أي تعديل في المواعيد ينحفظ كسطر واحد فقط داخل schedule_rows عبر queueScheduleRowSave.
   useEffect(() => {
     localStorage.setItem(
       "paradise-schedule-data",
       JSON.stringify(scheduleData)
     );
-
-    if (!sharedDataLoaded) return undefined;
-
-    const saveTimer = setTimeout(() => {
-      saveSharedData("scheduleData", scheduleData);
-    }, sharedDataSaveDelay);
-
-    return () => clearTimeout(saveTimer);
-  }, [scheduleData, sharedDataLoaded]);
+  }, [scheduleData]);
 
   // 💾 SAVE DAILY MANUAL DATA
   useEffect(() => {
@@ -1056,7 +1040,7 @@ function fetchSharedClientLists() {
       if (!confirmDuplicate) return;
     }
 
-   const { error } = await supabase.from("clients").insert([
+   const { data: insertedClient, error } = await supabase.from("clients").insert([
   {
     name,
     arabic_name: name,
@@ -1069,12 +1053,20 @@ function fetchSharedClientLists() {
     total_paid: 0,
     service_history: [],
   },
-]);
+]).select("*").single();
 
 if (error) {
   console.log(error);
-} else {
-  fetchClients();
+} else if (insertedClient) {
+  const nextClient = normalizeClientRecord(insertedClient);
+  setClients((prev) => {
+    const exists = prev.some((client) => String(client.id) === String(nextClient.id));
+    const nextClients = exists
+      ? prev.map((client) => String(client.id) === String(nextClient.id) ? nextClient : client)
+      : [nextClient, ...prev];
+
+    return nextClients.sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
+  });
 }
 
     setName("");
@@ -1095,7 +1087,7 @@ if (error) {
   const saveEditClient = async (id) => {
     if (!editedName || !editedPhone) return;
 
-const { error } = await supabase
+const { data: updatedClient, error } = await supabase
   .from("clients")
   .update({
     name: editedName,
@@ -1103,12 +1095,17 @@ const { error } = await supabase
     phone: formatSaudiPhoneForStorage(editedPhone),
     address: editedAddress,
   })
-  .eq("id", id);
+  .eq("id", id)
+  .select("*")
+  .single();
 
 if (error) {
   console.log(error);
-} else {
-  fetchClients();
+} else if (updatedClient) {
+  const nextClient = normalizeClientRecord(updatedClient);
+  setClients((prev) =>
+    prev.map((client) => String(client.id) === String(nextClient.id) ? nextClient : client)
+  );
 }
 
     setEditingId(null);
@@ -1145,7 +1142,7 @@ if (error) {
 
     setSelectedLoyaltyClientId(null);
     setSelectedClientId(null);
-    fetchClients();
+    setClients((prev) => prev.filter((clientItem) => String(clientItem.id) !== String(client.id)));
   };
 
   const getSharedReferralsForClient = async (clientId) => {
@@ -1328,7 +1325,13 @@ if (error) {
       return;
     }
 
-    fetchClients();
+    setClients((prev) =>
+      prev.map((client) =>
+        String(client.id) === String(selectedClientId)
+          ? { ...client, ...profileUpdate }
+          : client
+      )
+    );
     fetchManualReferrals();
     setScreen("clients");
   };
@@ -1372,15 +1375,20 @@ if (error) {
 
   const newVisits = (client.visits || 0) + 1;
 
-  const { error } = await supabase
+  const { data: updatedClient, error } = await supabase
     .from("clients")
     .update({ visits: newVisits })
-    .eq("id", id);
+    .eq("id", id)
+    .select("*")
+    .single();
 
   if (error) {
     console.log(error);
-  } else {
-    fetchClients();
+  } else if (updatedClient) {
+    const nextClient = normalizeClientRecord(updatedClient);
+    setClients((prev) =>
+      prev.map((clientItem) => String(clientItem.id) === String(nextClient.id) ? nextClient : clientItem)
+    );
   }
 };
 
@@ -1390,15 +1398,20 @@ if (error) {
 
   const newVisits = client.visits - 1;
 
-  const { error } = await supabase
+  const { data: updatedClient, error } = await supabase
     .from("clients")
     .update({ visits: newVisits })
-    .eq("id", id);
+    .eq("id", id)
+    .select("*")
+    .single();
 
   if (error) {
     console.log(error);
-  } else {
-    fetchClients();
+  } else if (updatedClient) {
+    const nextClient = normalizeClientRecord(updatedClient);
+    setClients((prev) =>
+      prev.map((clientItem) => String(clientItem.id) === String(nextClient.id) ? nextClient : clientItem)
+    );
   }
 };
 
@@ -1410,16 +1423,28 @@ if (error) {
       )
     );
 
-    const { error } = await supabase
+    const { data: updatedClient, error } = await supabase
       .from("clients")
       .update({ frame: frameValue })
-      .eq("id", id);
+      .eq("id", id)
+      .select("*")
+      .single();
 
     if (error) {
       console.log(error);
-      fetchClients();
-    } else {
-      fetchClients();
+      setClients((prev) =>
+        prev.map((client) =>
+          client.id === id ? { ...client, frame: !frameValue } : client
+        )
+      );
+      return;
+    }
+
+    if (updatedClient) {
+      const nextClient = normalizeClientRecord(updatedClient);
+      setClients((prev) =>
+        prev.map((client) => String(client.id) === String(nextClient.id) ? nextClient : client)
+      );
     }
   };
 
@@ -2445,7 +2470,7 @@ if (error) {
     }
 
     if (targetList === "عملائنا") {
-      const { error } = await supabase.from("clients").insert([
+      const { data: insertedClient, error } = await supabase.from("clients").insert([
         {
           name: clientName,
           arabic_name: clientName,
@@ -2458,14 +2483,24 @@ if (error) {
           total_paid: 0,
           service_history: [],
         },
-      ]);
+      ]).select("*").single();
 
       if (error) {
         console.log("Send To clients copy error:", error);
         return;
       }
 
-      fetchClients();
+      if (insertedClient) {
+        const nextClient = normalizeClientRecord(insertedClient);
+        setClients((prev) => {
+          const exists = prev.some((client) => String(client.id) === String(nextClient.id));
+          const nextClients = exists
+            ? prev.map((client) => String(client.id) === String(nextClient.id) ? nextClient : client)
+            : [nextClient, ...prev];
+
+          return nextClients.sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
+        });
+      }
       return;
     }
 
@@ -2604,15 +2639,20 @@ if (error) {
       const visitsValue = orderToVisits(value);
 
       if (matchedClientForOrder && visitsValue !== null) {
-        const { error } = await supabase
+        const { data: updatedClient, error } = await supabase
           .from("clients")
           .update({ visits: visitsValue })
-          .eq("id", matchedClientForOrder.id);
+          .eq("id", matchedClientForOrder.id)
+          .select("*")
+          .single();
 
         if (error) {
           console.log(error);
-        } else {
-          fetchClients();
+        } else if (updatedClient) {
+          const nextClient = normalizeClientRecord(updatedClient);
+          setClients((prev) =>
+            prev.map((client) => String(client.id) === String(nextClient.id) ? nextClient : client)
+          );
         }
       }
     }
@@ -3935,7 +3975,13 @@ const sendWhatsApp = async (client) => {
           .from("clients")
           .update({ referrals: updatedReferrals })
           .eq("id", sourceClient.id);
-        fetchClients();
+        setClients((prev) =>
+          prev.map((client) =>
+            String(client.id) === String(sourceClient.id)
+              ? { ...client, referrals: updatedReferrals }
+              : client
+          )
+        );
       }
     }
 
