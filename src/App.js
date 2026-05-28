@@ -1048,17 +1048,7 @@ useEffect(() => {
     "paradise-daily-manual-data",
     JSON.stringify(dailyManualData)
   );
-
-  if (!sharedDataLoaded || !selectedScheduleDate) return undefined;
-
-  const reportForSelectedDate = dailyManualData[selectedScheduleDate];
-
-  if (!reportForSelectedDate) return undefined;
-
-  queueDailyReportSave(selectedScheduleDate, reportForSelectedDate);
-
-  return undefined;
-}, [dailyManualData, selectedScheduleDate, sharedDataLoaded]);
+}, [dailyManualData]);
 
 useEffect(() => {
   if (!isLoggedIn || !selectedScheduleDate) return undefined;
@@ -2070,17 +2060,26 @@ if (error) {
     };
   };
 
-  const updateManualForDate = (field, value) => {
-    dailyManualLastEditRef.current = Date.now();
+  
 
-    setDailyManualData((prev) => ({
+    const updateManualForDate = (field, value) => {
+  dailyManualLastEditRef.current = Date.now();
+
+  setDailyManualData((prev) => {
+    const nextReport = {
+      ...(prev[selectedScheduleDate] || getManualForDate(selectedScheduleDate)),
+      [field]: value,
+    };
+
+    queueDailyReportSave(selectedScheduleDate, nextReport);
+
+    return {
       ...prev,
-      [selectedScheduleDate]: {
-        ...(prev[selectedScheduleDate] || getManualForDate(selectedScheduleDate)),
-        [field]: value,
-      },
-    }));
-  };
+      [selectedScheduleDate]: nextReport,
+    };
+  });
+};
+  
 
   const updateManualForSpecificDate = (date, field, value) => {
     dailyManualLastEditRef.current = Date.now();
