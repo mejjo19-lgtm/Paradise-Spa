@@ -3500,7 +3500,7 @@ const getVisitLabel = (visits) => {
     const brownHeart = "\uD83E\uDD0E";
 
     return [
-      "مساء الخير..",
+      "صباح الخير ..",
       `معاكي باردايس سبا ${brownHeart}`,
       `اتشرفنا بخدمتك عزيزتي ${client.name}`,
       `تم اضافة طبعة زيارة لكرت الولاء الخاص بك ${brownHeart}`,
