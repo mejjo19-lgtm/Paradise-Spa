@@ -948,22 +948,63 @@ function fetchSharedClientLists() {
     }, 86400000);
 
     const appDataChannel = supabase
-      .channel("app-data-sync")
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "app_data",
-        },
-        (payload) => {
-          const changedKey = payload?.new?.data_key || payload?.old?.data_key || "";
-          if (!sharedDataKeys.includes(changedKey)) return;
+  .channel("app-data-sync")
+  .on(
+    "postgres_changes",
+    {
+      event: "*",
+      schema: "public",
+      table: "app_data",
+    },
+    (payload) => {
+      const changedKey = payload?.new?.data_key || payload?.old?.data_key || "";
+      const changedData = payload?.new?.data;
 
-          loadSharedData();
-        }
-      )
-      .subscribe();
+      if (!sharedDataKeys.includes(changedKey)) return;
+      if (!changedData) return;
+
+      const now = Date.now();
+      const userIsEditingSharedData = isSharedDataInputFocused();
+
+      if (
+        changedKey === "dailyManualData" &&
+        !userIsEditingSharedData &&
+        now - dailyManualLastEditRef.current >= sharedDataEditProtectionDelay
+      ) {
+        setDailyManualData(changedData);
+        localStorage.setItem("paradise-daily-manual-data", JSON.stringify(changedData));
+        saveSharedDataLocalBackup("dailyManualData", changedData, "after-realtime-direct");
+      }
+
+      if (
+        changedKey === "scheduleSettings" &&
+        !userIsEditingSharedData &&
+        now - scheduleSettingsLastEditRef.current >= sharedDataEditProtectionDelay
+      ) {
+        setScheduleSettings(changedData);
+        localStorage.setItem("paradise-schedule-settings", JSON.stringify(changedData));
+        saveSharedDataLocalBackup("scheduleSettings", changedData, "after-realtime-direct");
+      }
+
+      if (
+        changedKey === "financeMonthlySettings" &&
+        !userIsEditingSharedData &&
+        now - financeSettingsLastEditRef.current >= sharedDataEditProtectionDelay
+      ) {
+        setFinanceMonthlySettings(changedData);
+        localStorage.setItem(
+          "paradise-finance-monthly-settings",
+          JSON.stringify(changedData)
+        );
+        saveSharedDataLocalBackup(
+          "financeMonthlySettings",
+          changedData,
+          "after-realtime-direct"
+        );
+      }
+    }
+  )
+  .subscribe();
 
     return () => {
       clearInterval(appDataPolling);
