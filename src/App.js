@@ -733,10 +733,9 @@ function fetchSharedClientLists() {
   const [sharedDataLoaded, setSharedDataLoaded] = useState(false);
 
   const sharedDataKeys = [
-    "dailyManualData",
-    "scheduleSettings",
-    "financeMonthlySettings",
-  ];
+  "scheduleSettings",
+  "financeMonthlySettings",
+];
 
   const sharedDataLocalStorageKeys = {
     dailyManualData: "paradise-daily-manual-data",
@@ -876,7 +875,7 @@ function fetchSharedClientLists() {
       return;
     }
 
-    const dailyRow = data?.find((row) => row.data_key === "dailyManualData");
+    
     const settingsRow = data?.find((row) => row.data_key === "scheduleSettings");
     const financeSettingsRow = data?.find((row) => row.data_key === "financeMonthlySettings");
 
@@ -889,9 +888,7 @@ function fetchSharedClientLists() {
 
     const now = Date.now();
     const userIsEditingSharedData = isSharedDataInputFocused();
-    const recentlyEditedDailyManual =
-      userIsEditingSharedData ||
-      now - dailyManualLastEditRef.current < sharedDataEditProtectionDelay;
+    
     const recentlyEditedScheduleSettings =
       userIsEditingSharedData ||
       now - scheduleSettingsLastEditRef.current < sharedDataEditProtectionDelay;
@@ -899,11 +896,7 @@ function fetchSharedClientLists() {
       userIsEditingSharedData ||
       now - financeSettingsLastEditRef.current < sharedDataEditProtectionDelay;
 
-    if (dailyRow?.data && !recentlyEditedDailyManual) {
-      setDailyManualData(dailyRow.data);
-      localStorage.setItem("paradise-daily-manual-data", JSON.stringify(dailyRow.data));
-      saveSharedDataLocalBackup("dailyManualData", dailyRow.data, "after-load-supabase");
-    }
+    
 
     if (settingsRow?.data && !recentlyEditedScheduleSettings) {
       setScheduleSettings(settingsRow.data);
@@ -955,15 +948,7 @@ function fetchSharedClientLists() {
       const now = Date.now();
       const userIsEditingSharedData = isSharedDataInputFocused();
 
-      if (
-        changedKey === "dailyManualData" &&
-        !userIsEditingSharedData &&
-        now - dailyManualLastEditRef.current >= sharedDataEditProtectionDelay
-      ) {
-        setDailyManualData(changedData);
-        localStorage.setItem("paradise-daily-manual-data", JSON.stringify(changedData));
-        saveSharedDataLocalBackup("dailyManualData", changedData, "after-realtime-direct");
-      }
+     
 
       if (
         changedKey === "scheduleSettings" &&
