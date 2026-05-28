@@ -1058,12 +1058,13 @@ useEffect(() => {
   const dailyReportsChannel = supabase
     .channel("daily-reports-sync")
     .on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "daily_reports",
-      },
+  "postgres_changes",
+  {
+    event: "*",
+    schema: "public",
+    table: "daily_reports",
+    filter: `report_date=eq.${selectedScheduleDate}`,
+  },
       (payload) => {
         if (payload.eventType === "DELETE") {
           const removedDate = payload.old?.report_date;
@@ -1956,7 +1957,12 @@ if (error) {
       .channel("schedule-rows-sync")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "schedule_rows" },
+        {
+  event: "*",
+  schema: "public",
+  table: "schedule_rows",
+  filter: `schedule_date=eq.${selectedScheduleDate}`,
+},
         (payload) => {
           if (payload.eventType === "DELETE") {
             deleteScheduleRowFromLocal(payload.old);
