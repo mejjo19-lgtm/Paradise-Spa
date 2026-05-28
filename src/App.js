@@ -45,6 +45,7 @@ const sharedDataDeviceIdRef = useRef(`${Date.now()}-${Math.random().toString(36)
 const scheduleEditingRef = useRef(false);
 const scheduleRowSaveTimersRef = useRef({});
 const dailyReportSaveTimersRef = useRef({});
+const incomeExpenseLoadedRangesRef = useRef({});
 const sharedDataSaveDelay = 800;
 const sharedDataEditProtectionDelay = 3000;
 const isSharedDataInputFocused = () => {
@@ -1158,6 +1159,15 @@ useEffect(() => {
   }, []);
 
 
+useEffect(() => {
+  if (!isLoggedIn) return;
+  if (screen !== "incomeExpenses") return;
+
+  loadIncomeExpenseReportDataRange(
+    incomeExpensesFromMonth,
+    incomeExpensesToMonth
+  );
+}, [isLoggedIn, screen, incomeExpensesFromMonth, incomeExpensesToMonth]);
 
   const [editingId, setEditingId] = useState(null);
   const [editedName, setEditedName] = useState("");
@@ -1822,7 +1832,103 @@ if (error) {
 
     applyScheduleRowsSnapshot(date, data || []);
   };
+const getMonthStartDate = (monthKey) => `${monthKey}-01`;
 
+const getMonthEndDate = (monthKey) => {
+  const [year, month] = String(monthKey || "").split("-").map(Number);
+  if (!year || !month) return `${monthKey}-31`;
+
+  return new Date(year, month, 0).toISOString().slice(0, 10);
+};
+
+const loadIncomeExpenseReportDataRange = async (fromMonth, toMonth) => {
+  if (!fromMonth || !toMonth) return;
+
+  const rangeKey = `${fromMonth}_${toMonth}`;
+
+  if (incomeExpenseLoadedRangesRef.current[rangeKey]) return;
+
+  const fromDate = getMonthStartDate(fromMonth);
+  const toDate = getMonthEndDate(toMonth);
+
+  const { data: scheduleRows, error: scheduleError } = await supabase
+    .from("schedule_rows")
+    .select("id, schedule_date, row_index, row_data, cell_styles, updated_at, updated_by")
+    .gte("schedule_date", fromDate)
+    .lte("schedule_date", toDate)
+    .order("schedule_date", { ascending: true })
+    .order("row_index", { ascending: true });
+
+  if (scheduleError) {
+    console.log("Income expense schedule rows load error:", scheduleError);
+    return;
+  }
+
+  const rowsByDate = {};
+
+  (scheduleRows || []).forEach((dbRow) => {
+    const date = dbRow.schedule_date;
+    const rowIndex = Number(dbRow.row_index);
+
+    if (!date || !Number.isInteger(rowIndex)) return;
+
+    if (!rowsByDate[date]) {
+      rowsByDate[date] = {
+        rows: timeSlots.map(createEmptyAppointmentRow),
+        cellStyles: {},
+      };
+    }
+
+    rowsByDate[date].rows[rowIndex] = {
+      ...rowsByDate[date].rows[rowIndex],
+      ...(dbRow.row_data || {}),
+    };
+
+    Object.assign(rowsByDate[date].cellStyles, dbRow.cell_styles || {});
+  });
+
+  setScheduleData((prev) => {
+    const next = { ...prev };
+
+    Object.entries(rowsByDate).forEach(([date, dayData]) => {
+      next[date] = {
+        ...(next[date] || {}),
+        rows: dayData.rows,
+        cellStyles: {
+          ...((next[date] || {}).cellStyles || {}),
+          ...dayData.cellStyles,
+        },
+      };
+    });
+
+    return next;
+  });
+
+  const { data: dailyReports, error: reportsError } = await supabase
+    .from("daily_reports")
+    .select("report_date, report_data, updated_at, updated_by")
+    .gte("report_date", fromDate)
+    .lte("report_date", toDate);
+
+  if (reportsError) {
+    console.log("Income expense daily reports load error:", reportsError);
+    return;
+  }
+
+  setDailyManualData((prev) => {
+    const next = { ...prev };
+
+    (dailyReports || []).forEach((report) => {
+      if (report.report_date) {
+        next[report.report_date] = report.report_data || {};
+      }
+    });
+
+    return next;
+  });
+
+  incomeExpenseLoadedRangesRef.current[rangeKey] = true;
+};
   const applyScheduleRowFromRemote = (record) => {
     if (!record?.schedule_date && !record?.id) return;
     if (record?.updated_by === sharedDataDeviceIdRef.current) return;
