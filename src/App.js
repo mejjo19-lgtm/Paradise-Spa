@@ -4353,7 +4353,7 @@ const sendWhatsApp = async (client) => {
   background: "linear-gradient(135deg, #ad937d, #815a47)",
   color: "white",
   borderRadius: "14px",
-  
+  boxShadow: "0 8px 18px rgba(37,211,102,0.18)",
   fontSize: "12px",
   padding: "0 10px",
   margin: 0,
