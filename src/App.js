@@ -1851,18 +1851,32 @@ const loadIncomeExpenseReportDataRange = async (fromMonth, toMonth) => {
   const fromDate = getMonthStartDate(fromMonth);
   const toDate = getMonthEndDate(toMonth);
 
-  const { data: scheduleRows, error: scheduleError } = await supabase
+  const pageSize = 1000;
+let scheduleRows = [];
+let fromIndex = 0;
+let hasMoreScheduleRows = true;
+
+while (hasMoreScheduleRows) {
+  const toIndex = fromIndex + pageSize - 1;
+
+  const { data: schedulePage, error: scheduleError } = await supabase
     .from("schedule_rows")
     .select("id, schedule_date, row_index, row_data, cell_styles, updated_at, updated_by")
     .gte("schedule_date", fromDate)
     .lte("schedule_date", toDate)
     .order("schedule_date", { ascending: true })
-    .order("row_index", { ascending: true });
+    .order("row_index", { ascending: true })
+    .range(fromIndex, toIndex);
 
   if (scheduleError) {
     console.log("Income expense schedule rows load error:", scheduleError);
     return;
   }
+
+  scheduleRows = [...scheduleRows, ...(schedulePage || [])];
+  hasMoreScheduleRows = Array.isArray(schedulePage) && schedulePage.length === pageSize;
+  fromIndex += pageSize;
+}
 
   const rowsByDate = {};
 
