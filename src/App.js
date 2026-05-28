@@ -2082,16 +2082,22 @@ if (error) {
   
 
   const updateManualForSpecificDate = (date, field, value) => {
-    dailyManualLastEditRef.current = Date.now();
+  dailyManualLastEditRef.current = Date.now();
 
-    setDailyManualData((prev) => ({
+  setDailyManualData((prev) => {
+    const nextReport = {
+      ...(prev[date] || getManualForDate(date)),
+      [field]: value,
+    };
+
+    queueDailyReportSave(date, nextReport);
+
+    return {
       ...prev,
-      [date]: {
-        ...(prev[date] || getManualForDate(date)),
-        [field]: value,
-      },
-    }));
-  };
+      [date]: nextReport,
+    };
+  });
+};
 
   const parseAmount = (value) => {
     const rawValue = String(value ?? "").replace(/,/g, "");
