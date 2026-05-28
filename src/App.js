@@ -376,7 +376,7 @@ async function fetchClientsWithSupabaseClient() {
     const to = from + pageSize - 1;
     const { data, error } = await supabase
       .from("clients")
-      .select("*")
+      .select("id,name,arabic_name,phone,address,visits,frame,blacklist")
       .order("id", { ascending: false })
       .range(from, to);
 
@@ -401,7 +401,7 @@ async function fetchClientsWithRestApi() {
 
   while (hasMore) {
     const response = await fetch(
-      `${supabaseUrl}/rest/v1/clients?select=*&order=id.desc&limit=${pageSize}&offset=${offset}`,
+      `${supabaseUrl}/rest/v1/clients?select=id,name,arabic_name,phone,address,visits,frame,blacklist&order=id.desc&limit=${pageSize}&offset=${offset}`,
       {
         headers: {
           apikey: supabaseKey,
