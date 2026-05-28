@@ -1265,7 +1265,7 @@ useEffect(() => {
     total_paid: 0,
     service_history: [],
   },
-]).select("*").single();
+]).select("id,name,arabic_name,phone,address,visits,frame,blacklist").single();
 
 if (error) {
   console.log(error);
@@ -1308,7 +1308,7 @@ const { data: updatedClient, error } = await supabase
     address: editedAddress,
   })
   .eq("id", id)
-  .select("*")
+  .select("id,name,arabic_name,phone,address,visits,frame,blacklist")
   .single();
 
 if (error) {
@@ -1603,7 +1603,7 @@ if (error) {
     .from("clients")
     .update({ visits: newVisits })
     .eq("id", id)
-    .select("*")
+    .select("id,name,arabic_name,phone,address,visits,frame,blacklist")
     .single();
 
   if (error) {
@@ -1626,7 +1626,7 @@ if (error) {
     .from("clients")
     .update({ visits: newVisits })
     .eq("id", id)
-    .select("*")
+    .select("id,name,arabic_name,phone,address,visits,frame,blacklist")
     .single();
 
   if (error) {
@@ -1651,7 +1651,7 @@ if (error) {
       .from("clients")
       .update({ frame: frameValue })
       .eq("id", id)
-      .select("*")
+      .select("id,name,arabic_name,phone,address,visits,frame,blacklist")
       .single();
 
     if (error) {
@@ -2854,7 +2854,7 @@ while (hasMoreScheduleRows) {
           total_paid: 0,
           service_history: [],
         },
-      ]).select("*").single();
+      ]).select("id,name,arabic_name,phone,address,visits,frame,blacklist").single();
 
       if (error) {
         console.log("Send To clients copy error:", error);
@@ -3014,7 +3014,7 @@ while (hasMoreScheduleRows) {
           .from("clients")
           .update({ visits: visitsValue })
           .eq("id", matchedClientForOrder.id)
-          .select("*")
+          .select("id,name,arabic_name,phone,address,visits,frame,blacklist")
           .single();
 
         if (error) {
