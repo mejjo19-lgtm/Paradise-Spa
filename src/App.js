@@ -4353,7 +4353,7 @@ const sendWhatsApp = async (client) => {
   background: "linear-gradient(135deg, #ad937d, #815a47)",
   color: "white",
   borderRadius: "14px",
-  boxShadow: "0 8px 18px rgba(37,211,102,0.18)",
+  
   fontSize: "12px",
   padding: "0 10px",
   margin: 0,
@@ -11158,8 +11158,8 @@ if (screen === "availableAppointments") {
                     }
                     style={{
                       ...buttonStyle,
-                      backgroundColor: "#4b2e1f",
-                      color: "white",
+                      backgroundColor: "#d8c5b3",
+                      color: "black",
                       padding: "9px 16px",
                       borderRadius: "14px",
                     }}
