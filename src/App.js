@@ -44,6 +44,7 @@ const sharedDataMetaRef = useRef({});
 const sharedDataDeviceIdRef = useRef(`${Date.now()}-${Math.random().toString(36).slice(2)}`);
 const scheduleEditingRef = useRef(false);
 const scheduleRowSaveTimersRef = useRef({});
+const dailyReportSaveTimersRef = useRef({});
 const sharedDataSaveDelay = 800;
 const sharedDataEditProtectionDelay = 3000;
 const isSharedDataInputFocused = () => {
@@ -1004,21 +1005,132 @@ function fetchSharedClientLists() {
   // 💾 SCHEDULE DATA
   // الجدول لا ينحفظ في localStorage ولا app_data.
   // الحفظ الحقيقي للمواعيد يتم فقط داخل schedule_rows، صف بصف.
-  // 💾 SAVE DAILY MANUAL DATA
-  useEffect(() => {
-    localStorage.setItem(
-      "paradise-daily-manual-data",
-      JSON.stringify(dailyManualData)
-    );
+const loadDailyReportForDate = async (date) => {
+  if (!date) return;
 
-    if (!sharedDataLoaded) return undefined;
+  const { data, error } = await supabase
+    .from("daily_reports")
+    .select("report_date, report_data, updated_at, updated_by")
+    .eq("report_date", date)
+    .maybeSingle();
 
-    const saveTimer = setTimeout(() => {
-      saveSharedData("dailyManualData", dailyManualData);
-    }, sharedDataSaveDelay);
+  if (error) {
+    console.log("Daily report load error:", error);
+    return;
+  }
 
-    return () => clearTimeout(saveTimer);
-  }, [dailyManualData, sharedDataLoaded]);
+  if (data?.report_data) {
+    setDailyManualData((prev) => ({
+      ...prev,
+      [date]: data.report_data,
+    }));
+  }
+};
+
+const saveDailyReportForDate = async (date, reportData) => {
+  if (!date) return;
+
+  const { error } = await supabase.from("daily_reports").upsert(
+    {
+      report_date: date,
+      report_data: reportData || {},
+      updated_at: Date.now(),
+      updated_by: sharedDataDeviceIdRef.current,
+    },
+    { onConflict: "report_date" }
+  );
+
+  if (error) {
+    console.log("Daily report save error:", error);
+  }
+};
+
+const queueDailyReportSave = (date, reportData) => {
+  if (!date) return;
+
+  if (dailyReportSaveTimersRef.current[date]) {
+    clearTimeout(dailyReportSaveTimersRef.current[date]);
+  }
+
+  dailyReportSaveTimersRef.current[date] = setTimeout(() => {
+    saveDailyReportForDate(date, reportData);
+    delete dailyReportSaveTimersRef.current[date];
+  }, 700);
+};
+
+useEffect(() => {
+  localStorage.setItem(
+    "paradise-daily-manual-data",
+    JSON.stringify(dailyManualData)
+  );
+
+  if (!sharedDataLoaded || !selectedScheduleDate) return undefined;
+
+  const reportForSelectedDate = dailyManualData[selectedScheduleDate];
+
+  if (!reportForSelectedDate) return undefined;
+
+  queueDailyReportSave(selectedScheduleDate, reportForSelectedDate);
+
+  return undefined;
+}, [dailyManualData, selectedScheduleDate, sharedDataLoaded]);
+
+useEffect(() => {
+  if (!isLoggedIn || !selectedScheduleDate) return undefined;
+
+  loadDailyReportForDate(selectedScheduleDate);
+
+  const dailyReportsChannel = supabase
+    .channel("daily-reports-sync")
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "daily_reports",
+      },
+      (payload) => {
+        if (payload.eventType === "DELETE") {
+          const removedDate = payload.old?.report_date;
+          if (!removedDate) return;
+
+          setDailyManualData((prev) => {
+            const next = { ...prev };
+            delete next[removedDate];
+            return next;
+          });
+          return;
+        }
+
+        const record = payload.new;
+        const reportDate = record?.report_date;
+
+        if (!reportDate) return;
+        if (record?.updated_by === sharedDataDeviceIdRef.current) return;
+
+        const now = Date.now();
+        const userIsEditingSharedData = isSharedDataInputFocused();
+
+        if (
+          reportDate === selectedScheduleDate &&
+          userIsEditingSharedData &&
+          now - dailyManualLastEditRef.current < sharedDataEditProtectionDelay
+        ) {
+          return;
+        }
+
+        setDailyManualData((prev) => ({
+          ...prev,
+          [reportDate]: record.report_data || {},
+        }));
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(dailyReportsChannel);
+  };
+}, [isLoggedIn, selectedScheduleDate]);
 
   // 💾 SAVE SCHEDULE SETTINGS
   useEffect(() => {
