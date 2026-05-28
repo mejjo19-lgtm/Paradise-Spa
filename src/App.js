@@ -4300,8 +4300,8 @@ const sendWhatsApp = async (client) => {
           </button>
           <span
             style={{
-              backgroundColor: "#4b2e1f",
-              color: "white",
+              backgroundColor: "#6f6259",
+              color: "black",
               borderRadius: "999px",
               padding: "5px 9px",
               fontSize: "11px",
@@ -11158,7 +11158,7 @@ if (screen === "availableAppointments") {
                     }
                     style={{
                       ...buttonStyle,
-                      backgroundColor: "135deg, #d8c5b3, #f3e8df",
+                      backgroundColor: "#6f6259",
                       color: "black",
                       padding: "9px 16px",
                       borderRadius: "14px",
