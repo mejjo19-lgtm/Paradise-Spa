@@ -841,7 +841,17 @@ function fetchSharedClientLists() {
       .upsert(
         {
           data_key: dataKey,
-          data: dataValue,
+          data:
+  dataKey === "dailyManualData"
+    ? {
+        [selectedScheduleDate.slice(0, 7)]:
+          Object.fromEntries(
+            Object.entries(dataValue || {}).filter(([dateKey]) =>
+              String(dateKey).startsWith(selectedScheduleDate.slice(0, 7))
+            )
+          ),
+      }
+    : dataValue,
         },
         { onConflict: "data_key" }
       );
