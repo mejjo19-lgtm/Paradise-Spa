@@ -6760,20 +6760,25 @@ const welcomeBoardNameStyle = {
             }
             @media (max-width: 1050px) {
               .paradise-global-sidebar {
-                position: static !important;
-                width: auto !important;
-                margin: 14px !important;
-                display: grid !important;
-                grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-                gap: 8px !important;
-                max-height: none !important;
-              }
+  position: static !important;
+  width: auto !important;
+  margin: 14px !important;
+  max-height: none !important;
+}
               .paradise-global-logo {
-                grid-column: 1 / -1;
-                margin-bottom: 6px !important;
-              }
+  margin-top: 72px !important;
+}
+  .paradise-global-sidebar-buttons {
+  display: grid !important;
+  grid-template-columns: repeat(2, 1fr) !important;
+  gap: 8px !important;
+}
+
+.paradise-global-sidebar-buttons button {
+  margin-bottom: 0 !important;
+}
               .paradise-global-page {
-                padding: 112px 14px 14px !important;
+                padding: 30px 14px 14px !important;
                 background: ${unifiedOuterBackground} !important;
                 min-height: 100vh !important;
               }
@@ -6939,7 +6944,7 @@ const welcomeBoardNameStyle = {
                 cursor: "pointer",
               }}
             />
-
+<div className="paradise-global-sidebar-buttons">
             {dashboardServices.map(([key, label]) => (
               <button
                 key={key}
@@ -6968,6 +6973,7 @@ const welcomeBoardNameStyle = {
                 {label}
               </button>
             ))}
+            </div>
           </aside>
         )}
 
