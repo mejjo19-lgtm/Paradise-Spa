@@ -814,19 +814,7 @@ function fetchSharedClientLists() {
       return;
     }
 
-    if (existingDataRow?.data) {
-      await supabase.from("app_data").upsert(
-        {
-          data_key: backupKey,
-          data: {
-            source: "before-overwrite-supabase",
-            savedAt: new Date().toISOString(),
-            data: existingDataRow.data,
-          },
-        },
-        { onConflict: "data_key" }
-      );
-    }
+    
 
     const nextMeta = {
       dataKey,
