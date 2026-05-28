@@ -723,7 +723,16 @@ function fetchSharedClientLists() {
   });
 
   const [selectedFinanceMonth, setSelectedFinanceMonth] = useState("2026-05");
-  const [incomeExpensesFromMonth, setIncomeExpensesFromMonth] = useState("2024-11");
+  const getDefaultIncomeExpensesFromMonth = () => {
+  const now = new Date();
+  now.setMonth(now.getMonth() - 2);
+
+  return now.toISOString().slice(0, 7);
+};
+
+const [incomeExpensesFromMonth, setIncomeExpensesFromMonth] = useState(
+  getDefaultIncomeExpensesFromMonth()
+);
   const [incomeExpensesToMonth, setIncomeExpensesToMonth] = useState(() => getCurrentLocalDate().slice(0, 7));
   const [incomeExpensesEditMode, setIncomeExpensesEditMode] = useState(false);
   const [financeMonthlySettings, setFinanceMonthlySettings] = useState(() => {
