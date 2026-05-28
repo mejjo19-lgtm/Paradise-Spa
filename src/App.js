@@ -1471,24 +1471,36 @@ if (error) {
     return true;
   };
 
-  // 👤 OPEN CLIENT PROFILE
   const openClientProfile = async (client) => {
-    setSelectedClientId(client.id);
-    setProfileNotes(client.notes || "");
-    setProfileBlacklist(client.blacklist || false);
-    setProfileFrame(client.frame || false);
+  setSelectedClientId(client.id);
 
-    const sharedReferrals = await getSharedReferralsForClient(client.id);
-    setProfileReferrals(
-      sharedReferrals.length > 0
-        ? sharedReferrals
-        : Array.isArray(client.referrals)
-        ? client.referrals
-        : []
-    );
+  const { data: fullClient, error } = await supabase
+    .from("clients")
+    .select("*")
+    .eq("id", client.id)
+    .single();
 
-    setScreen("clientProfile");
-  };
+  if (error) {
+    console.log("Full client load error:", error);
+    return;
+  }
+
+  setProfileNotes(fullClient?.notes || "");
+  setProfileBlacklist(fullClient?.blacklist || false);
+  setProfileFrame(fullClient?.frame || false);
+
+  const sharedReferrals = await getSharedReferralsForClient(client.id);
+
+  setProfileReferrals(
+    sharedReferrals.length > 0
+      ? sharedReferrals
+      : Array.isArray(fullClient?.referrals)
+      ? fullClient.referrals
+      : []
+  );
+
+  setScreen("clientProfile");
+};
 
   // 💾 SAVE CLIENT PROFILE
   const saveClientProfile = async () => {
