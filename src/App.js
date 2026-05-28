@@ -232,7 +232,15 @@ useEffect(() => {
     return;
   }
 
+  const cacheLoaded = loadClientsFromCache();
+
+if (!cacheLoaded) {
   fetchClients();
+} else {
+  setTimeout(() => {
+    fetchClients();
+  }, 3000);
+}
 
   const clientsPolling = setInterval(() => {
     fetchClients();
@@ -358,12 +366,50 @@ const normalizeClientRecord = (client) => ({
   referrals: Array.isArray(client.referrals) ? client.referrals : [],
 });
 
-const setClientsSafely = (nextClients) => {
+const CLIENTS_CACHE_KEY = "paradise-clients-cache";
+const CLIENTS_CACHE_MAX_AGE = 30 * 60 * 1000;
+
+const loadClientsFromCache = () => {
+  try {
+    const cached = JSON.parse(localStorage.getItem(CLIENTS_CACHE_KEY) || "null");
+
+    if (!cached?.savedAt || !Array.isArray(cached.clients)) return false;
+
+    const cacheAge = Date.now() - Number(cached.savedAt);
+
+    if (cacheAge > CLIENTS_CACHE_MAX_AGE) return false;
+
+    setClientsSafely(cached.clients, false);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const saveClientsToCache = (nextClients) => {
+  try {
+    localStorage.setItem(
+      CLIENTS_CACHE_KEY,
+      JSON.stringify({
+        savedAt: Date.now(),
+        clients: nextClients || [],
+      })
+    );
+  } catch (error) {
+    console.log("Clients cache save error:", error);
+  }
+};
+
+const setClientsSafely = (nextClients, saveCache = true) => {
   const normalizedClients = Array.isArray(nextClients)
     ? nextClients.map(normalizeClientRecord)
     : [];
 
   setClients(normalizedClients);
+
+  if (saveCache) {
+    saveClientsToCache(normalizedClients);
+  }
 };
 
 async function fetchClientsWithSupabaseClient() {
