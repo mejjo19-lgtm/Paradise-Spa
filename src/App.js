@@ -2752,12 +2752,23 @@ while (hasMoreScheduleRows) {
       if (event.key !== "Delete" && event.key !== "Backspace") return;
       if (!scheduleSelection || getScheduleSelectionCellCount() <= 0) return;
 
-      const activeTag = document.activeElement?.tagName;
-      const isEditingSingleInput =
-        getScheduleSelectionCellCount() === 1 &&
-        ["INPUT", "SELECT", "TEXTAREA"].includes(activeTag);
+      const activeElement = document.activeElement;
+const activeTag = activeElement?.tagName;
+const activeScheduleCell =
+  activeElement?.getAttribute?.("data-schedule-cell") || "";
 
-      if (isEditingSingleInput) return;
+if (
+  ["INPUT", "SELECT", "TEXTAREA"].includes(activeTag) &&
+  !activeScheduleCell
+) {
+  return;
+}
+
+const isEditingSingleInput =
+  getScheduleSelectionCellCount() === 1 &&
+  ["INPUT", "SELECT", "TEXTAREA"].includes(activeTag);
+
+if (isEditingSingleInput) return;
 
       event.preventDefault();
       clearSelectedScheduleCells();
