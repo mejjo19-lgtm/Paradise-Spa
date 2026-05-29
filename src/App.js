@@ -762,7 +762,7 @@ function fetchSharedClientLists() {
     const savedDaily = localStorage.getItem("paradise-daily-manual-data");
     return savedDaily ? JSON.parse(savedDaily) : {};
   });
-
+const [financeRefreshKey, setFinanceRefreshKey] = useState(0);
   const [scheduleSettings, setScheduleSettings] = useState(() => {
     const savedSettings = localStorage.getItem("paradise-schedule-settings");
     return savedSettings ? JSON.parse(savedSettings) : {};
@@ -2261,6 +2261,7 @@ while (hasMoreScheduleRows) {
 
     const updateManualForDate = (field, value) => {
   dailyManualLastEditRef.current = Date.now();
+  setFinanceRefreshKey((prev) => prev + 1);
 
   setDailyManualData((prev) => {
     const nextReport = {
@@ -3406,7 +3407,7 @@ if (isEditingSingleInput) return;
     };
   };
 
-  const getFinanceMonthStats = (monthKey) => {
+  const getFinanceMonthStats = (monthKey, refreshKey = 0) => {
     const monthlySettings = getFinanceMonthSettings(monthKey);
     const monthDates = getFinanceMonthDates(monthKey);
     const currentMonthKey = currentDate.slice(0, 7);
@@ -8585,7 +8586,10 @@ if (screen === "finance") {
     const activeFinanceMonth = financeMonths.includes(selectedFinanceMonth)
       ? selectedFinanceMonth
       : financeMonths[financeMonths.length - 1] || "2026-05";
-    const financeStats = getFinanceMonthStats(activeFinanceMonth);
+    const financeStats = getFinanceMonthStats(
+  activeFinanceMonth,
+  financeRefreshKey
+);
     const financeCardStyle = {
       background: "rgba(255,255,255,0.88)",
       border: "1px solid rgba(214,199,184,0.88)",
