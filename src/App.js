@@ -2130,7 +2130,7 @@ while (hasMoreScheduleRows) {
     scheduleRowSaveTimersRef.current[rowId] = setTimeout(() => {
       saveScheduleRowToSupabase(date, rowIndex, rowData, cellStyles);
       delete scheduleRowSaveTimersRef.current[rowId];
-    }, 700);
+    }, 3000);
   };
 
   const persistScheduleRowsForDate = (date, rows, cellStyles, rowIndexes) => {
