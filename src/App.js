@@ -2271,7 +2271,7 @@ while (hasMoreScheduleRows) {
       [field]: value,
     };
 
-    queueDailyReportSave(selectedScheduleDate, nextReport);
+    saveDailyReportForDate(selectedScheduleDate, nextReport);
 
     return {
       ...prev,
