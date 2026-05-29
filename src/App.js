@@ -1104,6 +1104,8 @@ useEffect(() => {
     "paradise-daily-manual-data",
     JSON.stringify(dailyManualData)
   );
+
+  setFinanceRefreshKey((prev) => prev + 1);
 }, [dailyManualData]);
 
 useEffect(() => {
@@ -2261,7 +2263,7 @@ while (hasMoreScheduleRows) {
 
     const updateManualForDate = (field, value) => {
   dailyManualLastEditRef.current = Date.now();
-  setFinanceRefreshKey((prev) => prev + 1);
+  
 
   setDailyManualData((prev) => {
     const nextReport = {
