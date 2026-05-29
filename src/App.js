@@ -1119,7 +1119,7 @@ useEffect(() => {
     event: "*",
     schema: "public",
     table: "daily_reports",
-    filter: `report_date=eq.${selectedScheduleDate}`,
+    
   },
       (payload) => {
         if (payload.eventType === "DELETE") {
