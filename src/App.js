@@ -1075,7 +1075,7 @@ const saveDailyReportForDate = async (date, reportData) => {
     {
       report_date: date,
       report_data: reportData || {},
-      updated_at: Date.now(),
+      updated_at: new Date().toISOString(),
       updated_by: sharedDataDeviceIdRef.current,
     },
     { onConflict: "report_date" }
@@ -1323,7 +1323,8 @@ useEffect(() => {
 ]).select("id,name,arabic_name,phone,address,visits,frame,blacklist").single();
 
 if (error) {
-  console.log(error);
+  console.error("ADD CLIENT ERROR:", error);
+console.error("ADD CLIENT ERROR JSON:", JSON.stringify(error, null, 2));
 } else if (insertedClient) {
   const nextClient = normalizeClientRecord(insertedClient);
   setClients((prev) => {
@@ -2105,14 +2106,17 @@ while (hasMoreScheduleRows) {
         row_index: numericRowIndex,
         row_data: rowData || createEmptyAppointmentRow(timeSlots[numericRowIndex] || ""),
         cell_styles: getScheduleRowCellStyles(cellStyles, numericRowIndex),
-        updated_at: Date.now(),
+        updated_at: new Date().toISOString(),
         updated_by: sharedDataDeviceIdRef.current,
       },
       { onConflict: "id" }
     );
 
     if (error) {
-      console.log("Schedule row save error:", error);
+      console.error(
+  "Schedule row save error JSON:",
+  JSON.stringify(error, null, 2)
+);
     }
   };
 
