@@ -11351,95 +11351,6 @@ if (screen === "availableAppointments") {
               </div>
             </div>
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(3, 1fr)",
-                gap: "10px",
-                marginBottom: "14px",
-              }}
-            >
-              <div
-                style={{
-                  backgroundColor: "white",
-                  borderRadius: "16px",
-                  padding: "12px",
-                  border: "1px solid #eadfd5",
-                  textAlign: "center",
-                }}
-              >
-                <div style={{ color: "#8a7a68", fontSize: "12px" }}>عدد الخدمات المسجلة</div>
-                <strong style={{ color: "#4b2e1f", fontSize: "18px" }}>
-                  {selectedClientServiceSummary.serviceHistory.length}
-                </strong>
-              </div>
-
-              <div
-                style={{
-                  backgroundColor: "white",
-                  borderRadius: "16px",
-                  padding: "12px",
-                  border: "1px solid #eadfd5",
-                  textAlign: "center",
-                }}
-              >
-                <div style={{ color: "#8a7a68", fontSize: "12px" }}>آخر زيارة</div>
-                <strong style={{ color: "#4b2e1f", fontSize: "15px" }}>
-                  {selectedClientServiceSummary.lastVisitDate || "-"}
-                </strong>
-              </div>
-
-              <div
-                style={{
-                  backgroundColor: "white",
-                  borderRadius: "16px",
-                  padding: "12px",
-                  border: "1px solid #eadfd5",
-                  textAlign: "center",
-                }}
-              >
-                <div style={{ color: "#8a7a68", fontSize: "12px" }}>عدد كرت الولاء</div>
-                <strong style={{ color: "#4b2e1f", fontSize: "18px" }}>
-                  {selectedClient.visits}
-                </strong>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "center",
-                    gap: "8px",
-                    marginTop: "10px",
-                  }}
-                >
-                  <button
-                    onClick={() => addVisit(selectedClient.id)}
-                    style={{
-                      ...buttonStyle,
-                      background: "linear-gradient(135deg, #4b2e1f, #7a5a43)",
-                      color: "white",
-                      padding: "7px 12px",
-                      fontSize: "12px",
-                    }}
-                  >
-                    + خدمة
-                  </button>
-
-                  <button
-                    onClick={() => removeVisit(selectedClient.id)}
-                    style={{
-                      ...buttonStyle,
-                      backgroundColor: "#f3e8df",
-                      color: "#4b2e1f",
-                      padding: "7px 12px",
-                      fontSize: "12px",
-                      border: "1px solid #d6c7b8",
-                    }}
-                  >
-                    - خدمة
-                  </button>
-                </div>
-              </div>
-            </div>
-
             {selectedClientServiceSummary.serviceHistory.length === 0 ? (
               <div
                 style={{
@@ -11466,7 +11377,7 @@ if (screen === "availableAppointments") {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "1.6fr 0.9fr 0.8fr 0.9fr",
+                    gridTemplateColumns: "0.9fr 0.8fr 0.9fr 1.6fr",
                     gap: "0",
                     alignItems: "center",
                     background: "linear-gradient(135deg, #4b2e1f, #6b472f)",
@@ -11477,12 +11388,12 @@ if (screen === "availableAppointments") {
                     direction: "ltr",
                   }}
                 >
-                  {["Services", "Therapist", "Order No.", "Date"].map((header) => (
+                  {["Date", "Order No.", "Therapist", "Services"].map((header) => (
                     <div
                       key={header}
                       style={{
                         padding: "11px 10px",
-                        borderRight: header !== "Date" ? "1px solid rgba(255,255,255,0.16)" : "none",
+                        borderRight: header !== "Services" ? "1px solid rgba(255,255,255,0.16)" : "none",
                       }}
                     >
                       {header}
@@ -11501,7 +11412,7 @@ if (screen === "availableAppointments") {
                       key={`${service.date}-${service.serviceTime}-${index}`}
                       style={{
                         display: "grid",
-                        gridTemplateColumns: "1.6fr 0.9fr 0.8fr 0.9fr",
+                        gridTemplateColumns: "0.9fr 0.8fr 0.9fr 1.6fr",
                         gap: "0",
                         alignItems: "center",
                         backgroundColor: index % 2 === 0 ? "#fffdfb" : "#fbf5ef",
@@ -11515,23 +11426,13 @@ if (screen === "availableAppointments") {
                       <div
                         style={{
                           padding: "12px 10px",
-                          fontWeight: "bold",
-                          textAlign: "left",
-                          borderRight: "1px solid #eadfd5",
-                          overflowWrap: "anywhere",
-                        }}
-                      >
-                        {service.services || "-"}
-                      </div>
-
-                      <div
-                        style={{
-                          padding: "12px 10px",
-                          fontWeight: "bold",
+                          color: "#8a7a68",
+                          fontSize: "13px",
+                          whiteSpace: "nowrap",
                           borderRight: "1px solid #eadfd5",
                         }}
                       >
-                        {service.therapist || "-"}
+                        {service.date || "-"}
                       </div>
 
                       <div
@@ -11549,12 +11450,22 @@ if (screen === "availableAppointments") {
                       <div
                         style={{
                           padding: "12px 10px",
-                          color: "#8a7a68",
-                          fontSize: "13px",
-                          whiteSpace: "nowrap",
+                          fontWeight: "bold",
+                          borderRight: "1px solid #eadfd5",
                         }}
                       >
-                        {service.date || "-"}
+                        {service.therapist || "-"}
+                      </div>
+
+                      <div
+                        style={{
+                          padding: "12px 10px",
+                          fontWeight: "bold",
+                          textAlign: "center",
+                          overflowWrap: "anywhere",
+                        }}
+                      >
+                        {service.services || "-"}
                       </div>
                     </div>
                   ))}
