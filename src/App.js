@@ -1324,9 +1324,14 @@ useEffect(() => {
 
 if (error) {
   console.error("ADD CLIENT ERROR:", error);
-console.error("ADD CLIENT ERROR JSON:", JSON.stringify(error, null, 2));
-} else if (insertedClient) {
+  console.error("ADD CLIENT ERROR JSON:", JSON.stringify(error, null, 2));
+  alert("لم يتم حفظ العميلة. تأكد من الاتصال وجرب مرة ثانية.");
+  return;
+}
+
+if (insertedClient) {
   const nextClient = normalizeClientRecord(insertedClient);
+
   setClients((prev) => {
     const exists = prev.some((client) => String(client.id) === String(nextClient.id));
     const nextClients = exists
@@ -1335,12 +1340,12 @@ console.error("ADD CLIENT ERROR JSON:", JSON.stringify(error, null, 2));
 
     return nextClients.sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
   });
-}
 
-    setName("");
-    setPhone("");
-    setAddress("");
-    setShowForm(false);
+  setName("");
+  setPhone("");
+  setAddress("");
+  setShowForm(false);
+}
   };
 
   // ✏️ START EDIT CLIENT
@@ -1368,7 +1373,9 @@ const { data: updatedClient, error } = await supabase
   .single();
 
 if (error) {
-  console.log(error);
+  console.log("Client edit save error:", error);
+  alert("لم يتم حفظ تعديل العميلة. تأكد من الاتصال وجرب مرة ثانية.");
+  return;
 } else if (updatedClient) {
   const nextClient = normalizeClientRecord(updatedClient);
   setClients((prev) =>
