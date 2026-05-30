@@ -2464,7 +2464,7 @@ while (hasMoreScheduleRows) {
     const safeField =
       scheduleSelectableFields.includes(field) ? field : scheduleSelectableFields[0];
 
-    if (shiftPressed && scheduleSelection) {
+    if (shiftPressed) {
       setScheduleSelection((previousSelection) => ({
         ...(previousSelection || {
           startRow: scheduleActiveCell?.row ?? safeRow,
@@ -2474,12 +2474,7 @@ while (hasMoreScheduleRows) {
         endField: safeField,
       }));
     } else {
-      setScheduleSelection({
-        startRow: safeRow,
-        endRow: safeRow,
-        startField: safeField,
-        endField: safeField,
-      });
+      setScheduleSelection(null);
     }
 
     setScheduleActiveCell({ row: safeRow, field: safeField });
@@ -2599,11 +2594,19 @@ while (hasMoreScheduleRows) {
 
   const getScheduleCellStyle = (rowIndex, field, extraStyle = {}) => {
     const savedStyle = getScheduleCellSavedStyle(rowIndex, field);
-    const selectedStyle = isScheduleCellSelected(rowIndex, field)
+    const isSelected = isScheduleCellSelected(rowIndex, field);
+    const isActive =
+      scheduleActiveCell?.row === rowIndex && scheduleActiveCell?.field === field;
+    const selectedStyle = isSelected
       ? {
-          outline: "2px solid #4b2e1f",
-          outlineOffset: "-2px",
-          boxShadow: "inset 0 0 0 999px rgba(75,46,31,0.08)",
+          outline: "1px solid #4b2e1f",
+          outlineOffset: "-1px",
+          boxShadow: "inset 0 0 0 999px rgba(75,46,31,0.05)",
+        }
+      : isActive
+      ? {
+          outline: "1px solid rgba(75,46,31,0.45)",
+          outlineOffset: "-1px",
         }
       : {};
 
@@ -2634,13 +2637,31 @@ while (hasMoreScheduleRows) {
     "data-schedule-cell": `${rowIndex}-${field}`,
     onFocus: () => {
       scheduleLastEditRef.current = Date.now();
+
+      if (scheduleSelectingRef.current) {
+        setScheduleActiveCell({ row: rowIndex, field });
+        return;
+      }
+
       moveScheduleActiveCell(rowIndex, field);
     },
     onKeyDown: (event) => handleScheduleCellKeyDown(event, rowIndex, field),
   });
 
   const getScheduleCellHandlers = (rowIndex, field) => ({
-    onMouseDown: () => startScheduleSelection(rowIndex, field),
+    onMouseDown: () => {
+      const isSameActiveCell =
+        scheduleActiveCell?.row === rowIndex && scheduleActiveCell?.field === field;
+
+      if (isSameActiveCell) {
+        startScheduleSelection(rowIndex, field);
+        return;
+      }
+
+      scheduleSelectingRef.current = false;
+      setScheduleActiveCell({ row: rowIndex, field });
+      setScheduleSelection(null);
+    },
     onMouseEnter: () => extendScheduleSelection(rowIndex, field),
     onMouseUp: finishScheduleSelection,
   });
@@ -2929,7 +2950,13 @@ while (hasMoreScheduleRows) {
       const isDeleteShortcut = event.key === "Delete" || event.key === "Backspace";
 
       if (!isCopyShortcut && !isPasteShortcut && !isDeleteShortcut) return;
-      if (!scheduleSelection || getScheduleSelectionCellCount() <= 0) return;
+
+      const selectionCellCount = getScheduleSelectionCellCount();
+      const hasSelection = Boolean(scheduleSelection && selectionCellCount > 0);
+      const hasActiveCell = Boolean(scheduleActiveCell);
+
+      if ((isCopyShortcut || isDeleteShortcut) && !hasSelection) return;
+      if (isPasteShortcut && !hasSelection && !hasActiveCell) return;
 
       const activeElement = document.activeElement;
 const activeTag = activeElement?.tagName;
@@ -2944,10 +2971,10 @@ if (
 }
 
 const isEditingSingleInput =
-  getScheduleSelectionCellCount() === 1 &&
+  selectionCellCount === 1 &&
   ["INPUT", "SELECT", "TEXTAREA"].includes(activeTag);
 
-if (isEditingSingleInput) return;
+if (isEditingSingleInput && !isPasteShortcut) return;
 
       event.preventDefault();
 
