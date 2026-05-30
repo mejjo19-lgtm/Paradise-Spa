@@ -2646,21 +2646,20 @@ while (hasMoreScheduleRows) {
       moveScheduleActiveCell(rowIndex, field);
     },
     onKeyDown: (event) => handleScheduleCellKeyDown(event, rowIndex, field),
+    onPaste: (event) => {
+      const pasteText = event.clipboardData?.getData?.("text/plain") || "";
+      if (!pasteText) return;
+
+      event.preventDefault();
+      setScheduleActiveCell({ row: rowIndex, field });
+      setTimeout(() => pasteScheduleValuesText(pasteText), 0);
+    },
   });
 
   const getScheduleCellHandlers = (rowIndex, field) => ({
-    onMouseDown: () => {
-      const isSameActiveCell =
-        scheduleActiveCell?.row === rowIndex && scheduleActiveCell?.field === field;
-
-      if (isSameActiveCell) {
-        startScheduleSelection(rowIndex, field);
-        return;
-      }
-
-      scheduleSelectingRef.current = false;
-      setScheduleActiveCell({ row: rowIndex, field });
-      setScheduleSelection(null);
+    onMouseDown: (event) => {
+      if (event.button !== 0) return;
+      startScheduleSelection(rowIndex, field);
     },
     onMouseEnter: () => extendScheduleSelection(rowIndex, field),
     onMouseUp: finishScheduleSelection,
@@ -2862,15 +2861,7 @@ while (hasMoreScheduleRows) {
     }
   };
 
-  const pasteScheduleValuesFromClipboard = async () => {
-    let pasteText = "";
-
-    try {
-      pasteText = await navigator.clipboard.readText();
-    } catch {
-      pasteText = "";
-    }
-
+  const pasteScheduleValuesText = (pasteText) => {
     if (!pasteText) return;
 
     const bounds = getScheduleSelectionBounds();
@@ -2880,7 +2871,7 @@ while (hasMoreScheduleRows) {
 
     if (!Number.isInteger(startRow) || startFieldIndex === -1) return;
 
-    const pastedRows = pasteText
+    const pastedRows = String(pasteText)
       .replace(/\r/g, "")
       .split("\n")
       .filter((line, index, lines) => line.length > 0 || index < lines.length - 1)
@@ -2937,6 +2928,18 @@ while (hasMoreScheduleRows) {
         changedRowIndexes
       );
     }, 0);
+  };
+
+  const pasteScheduleValuesFromClipboard = async () => {
+    let pasteText = "";
+
+    try {
+      pasteText = await navigator.clipboard.readText();
+    } catch {
+      pasteText = "";
+    }
+
+    pasteScheduleValuesText(pasteText);
   };
 
   useEffect(() => {
