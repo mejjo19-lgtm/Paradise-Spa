@@ -66,6 +66,7 @@ const [additionalClientDraft, setAdditionalClientDraft] = useState({
   service: "",
   sendTo: "",
 });
+const [additionalClientPhoneNotice, setAdditionalClientPhoneNotice] = useState("");
 const scheduleSelectingRef = useRef(false);
 const scheduleResizeRef = useRef(null);
 const [welcomeBoardName, setWelcomeBoardName] = useState("");
@@ -2921,15 +2922,24 @@ if (isEditingSingleInput) return;
       service: "",
       sendTo: "",
     });
+    setAdditionalClientPhoneNotice("");
   };
 
-  const openAdditionalClientModal = (rowIndex, editIndex = null) => {
+  const openAdditionalClientModal = (rowIndex, editIndex = null, event = null) => {
     const rows = getRowsForDate(selectedScheduleDate);
     const row = rows[rowIndex] || createEmptyAppointmentRow(timeSlots[rowIndex] || "");
     const extraClients = getAdditionalClientsForRow(row);
     const editClient = Number.isInteger(editIndex) ? extraClients[editIndex] : null;
+    const buttonRect = event?.currentTarget?.getBoundingClientRect?.();
+    const modalWidth = 520;
+    const modalPosition = buttonRect
+      ? {
+          left: Math.max(12, Math.min(buttonRect.left, window.innerWidth - modalWidth - 12)),
+          top: Math.max(12, Math.min(buttonRect.bottom + 8, window.innerHeight - 520)),
+        }
+      : null;
 
-    setAdditionalClientModal({ rowIndex, editIndex });
+    setAdditionalClientModal({ rowIndex, editIndex, position: modalPosition });
 
     if (editClient) {
       setAdditionalClientDraft({
@@ -2939,6 +2949,7 @@ if (isEditingSingleInput) return;
         service: editClient.service || "",
         sendTo: editClient.sendTo || "",
       });
+      setAdditionalClientPhoneNotice("");
     } else {
       resetAdditionalClientDraft();
     }
@@ -2949,7 +2960,32 @@ if (isEditingSingleInput) return;
     resetAdditionalClientDraft();
   };
 
+  const findExistingClientByPhone = (phoneValue) => {
+    const comparablePhone = normalizeDigits(formatSaudiPhoneForStorage(phoneValue));
+
+    if (comparablePhone.length < 9) return null;
+
+    return clients.find(
+      (client) => normalizeDigits(formatSaudiPhoneForStorage(client.phone)) === comparablePhone
+    ) || null;
+  };
+
   const updateAdditionalClientDraft = (field, value) => {
+    if (field === "phone") {
+      const existingClient = findExistingClientByPhone(value);
+
+      setAdditionalClientPhoneNotice(
+        existingClient ? `العميلة موجودة: ${existingClient.name || existingClient.arabic_name || "بدون اسم"}` : ""
+      );
+
+      setAdditionalClientDraft((prev) => ({
+        ...prev,
+        phone: value,
+        name: existingClient ? existingClient.name || existingClient.arabic_name || prev.name : prev.name,
+      }));
+      return;
+    }
+
     setAdditionalClientDraft((prev) => ({
       ...prev,
       [field]: value,
@@ -3352,6 +3388,32 @@ if (isEditingSingleInput) return;
     }
   };
 
+  const getClientCountItemsFromRows = (rows) =>
+    (rows || []).flatMap((row) => {
+      if (row.status === "Cancel") return [];
+
+      const items = [];
+
+      if (row.client || row.number || row.services || row.serviceAmount || row.order) {
+        items.push({ order: row.order });
+      }
+
+      getAdditionalClientsForRow(row).forEach((extraClient) => {
+        if (extraClient.name || extraClient.phone || extraClient.service || extraClient.order) {
+          items.push({ order: extraClient.order });
+        }
+      });
+
+      return items;
+    });
+
+  const isNewClientOrder = (orderValue) => String(orderValue || "").trim() === "1";
+
+  const isLoyalClientOrder = (orderValue) => {
+    const cleanOrder = String(orderValue || "").trim();
+    return !!cleanOrder && cleanOrder !== "1";
+  };
+
   const getAppointmentStats = () => {
     const rows = getRowsForDate(selectedScheduleDate);
     const manual = getManualForDate(selectedScheduleDate);
@@ -3401,10 +3463,9 @@ if (isEditingSingleInput) return;
       0
     );
 
-    const newClients = rows.filter((row) => row.order === "1").length;
-    const loyalClients = rows.filter(
-      (row) => row.order && row.order !== "1"
-    ).length;
+    const clientCountItems = getClientCountItemsFromRows(rows);
+    const newClients = clientCountItems.filter((item) => isNewClientOrder(item.order)).length;
+    const loyalClients = clientCountItems.filter((item) => isLoyalClientOrder(item.order)).length;
 
     const giftsAdded = rows.filter((row) => row.status === "Gift Giver").length;
     const giftsReceived = rows.filter((row) => row.status === "Gift Done").length;
@@ -3625,8 +3686,8 @@ if (isEditingSingleInput) return;
       netProfit: income - variableExpenses - fixedDailyExpenses,
       servicesTotals,
       totalServices,
-      newClients: activeRows.filter((row) => row.order === "1").length,
-      loyalClients: activeRows.filter((row) => row.order && row.order !== "1").length,
+      newClients: getClientCountItemsFromRows(activeRows).filter((item) => isNewClientOrder(item.order)).length,
+      loyalClients: getClientCountItemsFromRows(activeRows).filter((item) => isLoyalClientOrder(item.order)).length,
       giftsAdded: rows.filter((row) => row.status === "Gift Giver").length,
       giftsReceived: rows.filter((row) => row.status === "Gift Done").length,
       freeGifts: rows.filter((row) => row.order === "Free").length,
@@ -7972,10 +8033,7 @@ if (!isLoggedIn) {
                   position: "fixed",
                   inset: 0,
                   zIndex: 9999,
-                  background: "rgba(75,46,31,0.28)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
+                  background: "rgba(75,46,31,0.18)",
                   padding: "16px",
                   boxSizing: "border-box",
                 }}
@@ -7985,7 +8043,11 @@ if (!isLoggedIn) {
               >
                 <div
                   style={{
-                    width: "100%",
+                    position: additionalClientModal.position && window.innerWidth > 700 ? "absolute" : "fixed",
+                    left: additionalClientModal.position && window.innerWidth > 700 ? `${additionalClientModal.position.left}px` : "50%",
+                    top: additionalClientModal.position && window.innerWidth > 700 ? `${additionalClientModal.position.top}px` : "50%",
+                    transform: additionalClientModal.position && window.innerWidth > 700 ? "none" : "translate(-50%, -50%)",
+                    width: "calc(100% - 32px)",
                     maxWidth: "520px",
                     maxHeight: "90vh",
                     overflowY: "auto",
@@ -8085,13 +8147,28 @@ if (!isLoggedIn) {
                       onChange={(event) => updateAdditionalClientDraft("name", event.target.value)}
                       style={{ ...inputStyle, width: "100%", margin: 0, boxSizing: "border-box" }}
                     />
-                    <input
-                      placeholder="رقم الجوال"
-                      value={additionalClientDraft.phone}
-                      onChange={(event) => updateAdditionalClientDraft("phone", event.target.value)}
-                      onBlur={(event) => updateAdditionalClientDraft("phone", formatSaudiPhoneForStorage(event.target.value))}
-                      style={{ ...inputStyle, width: "100%", margin: 0, boxSizing: "border-box" }}
-                    />
+                    <div>
+                      <input
+                        placeholder="رقم الجوال"
+                        value={additionalClientDraft.phone}
+                        onChange={(event) => updateAdditionalClientDraft("phone", event.target.value)}
+                        onBlur={(event) => updateAdditionalClientDraft("phone", formatSaudiPhoneForStorage(event.target.value))}
+                        style={{ ...inputStyle, width: "100%", margin: 0, boxSizing: "border-box" }}
+                      />
+                      {additionalClientPhoneNotice && (
+                        <div
+                          style={{
+                            marginTop: "5px",
+                            fontSize: "11px",
+                            fontWeight: "800",
+                            color: "#2f6b3f",
+                            textAlign: "right",
+                          }}
+                        >
+                          {additionalClientPhoneNotice}
+                        </div>
+                      )}
+                    </div>
                     <input
                       list="orderList"
                       placeholder="عدد الخدمات"
@@ -8378,21 +8455,23 @@ if (!isLoggedIn) {
                           onClick={(event) => {
                             event.preventDefault();
                             event.stopPropagation();
-                            openAdditionalClientModal(index);
+                            openAdditionalClientModal(index, null, event);
                           }}
                           style={{
-                            width: "24px",
-                            minWidth: "24px",
-                            height: "24px",
+                            width: "18px",
+                            minWidth: "18px",
+                            height: "18px",
                             borderRadius: "999px",
-                            border: "1px solid #d6c7b8",
-                            background: "linear-gradient(135deg, #4b2e1f, #7a5a43)",
+                            border: "1px solid rgba(122,90,67,0.55)",
+                            background: "#7a5a43",
                             color: "white",
                             cursor: "pointer",
-                            fontWeight: "900",
-                            fontSize: "15px",
-                            lineHeight: "20px",
+                            fontWeight: "800",
+                            fontSize: "12px",
+                            lineHeight: "16px",
                             padding: 0,
+                            opacity: 0.9,
+                            boxShadow: "0 1px 3px rgba(75,46,31,0.18)",
                           }}
                         >
                           +
