@@ -1119,7 +1119,7 @@ useEffect(() => {
     event: "*",
     schema: "public",
     table: "daily_reports",
-    
+    filter: `report_date=eq.${selectedScheduleDate}`,
   },
       (payload) => {
         if (payload.eventType === "DELETE") {
@@ -1216,27 +1216,13 @@ useEffect(() => {
 
 useEffect(() => {
   if (!isLoggedIn) return;
+  if (screen !== "incomeExpenses") return;
 
-  if (screen === "incomeExpenses") {
-    loadIncomeExpenseReportDataRange(
-      incomeExpensesFromMonth,
-      incomeExpensesToMonth
-    );
-  }
-
-  if (screen === "finance") {
-    loadIncomeExpenseReportDataRange(
-      selectedFinanceMonth,
-      selectedFinanceMonth
-    );
-  }
-}, [
-  isLoggedIn,
-  screen,
-  incomeExpensesFromMonth,
-  incomeExpensesToMonth,
-  selectedFinanceMonth,
-]);
+  loadIncomeExpenseReportDataRange(
+    incomeExpensesFromMonth,
+    incomeExpensesToMonth
+  );
+}, [isLoggedIn, screen, incomeExpensesFromMonth, incomeExpensesToMonth]);
 
   const [editingId, setEditingId] = useState(null);
   const [editedName, setEditedName] = useState("");
