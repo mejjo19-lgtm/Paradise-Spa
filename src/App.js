@@ -1218,13 +1218,27 @@ useEffect(() => {
 
 useEffect(() => {
   if (!isLoggedIn) return;
-  if (screen !== "incomeExpenses") return;
 
-  loadIncomeExpenseReportDataRange(
-    incomeExpensesFromMonth,
-    incomeExpensesToMonth
-  );
-}, [isLoggedIn, screen, incomeExpensesFromMonth, incomeExpensesToMonth]);
+  if (screen === "incomeExpenses") {
+    loadIncomeExpenseReportDataRange(
+      incomeExpensesFromMonth,
+      incomeExpensesToMonth
+    );
+  }
+
+  if (screen === "finance") {
+    loadIncomeExpenseReportDataRange(
+      selectedFinanceMonth,
+      selectedFinanceMonth
+    );
+  }
+}, [
+  isLoggedIn,
+  screen,
+  incomeExpensesFromMonth,
+  incomeExpensesToMonth,
+  selectedFinanceMonth,
+]);
 
   const [editingId, setEditingId] = useState(null);
   const [editedName, setEditedName] = useState("");
