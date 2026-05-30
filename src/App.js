@@ -762,7 +762,7 @@ function fetchSharedClientLists() {
     const savedDaily = localStorage.getItem("paradise-daily-manual-data");
     return savedDaily ? JSON.parse(savedDaily) : {};
   });
-const [financeRefreshKey, setFinanceRefreshKey] = useState(0);
+
   const [scheduleSettings, setScheduleSettings] = useState(() => {
     const savedSettings = localStorage.getItem("paradise-schedule-settings");
     return savedSettings ? JSON.parse(savedSettings) : {};
@@ -1104,8 +1104,6 @@ useEffect(() => {
     "paradise-daily-manual-data",
     JSON.stringify(dailyManualData)
   );
-
-  setFinanceRefreshKey((prev) => prev + 1);
 }, [dailyManualData]);
 
 useEffect(() => {
@@ -1121,7 +1119,7 @@ useEffect(() => {
     event: "*",
     schema: "public",
     table: "daily_reports",
-    
+    filter: `report_date=eq.${selectedScheduleDate}`,
   },
       (payload) => {
         if (payload.eventType === "DELETE") {
@@ -1218,27 +1216,13 @@ useEffect(() => {
 
 useEffect(() => {
   if (!isLoggedIn) return;
+  if (screen !== "incomeExpenses") return;
 
-  if (screen === "incomeExpenses") {
-    loadIncomeExpenseReportDataRange(
-      incomeExpensesFromMonth,
-      incomeExpensesToMonth
-    );
-  }
-
-  if (screen === "finance") {
-    loadIncomeExpenseReportDataRange(
-      selectedFinanceMonth,
-      selectedFinanceMonth
-    );
-  }
-}, [
-  isLoggedIn,
-  screen,
-  incomeExpensesFromMonth,
-  incomeExpensesToMonth,
-  selectedFinanceMonth,
-]);
+  loadIncomeExpenseReportDataRange(
+    incomeExpensesFromMonth,
+    incomeExpensesToMonth
+  );
+}, [isLoggedIn, screen, incomeExpensesFromMonth, incomeExpensesToMonth]);
 
   const [editingId, setEditingId] = useState(null);
   const [editedName, setEditedName] = useState("");
@@ -2277,7 +2261,6 @@ while (hasMoreScheduleRows) {
 
     const updateManualForDate = (field, value) => {
   dailyManualLastEditRef.current = Date.now();
-  
 
   setDailyManualData((prev) => {
     const nextReport = {
@@ -2285,7 +2268,7 @@ while (hasMoreScheduleRows) {
       [field]: value,
     };
 
-    saveDailyReportForDate(selectedScheduleDate, nextReport);
+    queueDailyReportSave(selectedScheduleDate, nextReport);
 
     return {
       ...prev,
@@ -3423,7 +3406,7 @@ if (isEditingSingleInput) return;
     };
   };
 
-  const getFinanceMonthStats = (monthKey, refreshKey = 0) => {
+  const getFinanceMonthStats = (monthKey) => {
     const monthlySettings = getFinanceMonthSettings(monthKey);
     const monthDates = getFinanceMonthDates(monthKey);
     const currentMonthKey = currentDate.slice(0, 7);
@@ -8602,10 +8585,7 @@ if (screen === "finance") {
     const activeFinanceMonth = financeMonths.includes(selectedFinanceMonth)
       ? selectedFinanceMonth
       : financeMonths[financeMonths.length - 1] || "2026-05";
-    const financeStats = getFinanceMonthStats(
-  activeFinanceMonth,
-  financeRefreshKey
-);
+    const financeStats = getFinanceMonthStats(activeFinanceMonth);
     const financeCardStyle = {
       background: "rgba(255,255,255,0.88)",
       border: "1px solid rgba(214,199,184,0.88)",
