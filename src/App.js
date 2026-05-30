@@ -2934,7 +2934,7 @@ if (isEditingSingleInput) return;
     const modalWidth = 520;
     const modalPosition = buttonRect
       ? {
-          left: Math.max(12, Math.min(buttonRect.left, window.innerWidth - modalWidth - 12)),
+          left: Math.max(12, Math.min(buttonRect.right - modalWidth, window.innerWidth - modalWidth - 12)),
           top: Math.max(12, Math.min(buttonRect.bottom + 8, window.innerHeight - 520)),
         }
       : null;
@@ -2982,6 +2982,7 @@ if (isEditingSingleInput) return;
         ...prev,
         phone: value,
         name: existingClient ? existingClient.name || existingClient.arabic_name || prev.name : prev.name,
+        order: existingClient ? String(getVisitLabel(existingClient.visits || 0)) : prev.order,
       }));
       return;
     }
