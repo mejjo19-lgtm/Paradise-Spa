@@ -5060,7 +5060,7 @@ const sendWhatsApp = async (client) => {
               }}
             >
               <div style={{ fontWeight: "900", color: "#4b2e1f", marginBottom: "4px" }}>
-                عميلات نفس البيت:
+                  عملاء نفس المنزل:
               </div>
               {getAdditionalClientsForRow(appointment).map((extraClient, extraIndex) => (
                 <div
@@ -8177,7 +8177,7 @@ if (!isLoggedIn) {
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "center", marginBottom: "14px" }}>
                     <div>
-                      <h3 style={{ margin: 0, fontSize: "20px" }}>عميلات نفس البيت</h3>
+                      <h3 style={{ margin: 0, fontSize: "20px" }}>عملاء نفس المنزل </h3>
                       <div style={{ fontSize: "13px", color: "#7a5a43", marginTop: "4px", fontWeight: "700" }}>
                         العميلة الأساسية: {modalRow.client || "-"}
                       </div>
