@@ -7001,6 +7001,53 @@ const welcomeBoardNameStyle = {
               </button>
             ))}
             </div>
+            <div
+  style={{
+    width: "100%",
+    marginTop: "15px",
+    padding: "14px",
+    borderRadius: "18px",
+    background: "#f7efe6",
+    border: "1px solid #d6c7b8",
+    textAlign: "center",
+    boxSizing: "border-box",
+  }}
+>
+  <div
+    style={{
+      fontWeight: "700",
+      color: "#4b2e1f",
+      fontSize: "15px",
+      marginBottom: "8px",
+    }}
+  >
+    {loggedInUser || "User"}
+  </div>
+
+  <div
+    style={{
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "center",
+      gap: "6px",
+      color: "#4caf50",
+      fontWeight: "600",
+      fontSize: "13px",
+    }}
+  >
+    <span
+      style={{
+        width: "10px",
+        height: "10px",
+        borderRadius: "50%",
+        background: "#4caf50",
+        boxShadow: "0 0 10px #4caf50",
+        display: "inline-block",
+      }}
+    />
+    Online
+  </div>
+</div>
           </aside>
         )}
 {showGlobalLayout && showGlobalClientForm && (
@@ -7460,49 +7507,7 @@ if (!isLoggedIn) {
           >
             الدخل والمصاريف
           </button>
-          <div
-  style={{
-    width: "85%",
-    margin: "18px auto 0 auto",
-    padding: "14px 16px",
-    borderRadius: "22px",
-    background: "linear-gradient(135deg, #f7efe6, #fffaf5)",
-    border: "1px solid #d6c7b8",
-    boxShadow: "0 10px 25px rgba(75, 46, 31, 0.10)",
-    color: "#4b2e1f",
-    fontSize: "15px",
-    fontWeight: "700",
-    textAlign: "center",
-  }}
->
-  <div style={{ marginBottom: "8px" }}>
-    {loggedInUser || "User"}
-  </div>
-
-  <div
-    style={{
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: "7px",
-      fontSize: "13px",
-      color: "#3f7d3b",
-      fontWeight: "700",
-    }}
-  >
-    <span
-      style={{
-        width: "10px",
-        height: "10px",
-        borderRadius: "50%",
-        backgroundColor: "#4caf50",
-        boxShadow: "0 0 10px rgba(76, 175, 80, 0.9)",
-        display: "inline-block",
-      }}
-    />
-    Online
-  </div>
-</div>
+          
         </div>
       </div>
     );
