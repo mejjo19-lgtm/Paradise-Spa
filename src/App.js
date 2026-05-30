@@ -1119,7 +1119,7 @@ useEffect(() => {
     event: "*",
     schema: "public",
     table: "daily_reports",
-    filter: `report_date=eq.${selectedScheduleDate}`,
+  
   },
       (payload) => {
         if (payload.eventType === "DELETE") {
@@ -1216,29 +1216,13 @@ useEffect(() => {
 
 useEffect(() => {
   if (!isLoggedIn) return;
+  if (screen !== "incomeExpenses") return;
 
-  if (screen === "incomeExpenses") {
-    loadIncomeExpenseReportDataRange(
-      incomeExpensesFromMonth,
-      incomeExpensesToMonth,
-      true
-    );
-  }
-
-  if (screen === "finance") {
-    loadIncomeExpenseReportDataRange(
-      selectedFinanceMonth,
-      selectedFinanceMonth,
-      true
-    );
-  }
-}, [
-  isLoggedIn,
-  screen,
-  incomeExpensesFromMonth,
-  incomeExpensesToMonth,
-  selectedFinanceMonth,
-]);
+  loadIncomeExpenseReportDataRange(
+    incomeExpensesFromMonth,
+    incomeExpensesToMonth
+  );
+}, [isLoggedIn, screen, incomeExpensesFromMonth, incomeExpensesToMonth]);
 
   const [editingId, setEditingId] = useState(null);
   const [editedName, setEditedName] = useState("");
@@ -1925,7 +1909,7 @@ const getMonthEndDate = (monthKey) => {
   return new Date(year, month, 0).toISOString().slice(0, 10);
 };
 
-const loadIncomeExpenseReportDataRange = async (fromMonth, toMonth, forceReload = false) => {
+const loadIncomeExpenseReportDataRange = async (fromMonth, toMonth) => {
   if (!fromMonth || !toMonth) return;
 
   const rangeKey = `${fromMonth}_${toMonth}`;
