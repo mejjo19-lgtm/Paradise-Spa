@@ -2646,14 +2646,6 @@ while (hasMoreScheduleRows) {
       moveScheduleActiveCell(rowIndex, field);
     },
     onKeyDown: (event) => handleScheduleCellKeyDown(event, rowIndex, field),
-    onPaste: (event) => {
-      const pasteText = event.clipboardData?.getData?.("text/plain") || "";
-      if (!pasteText) return;
-
-      event.preventDefault();
-      setScheduleActiveCell({ row: rowIndex, field });
-      setTimeout(() => pasteScheduleValuesText(pasteText), 0);
-    },
   });
 
   const getScheduleCellHandlers = (rowIndex, field) => ({
@@ -2825,172 +2817,40 @@ while (hasMoreScheduleRows) {
     }, 0);
   };
 
-  const getScheduleSelectedValuesText = () => {
-    const bounds = getScheduleSelectionBounds();
-    if (!bounds) return "";
-
-    const rows = getRowsForDate(selectedScheduleDate);
-    const selectedFields = scheduleSelectableFields.slice(bounds.minField, bounds.maxField + 1);
-
-    return rows
-      .slice(bounds.minRow, bounds.maxRow + 1)
-      .map((row) =>
-        selectedFields
-          .map((field) => String(row?.[field] ?? ""))
-          .join("\t")
-      )
-      .join("\n");
-  };
-
-  const copySelectedScheduleCells = async () => {
-    const copyText = getScheduleSelectedValuesText();
-    if (!copyText) return;
-
-    try {
-      await navigator.clipboard.writeText(copyText);
-    } catch {
-      const textArea = document.createElement("textarea");
-      textArea.value = copyText;
-      textArea.style.position = "fixed";
-      textArea.style.opacity = "0";
-      document.body.appendChild(textArea);
-      textArea.focus();
-      textArea.select();
-      document.execCommand("copy");
-      document.body.removeChild(textArea);
-    }
-  };
-
-  const pasteScheduleValuesText = (pasteText) => {
-    if (!pasteText) return;
-
-    const bounds = getScheduleSelectionBounds();
-    const startRow = scheduleActiveCell?.row ?? bounds?.minRow;
-    const startField = scheduleActiveCell?.field ?? scheduleSelectableFields[bounds?.minField ?? 0];
-    const startFieldIndex = getScheduleFieldIndex(startField);
-
-    if (!Number.isInteger(startRow) || startFieldIndex === -1) return;
-
-    const pastedRows = String(pasteText)
-      .replace(/\r/g, "")
-      .split("\n")
-      .filter((line, index, lines) => line.length > 0 || index < lines.length - 1)
-      .map((line) => line.split("\t"));
-
-    if (pastedRows.length === 0) return;
-
-    scheduleLastEditRef.current = Date.now();
-
-    const changedRowIndexes = [];
-    let nextRowsSnapshot = [];
-    let nextStylesSnapshot = {};
-
-    setScheduleData((prev) => {
-      const currentDayData = prev[selectedScheduleDate] || {};
-      const currentRows = currentDayData.rows || timeSlots.map(createEmptyAppointmentRow);
-      const rows = currentRows.map((row) => ({ ...row }));
-
-      pastedRows.forEach((pastedRow, pastedRowOffset) => {
-        const rowIndex = startRow + pastedRowOffset;
-        if (rowIndex < 0 || rowIndex >= rows.length) return;
-
-        if (!changedRowIndexes.includes(rowIndex)) {
-          changedRowIndexes.push(rowIndex);
-        }
-
-        pastedRow.forEach((cellValue, fieldOffset) => {
-          const field = scheduleSelectableFields[startFieldIndex + fieldOffset];
-          if (!field) return;
-
-          rows[rowIndex][field] = field === "frame"
-            ? ["true", "1", "yes", "✓", "صح"].includes(String(cellValue).trim().toLowerCase())
-            : cellValue;
-        });
-      });
-
-      nextRowsSnapshot = rows;
-      nextStylesSnapshot = currentDayData.cellStyles || {};
-
-      return {
-        ...prev,
-        [selectedScheduleDate]: {
-          ...currentDayData,
-          rows,
-        },
-      };
-    });
-
-    setTimeout(() => {
-      persistScheduleRowsForDate(
-        selectedScheduleDate,
-        nextRowsSnapshot,
-        nextStylesSnapshot,
-        changedRowIndexes
-      );
-    }, 0);
-  };
-
-  const pasteScheduleValuesFromClipboard = async () => {
-    let pasteText = "";
-
-    try {
-      pasteText = await navigator.clipboard.readText();
-    } catch {
-      pasteText = "";
-    }
-
-    pasteScheduleValuesText(pasteText);
-  };
-
   useEffect(() => {
     const stopSelection = () => {
       scheduleSelectingRef.current = false;
     };
 
-    const handleScheduleTableKey = async (event) => {
-      const isCopyShortcut = (event.ctrlKey || event.metaKey) && String(event.key || "").toLowerCase() === "c";
-      const isPasteShortcut = (event.ctrlKey || event.metaKey) && String(event.key || "").toLowerCase() === "v";
+    const handleScheduleTableKey = (event) => {
       const isDeleteShortcut = event.key === "Delete" || event.key === "Backspace";
 
-      if (!isCopyShortcut && !isPasteShortcut && !isDeleteShortcut) return;
+      if (!isDeleteShortcut) return;
 
       const selectionCellCount = getScheduleSelectionCellCount();
       const hasSelection = Boolean(scheduleSelection && selectionCellCount > 0);
-      const hasActiveCell = Boolean(scheduleActiveCell);
 
-      if ((isCopyShortcut || isDeleteShortcut) && !hasSelection) return;
-      if (isPasteShortcut && !hasSelection && !hasActiveCell) return;
+      if (!hasSelection) return;
 
       const activeElement = document.activeElement;
-const activeTag = activeElement?.tagName;
-const activeScheduleCell =
-  activeElement?.getAttribute?.("data-schedule-cell") || "";
+      const activeTag = activeElement?.tagName;
+      const activeScheduleCell =
+        activeElement?.getAttribute?.("data-schedule-cell") || "";
 
-if (
-  ["INPUT", "SELECT", "TEXTAREA"].includes(activeTag) &&
-  !activeScheduleCell
-) {
-  return;
-}
+      if (
+        ["INPUT", "SELECT", "TEXTAREA"].includes(activeTag) &&
+        !activeScheduleCell
+      ) {
+        return;
+      }
 
-const isEditingSingleInput =
-  selectionCellCount === 1 &&
-  ["INPUT", "SELECT", "TEXTAREA"].includes(activeTag);
+      const isEditingSingleInput =
+        selectionCellCount === 1 &&
+        ["INPUT", "SELECT", "TEXTAREA"].includes(activeTag);
 
-if (isEditingSingleInput && !isPasteShortcut) return;
+      if (isEditingSingleInput) return;
 
       event.preventDefault();
-
-      if (isCopyShortcut) {
-        await copySelectedScheduleCells();
-        return;
-      }
-
-      if (isPasteShortcut) {
-        await pasteScheduleValuesFromClipboard();
-        return;
-      }
-
       clearSelectedScheduleCells();
     };
 
