@@ -2880,20 +2880,23 @@ while (hasMoreScheduleRows) {
       const currentRows = currentDayData.rows || timeSlots.map(createEmptyAppointmentRow);
       const rowToCheck = currentRows[rowIndex] || {};
       const numberToCheck = phoneValue ?? rowToCheck.number ?? "";
-      const matchedClient = findClientByExactPhone(numberToCheck);
-
-      if (!matchedClient) return prev;
+      const formattedNumber = formatSaudiPhoneForStorage(numberToCheck);
+      const matchedClient = findClientByExactPhone(formattedNumber || numberToCheck);
 
       const rows = currentRows.map((row, index) => {
         if (index !== rowIndex) return row;
 
         rowToSave = {
           ...row,
-          number: numberToCheck,
-          client: matchedClient.name,
-          district: matchedClient.address || "",
-          frame: Boolean(matchedClient.frame),
-          order: String(getVisitLabel(matchedClient.visits)),
+          number: formattedNumber,
+          ...(matchedClient
+            ? {
+                client: matchedClient.name,
+                district: matchedClient.address || "",
+                frame: Boolean(matchedClient.frame),
+                order: String(getVisitLabel(matchedClient.visits)),
+              }
+            : {}),
         };
 
         return rowToSave;
@@ -3078,7 +3081,7 @@ while (hasMoreScheduleRows) {
           visits: 0,
           frame: false,
           blacklist: false,
-          notes: service,
+          notes: "",
           total_paid: 0,
           service_history: [],
         },
@@ -3252,7 +3255,7 @@ while (hasMoreScheduleRows) {
           visits: 0,
           frame: Boolean(row.frame),
           blacklist: false,
-          notes: service,
+          notes: "",
           total_paid: 0,
           service_history: [],
         },
@@ -4415,6 +4418,7 @@ const sendWhatsApp = async (client) => {
         serviceHistory.push({
           date,
           therapist: row.therapist || "-",
+          services: row.services || "-",
           serviceTime: row.serviceTime || "",
           clientBy: row.clientBy || "",
         });
@@ -11454,7 +11458,7 @@ if (screen === "availableAppointments") {
                     key={`${service.date}-${service.serviceTime}-${index}`}
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "90px 1fr 120px",
+                      gridTemplateColumns: "120px 90px 120px 1fr",
                       gap: "10px",
                       alignItems: "center",
                       backgroundColor: "white",
@@ -11462,8 +11466,19 @@ if (screen === "availableAppointments") {
                       borderRadius: "16px",
                       padding: "11px 12px",
                       color: "#4b2e1f",
+                      direction: "rtl",
                     }}
                   >
+                    <span
+                      style={{
+                        color: "#8a7a68",
+                        fontSize: "13px",
+                        textAlign: "right",
+                        direction: "ltr",
+                      }}
+                    >
+                      Date: {service.date}
+                    </span>
                     <strong>Service {index + 1}</strong>
                     <span
                       style={{
@@ -11471,17 +11486,15 @@ if (screen === "availableAppointments") {
                         textAlign: "center",
                       }}
                     >
-                      {service.therapist}
+                      Therapist: {service.therapist}
                     </span>
                     <span
                       style={{
-                        color: "#8a7a68",
-                        fontSize: "13px",
-                        textAlign: "left",
-                        direction: "ltr",
+                        fontWeight: "bold",
+                        textAlign: "right",
                       }}
                     >
-                      {service.date}
+                      Service: {service.services}
                     </span>
                   </div>
                 ))}
