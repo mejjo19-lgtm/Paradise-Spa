@@ -690,6 +690,7 @@ function fetchSharedClientLists() {
   const [appointmentStaffSelections, setAppointmentStaffSelections] = useState({});
   const dashboardSearchRef = useRef(null);
   const [showForm, setShowForm] = useState(false);
+  const [showGlobalClientForm, setShowGlobalClientForm] = useState(false);
 
   const getCurrentLocalDate = () => {
     const now = new Date();
@@ -715,6 +716,7 @@ function fetchSharedClientLists() {
   const [giftToName, setGiftToName] = useState("");
   const [giftToPhone, setGiftToPhone] = useState("");
   const [giftService, setGiftService] = useState("");
+  const [giftDate, setGiftDate] = useState(() => getCurrentLocalDate());
   const [giftItems, setGiftItems] = useState({
     balloon: false,
     flowers: false,
@@ -1345,6 +1347,7 @@ if (insertedClient) {
   setPhone("");
   setAddress("");
   setShowForm(false);
+setShowGlobalClientForm(false);
 }
   };
 
@@ -4336,6 +4339,7 @@ const sendWhatsApp = async (client) => {
         from_phone: formatSaudiPhoneForStorage(giftFromPhone),
         to_name: giftToName,
         to_phone: formatSaudiPhoneForStorage(giftToPhone),
+        gift_date: giftDate || getCurrentLocalDate(),
         service: giftService,
         items: giftItems,
       },
@@ -4351,6 +4355,7 @@ const sendWhatsApp = async (client) => {
     setGiftFromPhone("");
     setGiftToName("");
     setGiftToPhone("");
+    setGiftDate(getCurrentLocalDate());
     setGiftService("");
     setGiftItems({
       balloon: false,
@@ -6998,7 +7003,93 @@ const welcomeBoardNameStyle = {
             </div>
           </aside>
         )}
+{showGlobalLayout && showGlobalClientForm && (
+  <div
+    style={{
+      position: "fixed",
+      inset: 0,
+      background: "rgba(46,31,23,0.28)",
+      zIndex: 99999,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "18px",
+      boxSizing: "border-box",
+    }}
+  >
+    <div
+      style={{
+        background: "linear-gradient(145deg, #fffaf3, #f3e8df)",
+        border: "1px solid rgba(214,199,184,0.95)",
+        borderRadius: "28px",
+        padding: "22px",
+        width: "min(520px, 100%)",
+        boxShadow: "0 28px 70px rgba(46,31,23,0.28)",
+        direction: "ltr",
+      }}
+    >
+      <h3
+        style={{
+          margin: "0 0 16px",
+          color: "#4b2e1f",
+          textAlign: "center",
+          fontSize: "22px",
+        }}
+      >
+        Add Client
+      </h3>
 
+      <input
+        placeholder="Client Name"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        style={inputStyle}
+      />
+
+      <input
+        placeholder="Phone Number"
+        value={phone}
+        onChange={(e) => setPhone(e.target.value)}
+        onBlur={() => setPhone(formatSaudiPhoneForStorage(phone))}
+        style={inputStyle}
+      />
+
+      <input
+        placeholder="Address (Optional)"
+        value={address}
+        onChange={(e) => setAddress(e.target.value)}
+        style={inputStyle}
+      />
+
+      <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
+        <button
+          onClick={addClient}
+          style={{
+            ...buttonStyle,
+            backgroundColor: "#4b2e1f",
+            color: "white",
+            width: "160px",
+          }}
+        >
+          Save Client
+        </button>
+
+        <button
+          onClick={() => setShowGlobalClientForm(false)}
+          style={{
+            ...buttonStyle,
+            backgroundColor: "#faf7f2",
+            color: "#4b2e1f",
+            border: "1px solid #d6c7b8",
+            width: "120px",
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+)}
         {showGlobalLayout && (
           <div
             className="paradise-global-topbar"
@@ -7021,7 +7112,27 @@ const welcomeBoardNameStyle = {
             }}
           >
             {globalSearchBox(true)}
-
+<button
+  onClick={() => setShowGlobalClientForm(true)}
+  style={{
+    ...buttonStyle,
+    height: "44px",
+    minWidth: "150px",
+    padding: "0 18px",
+    margin: 0,
+    background: "linear-gradient(135deg, #fffaf3, #f3e8df)",
+    color: "#4b2e1f",
+    border: "1px solid rgba(214,199,184,0.95)",
+    borderRadius: "20px",
+    boxShadow: "0 12px 28px rgba(75,46,31,0.10)",
+    fontSize: "14px",
+    fontWeight: "900",
+    pointerEvents: "auto",
+    whiteSpace: "nowrap",
+  }}
+>
+  + Add Client
+</button>
             <div
               style={{
                 background: "linear-gradient(135deg, #fffaf3, #f3e8df)",
@@ -7349,6 +7460,49 @@ if (!isLoggedIn) {
           >
             الدخل والمصاريف
           </button>
+          <div
+  style={{
+    width: "85%",
+    margin: "18px auto 0 auto",
+    padding: "14px 16px",
+    borderRadius: "22px",
+    background: "linear-gradient(135deg, #f7efe6, #fffaf5)",
+    border: "1px solid #d6c7b8",
+    boxShadow: "0 10px 25px rgba(75, 46, 31, 0.10)",
+    color: "#4b2e1f",
+    fontSize: "15px",
+    fontWeight: "700",
+    textAlign: "center",
+  }}
+>
+  <div style={{ marginBottom: "8px" }}>
+    {loggedInUser || "User"}
+  </div>
+
+  <div
+    style={{
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: "7px",
+      fontSize: "13px",
+      color: "#3f7d3b",
+      fontWeight: "700",
+    }}
+  >
+    <span
+      style={{
+        width: "10px",
+        height: "10px",
+        borderRadius: "50%",
+        backgroundColor: "#4caf50",
+        boxShadow: "0 0 10px rgba(76, 175, 80, 0.9)",
+        display: "inline-block",
+      }}
+    />
+    Online
+  </div>
+</div>
         </div>
       </div>
     );
@@ -8552,7 +8706,7 @@ if (!isLoggedIn) {
                     <td style={{ padding: "14px" }}>
                       <button
                         onClick={() => deleteReferral(referral)}
-                        style={{ ...buttonStyle, backgroundColor: "#c94b4b", color: "white", padding: "9px 16px" }}
+                        style={{ ...buttonStyle, backgroundColor: "#c3b4a1", color: "white", padding: "9px 16px" }}
                       >
                         Delete
                       </button>
@@ -9364,7 +9518,34 @@ if (screen === "finance") {
                 flexWrap: "wrap",
                 margin: "2px 0 12px",
               }}
+              
             >
+             <div
+  style={{
+    width: "100%",
+    marginBottom: "14px",
+  }}
+>
+  <input
+    type="date"
+    value={giftDate}
+    onChange={(e) => setGiftDate(e.target.value)}
+    style={{
+  width: "63%",
+  padding: "16px",
+  borderRadius: "20px",
+  justifyContent: "center",
+display: "flex",
+marginLeft: "auto",
+marginRight: "auto",
+  border: "1px solid #d8c7b8",
+  background: "#faf7f2",
+  color: "#4b2e1f",
+  fontSize: "15px",
+  boxSizing: "border-box",
+}}
+  />
+</div>
               {[
                 ["balloon", "بالون"],
                 ["flowers", "ورد"],
@@ -9553,7 +9734,7 @@ if (screen === "finance") {
                       )}
                     </td>
                     <td style={{ padding: "14px" }}>
-                      <button onClick={() => deleteGiftClient(gift.id)} style={{ ...buttonStyle, backgroundColor: "#c94b4b", color: "white", padding: "9px 16px" }}>Delete</button>
+                      <button onClick={() => deleteGiftClient(gift.id)} style={{ ...buttonStyle, backgroundColor: "#c3b4a1", color: "white", padding: "9px 16px" }}>Delete</button>
                     </td>
                   </tr>
                 );
@@ -9864,7 +10045,7 @@ if (screen === "potentialClients") {
                     <td style={{ padding: "14px" }}>
                       <button
                         onClick={() => deletePotentialClient(client.id)}
-                        style={{ ...buttonStyle, backgroundColor: "#c94b4b", color: "white", padding: "9px 16px" }}
+                        style={{ ...buttonStyle, backgroundColor: "#c3b4a1", color: "white", padding: "9px 16px" }}
                       >
                         Delete
                       </button>
@@ -11065,6 +11246,7 @@ if (screen === "availableAppointments") {
                   <th style={{ padding: "14px" }}>عدد الخدمات</th>
                   <th style={{ padding: "14px" }}>اللوحة الترحيبية</th>
                   <th style={{ padding: "14px" }}>تعديل</th>
+                  <th style={{ padding: "14px" }}>حذف</th>
                 </tr>
               </thead>
 
@@ -11218,6 +11400,23 @@ if (screen === "availableAppointments") {
                             تعديل
                           </button>
                         </td>
+                        <td style={{ padding: "14px" }}>
+  <button
+    onClick={(e) => {
+      e.stopPropagation();
+      deleteClient(c);
+    }}
+    style={{
+      ...buttonStyle,
+      backgroundColor: "#faf7f2",
+      color: "#4b2e1f",
+      border: "1px solid #d6c7b8",
+      padding: "8px 14px",
+    }}
+  >
+    حذف
+  </button>
+</td>
                       </>
                     )}
                   </tr>
