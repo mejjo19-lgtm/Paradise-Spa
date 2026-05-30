@@ -2152,7 +2152,7 @@ while (hasMoreScheduleRows) {
   event: "*",
   schema: "public",
   table: "schedule_rows",
-  filter: `schedule_date=eq.${selectedScheduleDate}`,
+  
 },
         (payload) => {
           if (payload.eventType === "DELETE") {
