@@ -58,6 +58,14 @@ const isSharedDataInputFocused = () => {
 };
 const [scheduleSelection, setScheduleSelection] = useState(null);
 const [scheduleActiveCell, setScheduleActiveCell] = useState(null);
+const [additionalClientModal, setAdditionalClientModal] = useState(null);
+const [additionalClientDraft, setAdditionalClientDraft] = useState({
+  name: "",
+  phone: "",
+  order: "",
+  service: "",
+  sendTo: "",
+});
 const scheduleSelectingRef = useRef(false);
 const scheduleResizeRef = useRef(null);
 const [welcomeBoardName, setWelcomeBoardName] = useState("");
@@ -1845,6 +1853,7 @@ if (error) {
     cashReceivedBy: "",
     status: "",
     sendTo: "",
+    additionalClients: [],
     note: "",
     giftFrom: "",
     giftPhone: "",
@@ -2897,6 +2906,220 @@ if (isEditingSingleInput) return;
     }
 
     fetchGiftClients();
+  };
+
+  const getAdditionalClientsForRow = (row) =>
+    Array.isArray(row?.additionalClients) ? row.additionalClients : [];
+
+  const getAdditionalClientCount = (row) => getAdditionalClientsForRow(row).length;
+
+  const resetAdditionalClientDraft = () => {
+    setAdditionalClientDraft({
+      name: "",
+      phone: "",
+      order: "",
+      service: "",
+      sendTo: "",
+    });
+  };
+
+  const openAdditionalClientModal = (rowIndex, editIndex = null) => {
+    const rows = getRowsForDate(selectedScheduleDate);
+    const row = rows[rowIndex] || createEmptyAppointmentRow(timeSlots[rowIndex] || "");
+    const extraClients = getAdditionalClientsForRow(row);
+    const editClient = Number.isInteger(editIndex) ? extraClients[editIndex] : null;
+
+    setAdditionalClientModal({ rowIndex, editIndex });
+
+    if (editClient) {
+      setAdditionalClientDraft({
+        name: editClient.name || "",
+        phone: editClient.phone || "",
+        order: editClient.order || "",
+        service: editClient.service || "",
+        sendTo: editClient.sendTo || "",
+      });
+    } else {
+      resetAdditionalClientDraft();
+    }
+  };
+
+  const closeAdditionalClientModal = () => {
+    setAdditionalClientModal(null);
+    resetAdditionalClientDraft();
+  };
+
+  const updateAdditionalClientDraft = (field, value) => {
+    setAdditionalClientDraft((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const copyAdditionalClientToSelectedList = async (baseRow, extraClient) => {
+    const targetList = extraClient?.sendTo || "";
+    if (!targetList) return;
+
+    const clientName = String(extraClient.name || "").trim();
+    const clientPhone = formatSaudiPhoneForStorage(extraClient.phone || "");
+    const district = String(baseRow.district || "").trim();
+    const service = String(extraClient.service || "").trim();
+    const giftFromNameValue = String(baseRow.giftFrom || "").trim();
+    const giftFromPhoneValue = formatSaudiPhoneForStorage(baseRow.giftPhone || "");
+
+    if (!clientName && !clientPhone && !service) return;
+
+    if (targetList === "عملائنا") {
+      const { data: insertedClient, error } = await supabase.from("clients").insert([
+        {
+          name: clientName,
+          arabic_name: clientName,
+          phone: clientPhone,
+          address: district,
+          visits: 0,
+          frame: false,
+          blacklist: false,
+          notes: service,
+          total_paid: 0,
+          service_history: [],
+        },
+      ]).select("id,name,arabic_name,phone,address,visits,frame,blacklist").single();
+
+      if (error) {
+        console.log("Additional client Send To clients copy error:", error);
+        return;
+      }
+
+      if (insertedClient) {
+        const nextClient = normalizeClientRecord(insertedClient);
+        setClients((prev) => {
+          const exists = prev.some((client) => String(client.id) === String(nextClient.id));
+          const nextClients = exists
+            ? prev.map((client) => String(client.id) === String(nextClient.id) ? nextClient : client)
+            : [nextClient, ...prev];
+
+          return nextClients.sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
+        });
+      }
+      return;
+    }
+
+    if (targetList === "عملاء الإهداء") {
+      const giftRecord = {
+        gift_date: selectedScheduleDate,
+        from_name: giftFromNameValue,
+        from_phone: giftFromPhoneValue,
+        to_name: clientName,
+        to_phone: clientPhone,
+        service,
+        items: {
+          balloon: false,
+          flowers: false,
+          cake: false,
+          giftTaken: false,
+          giftDate: selectedScheduleDate,
+        },
+      };
+
+      const { error } = await supabase.from("gift_clients").insert([giftRecord]);
+
+      if (error) {
+        console.log("Additional client Send To gift clients copy error:", error);
+        return;
+      }
+
+      fetchGiftClients();
+      return;
+    }
+
+    if (targetList === "عملاء مرشحين") {
+      const { error } = await supabase.from("referred_clients").insert([
+        {
+          name: clientName,
+          phone: clientPhone,
+          source_client_name: giftFromNameValue,
+          source_client_phone: giftFromPhoneValue,
+        },
+      ]);
+
+      if (error) {
+        console.log("Additional client Send To referred clients copy error:", error);
+        return;
+      }
+
+      fetchManualReferrals();
+      return;
+    }
+
+    if (targetList === "عملاء محتملين") {
+      const { error } = await supabase.from("potential_clients").insert([
+        {
+          name: clientName,
+          phone: clientPhone,
+          status: "إلغاء موعد",
+        },
+      ]);
+
+      if (error) {
+        console.log("Additional client Send To potential clients copy error:", error);
+        return;
+      }
+
+      fetchPotentialClients();
+    }
+  };
+
+  const saveAdditionalClient = async () => {
+    if (!additionalClientModal) return;
+
+    const rowIndex = additionalClientModal.rowIndex;
+    const currentDayData = scheduleData[selectedScheduleDate] || {};
+    const currentRows = currentDayData.rows || timeSlots.map(createEmptyAppointmentRow);
+    const baseRow = currentRows[rowIndex] || createEmptyAppointmentRow(timeSlots[rowIndex] || "");
+
+    const cleanExtraClient = {
+      id: additionalClientDraft.id || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      name: String(additionalClientDraft.name || "").trim(),
+      phone: formatSaudiPhoneForStorage(additionalClientDraft.phone || ""),
+      order: String(additionalClientDraft.order || "").trim(),
+      service: String(additionalClientDraft.service || "").trim(),
+      sendTo: String(additionalClientDraft.sendTo || "").trim(),
+    };
+
+    if (!cleanExtraClient.name && !cleanExtraClient.phone && !cleanExtraClient.order && !cleanExtraClient.service && !cleanExtraClient.sendTo) {
+      return;
+    }
+
+    const extraClients = getAdditionalClientsForRow(baseRow);
+    const nextExtraClients = Number.isInteger(additionalClientModal.editIndex)
+      ? extraClients.map((client, index) =>
+          index === additionalClientModal.editIndex ? cleanExtraClient : client
+        )
+      : [...extraClients, cleanExtraClient];
+
+    const updatedRow = {
+      ...baseRow,
+      additionalClients: nextExtraClients,
+    };
+
+    await updateScheduleRow(rowIndex, "additionalClients", nextExtraClients);
+
+    if (cleanExtraClient.sendTo) {
+      await copyAdditionalClientToSelectedList(updatedRow, cleanExtraClient);
+    }
+
+    closeAdditionalClientModal();
+  };
+
+  const deleteAdditionalClient = async (rowIndex, extraClientIndex) => {
+    const currentDayData = scheduleData[selectedScheduleDate] || {};
+    const currentRows = currentDayData.rows || timeSlots.map(createEmptyAppointmentRow);
+    const baseRow = currentRows[rowIndex] || createEmptyAppointmentRow(timeSlots[rowIndex] || "");
+    const extraClients = getAdditionalClientsForRow(baseRow);
+    const nextExtraClients = extraClients.filter((_, index) => index !== extraClientIndex);
+
+    await updateScheduleRow(rowIndex, "additionalClients", nextExtraClients);
+    closeAdditionalClientModal();
   };
 
   const copyScheduleRowToSelectedList = async (row, targetList) => {
@@ -4680,6 +4903,24 @@ const sendWhatsApp = async (client) => {
           <div>السعر مع التوصيل: {appointmentTotal > 0 ? `${appointmentTotal} ريال` : "-"}</div>
           <div>الخدمة: {appointment.services || "-"}</div>
           <div>الأخصائية: {appointment.therapist || "-"}</div>
+          {getAdditionalClientsForRow(appointment).length > 0 && (
+            <div
+              style={{
+                marginTop: "8px",
+                paddingTop: "8px",
+                borderTop: "1px dashed rgba(214,199,184,0.9)",
+              }}
+            >
+              <div style={{ fontWeight: "900", color: "#4b2e1f", marginBottom: "4px" }}>
+                عميلات نفس البيت:
+              </div>
+              {getAdditionalClientsForRow(appointment).map((extraClient, extraIndex) => (
+                <div key={extraClient.id || extraIndex}>
+                  {extraIndex + 1}. {extraClient.name || "-"} — {extraClient.phone || "-"} — {extraClient.order || "-"} — {extraClient.service || "-"} — {extraClient.sendTo || "-"}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div
@@ -7719,6 +7960,184 @@ if (!isLoggedIn) {
             ))}
           </datalist>
 
+          {additionalClientModal && (() => {
+            const modalRows = getRowsForDate(selectedScheduleDate);
+            const modalRowIndex = additionalClientModal.rowIndex;
+            const modalRow = modalRows[modalRowIndex] || {};
+            const modalExtraClients = getAdditionalClientsForRow(modalRow);
+
+            return (
+              <div
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  zIndex: 9999,
+                  background: "rgba(75,46,31,0.28)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "16px",
+                  boxSizing: "border-box",
+                }}
+                onMouseDown={(event) => {
+                  if (event.target === event.currentTarget) closeAdditionalClientModal();
+                }}
+              >
+                <div
+                  style={{
+                    width: "100%",
+                    maxWidth: "520px",
+                    maxHeight: "90vh",
+                    overflowY: "auto",
+                    background: "linear-gradient(145deg, #fffaf7, #f2e7da)",
+                    border: "1px solid #d6c7b8",
+                    borderRadius: "28px",
+                    padding: "18px",
+                    boxShadow: "0 28px 70px rgba(75,46,31,0.28)",
+                    color: "#4b2e1f",
+                    direction: "rtl",
+                    boxSizing: "border-box",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "center", marginBottom: "14px" }}>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: "20px" }}>عميلات نفس البيت</h3>
+                      <div style={{ fontSize: "13px", color: "#7a5a43", marginTop: "4px", fontWeight: "700" }}>
+                        العميلة الأساسية: {modalRow.client || "-"}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={closeAdditionalClientModal}
+                      style={{
+                        border: "1px solid #d6c7b8",
+                        background: "white",
+                        color: "#4b2e1f",
+                        borderRadius: "14px",
+                        padding: "8px 12px",
+                        cursor: "pointer",
+                        fontWeight: "800",
+                      }}
+                    >
+                      إغلاق
+                    </button>
+                  </div>
+
+                  {modalExtraClients.length > 0 && (
+                    <div style={{ display: "grid", gap: "8px", marginBottom: "14px" }}>
+                      {modalExtraClients.map((extraClient, extraIndex) => (
+                        <div
+                          key={extraClient.id || extraIndex}
+                          style={{
+                            background: "rgba(255,255,255,0.72)",
+                            border: "1px solid rgba(214,199,184,0.8)",
+                            borderRadius: "18px",
+                            padding: "10px",
+                            display: "grid",
+                            gap: "6px",
+                          }}
+                        >
+                          <strong>{extraClient.name || "عميلة بدون اسم"}</strong>
+                          <span style={{ fontSize: "13px", color: "#6f6259", fontWeight: "700" }}>
+                            {extraClient.phone || "-"} • {extraClient.order || "-"} • {extraClient.service || "-"} • {extraClient.sendTo || "-"}
+                          </span>
+                          <div style={{ display: "flex", gap: "8px", justifyContent: "flex-start" }}>
+                            <button
+                              type="button"
+                              onClick={() => openAdditionalClientModal(modalRowIndex, extraIndex)}
+                              style={{
+                                border: "1px solid #d6c7b8",
+                                background: "#fffaf3",
+                                color: "#4b2e1f",
+                                borderRadius: "12px",
+                                padding: "6px 10px",
+                                cursor: "pointer",
+                                fontWeight: "800",
+                              }}
+                            >
+                              تعديل
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteAdditionalClient(modalRowIndex, extraIndex)}
+                              style={{
+                                border: "1px solid #d9a8a8",
+                                background: "#fff1f1",
+                                color: "#8a1f1f",
+                                borderRadius: "12px",
+                                padding: "6px 10px",
+                                cursor: "pointer",
+                                fontWeight: "800",
+                              }}
+                            >
+                              حذف
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                    <input
+                      placeholder="الاسم"
+                      value={additionalClientDraft.name}
+                      onChange={(event) => updateAdditionalClientDraft("name", event.target.value)}
+                      style={{ ...inputStyle, width: "100%", margin: 0, boxSizing: "border-box" }}
+                    />
+                    <input
+                      placeholder="رقم الجوال"
+                      value={additionalClientDraft.phone}
+                      onChange={(event) => updateAdditionalClientDraft("phone", event.target.value)}
+                      onBlur={(event) => updateAdditionalClientDraft("phone", formatSaudiPhoneForStorage(event.target.value))}
+                      style={{ ...inputStyle, width: "100%", margin: 0, boxSizing: "border-box" }}
+                    />
+                    <input
+                      list="orderList"
+                      placeholder="عدد الخدمات"
+                      value={additionalClientDraft.order}
+                      onChange={(event) => updateAdditionalClientDraft("order", event.target.value)}
+                      style={{ ...inputStyle, width: "100%", margin: 0, boxSizing: "border-box" }}
+                    />
+                    <input
+                      list="serviceList"
+                      placeholder="نوع الخدمة"
+                      value={additionalClientDraft.service}
+                      onChange={(event) => updateAdditionalClientDraft("service", event.target.value)}
+                      style={{ ...inputStyle, width: "100%", margin: 0, boxSizing: "border-box" }}
+                    />
+                    <select
+                      value={additionalClientDraft.sendTo}
+                      onChange={(event) => updateAdditionalClientDraft("sendTo", event.target.value)}
+                      style={{ ...inputStyle, width: "100%", margin: 0, boxSizing: "border-box", gridColumn: "1 / -1" }}
+                    >
+                      {sendToOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option || "Send To"}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={saveAdditionalClient}
+                    style={{
+                      ...buttonStyle,
+                      width: "100%",
+                      marginTop: "14px",
+                      borderRadius: "18px",
+                      background: "linear-gradient(135deg, #4b2e1f, #7a5a43)",
+                      color: "white",
+                    }}
+                  >
+                    {Number.isInteger(additionalClientModal.editIndex) ? "حفظ التعديل" : "إضافة العميلة"}
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+
           <div
             style={{
               display: "flex",
@@ -7931,14 +8350,54 @@ if (!isLoggedIn) {
                       style={getScheduleCellStyle(index, "client")}
                       {...getScheduleCellHandlers(index, "client")}
                     >
-                      <input
-                        value={row.client}
-                        onChange={(e) =>
-                          updateScheduleRow(index, "client", e.target.value)
-                        }
-                        {...getScheduleEditableProps(index, "client")}
-                        style={getScheduleInputStyle(index, "client")}
-                      />
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "4px",
+                          width: "100%",
+                        }}
+                      >
+                        <input
+                          value={
+                            getAdditionalClientCount(row) > 0
+                              ? `${row.client || ""} (+${getAdditionalClientCount(row)})`
+                              : row.client
+                          }
+                          onChange={(e) => {
+                            const cleanValue = String(e.target.value || "").replace(/\s*\(\+\d+\)\s*$/, "");
+                            updateScheduleRow(index, "client", cleanValue);
+                          }}
+                          {...getScheduleEditableProps(index, "client")}
+                          style={getScheduleInputStyle(index, "client", { flex: 1, minWidth: 0 })}
+                        />
+                        <button
+                          type="button"
+                          title="إضافة عميلة لنفس البيت"
+                          onMouseDown={(event) => event.stopPropagation()}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            openAdditionalClientModal(index);
+                          }}
+                          style={{
+                            width: "24px",
+                            minWidth: "24px",
+                            height: "24px",
+                            borderRadius: "999px",
+                            border: "1px solid #d6c7b8",
+                            background: "linear-gradient(135deg, #4b2e1f, #7a5a43)",
+                            color: "white",
+                            cursor: "pointer",
+                            fontWeight: "900",
+                            fontSize: "15px",
+                            lineHeight: "20px",
+                            padding: 0,
+                          }}
+                        >
+                          +
+                        </button>
+                      </div>
                     </td>
 
                     <td
