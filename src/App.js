@@ -4393,6 +4393,15 @@ const sendWhatsApp = async (client) => {
 
 
   // 👤 CLIENT SERVICE HISTORY FROM SCHEDULE
+  const formatServiceOrderNumber = (orderValue, fallbackIndex) => {
+    const cleanOrder = String(orderValue || "").trim();
+
+    if (!cleanOrder) return `Service ${fallbackIndex + 1}`;
+    if (/^\d+$/.test(cleanOrder)) return `Service ${cleanOrder}`;
+
+    return cleanOrder;
+  };
+
   const getClientServiceSummary = (client) => {
     const clientPhone = normalizePhone(client.phone);
     const serviceHistory = [];
@@ -4419,6 +4428,7 @@ const sendWhatsApp = async (client) => {
           date,
           therapist: row.therapist || "-",
           services: row.services || "-",
+          order: row.order || "",
           serviceTime: row.serviceTime || "",
           clientBy: row.clientBy || "",
         });
@@ -11446,58 +11456,109 @@ if (screen === "availableAppointments") {
             ) : (
               <div
                 style={{
-                  maxHeight: "230px",
-                  overflowY: "auto",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "8px",
+                  backgroundColor: "white",
+                  border: "1px solid #eadfd5",
+                  borderRadius: "18px",
+                  overflow: "hidden",
+                  boxShadow: "0 10px 24px rgba(75, 46, 31, 0.06)",
                 }}
               >
-                {selectedClientServiceSummary.serviceHistory.map((service, index) => (
-                  <div
-                    key={`${service.date}-${service.serviceTime}-${index}`}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "120px 90px 120px 1fr",
-                      gap: "10px",
-                      alignItems: "center",
-                      backgroundColor: "white",
-                      border: "1px solid #eadfd5",
-                      borderRadius: "16px",
-                      padding: "11px 12px",
-                      color: "#4b2e1f",
-                      direction: "rtl",
-                    }}
-                  >
-                    <span
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1.6fr 0.9fr 0.8fr 0.9fr",
+                    gap: "0",
+                    alignItems: "center",
+                    background: "linear-gradient(135deg, #4b2e1f, #6b472f)",
+                    color: "white",
+                    fontWeight: "bold",
+                    fontSize: "13px",
+                    textAlign: "center",
+                    direction: "ltr",
+                  }}
+                >
+                  {["Services", "Therapist", "Order No.", "Date"].map((header) => (
+                    <div
+                      key={header}
                       style={{
-                        color: "#8a7a68",
-                        fontSize: "13px",
-                        textAlign: "right",
+                        padding: "11px 10px",
+                        borderRight: header !== "Date" ? "1px solid rgba(255,255,255,0.16)" : "none",
+                      }}
+                    >
+                      {header}
+                    </div>
+                  ))}
+                </div>
+
+                <div
+                  style={{
+                    maxHeight: "260px",
+                    overflowY: "auto",
+                  }}
+                >
+                  {selectedClientServiceSummary.serviceHistory.map((service, index) => (
+                    <div
+                      key={`${service.date}-${service.serviceTime}-${index}`}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1.6fr 0.9fr 0.8fr 0.9fr",
+                        gap: "0",
+                        alignItems: "center",
+                        backgroundColor: index % 2 === 0 ? "#fffdfb" : "#fbf5ef",
+                        color: "#4b2e1f",
                         direction: "ltr",
-                      }}
-                    >
-                      Date: {service.date}
-                    </span>
-                    <strong>Service {index + 1}</strong>
-                    <span
-                      style={{
-                        fontWeight: "bold",
                         textAlign: "center",
+                        borderTop: "1px solid #eadfd5",
+                        minHeight: "48px",
                       }}
                     >
-                      Therapist: {service.therapist}
-                    </span>
-                    <span
-                      style={{
-                        fontWeight: "bold",
-                        textAlign: "right",
-                      }}
-                    >
-                      Service: {service.services}
-                    </span>
-                  </div>
-                ))}
+                      <div
+                        style={{
+                          padding: "12px 10px",
+                          fontWeight: "bold",
+                          textAlign: "left",
+                          borderRight: "1px solid #eadfd5",
+                          overflowWrap: "anywhere",
+                        }}
+                      >
+                        {service.services || "-"}
+                      </div>
+
+                      <div
+                        style={{
+                          padding: "12px 10px",
+                          fontWeight: "bold",
+                          borderRight: "1px solid #eadfd5",
+                        }}
+                      >
+                        {service.therapist || "-"}
+                      </div>
+
+                      <div
+                        style={{
+                          padding: "12px 10px",
+                          fontWeight: "bold",
+                          color: "#4b2e1f",
+                          borderRight: "1px solid #eadfd5",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {formatServiceOrderNumber(service.order, index)}
+                      </div>
+
+                      <div
+                        style={{
+                          padding: "12px 10px",
+                          color: "#8a7a68",
+                          fontSize: "13px",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {service.date || "-"}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
