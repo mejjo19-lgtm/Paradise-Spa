@@ -7001,53 +7001,7 @@ const welcomeBoardNameStyle = {
               </button>
             ))}
             </div>
-            <div
-  style={{
-    width: "100%",
-    marginTop: "15px",
-    padding: "14px",
-    borderRadius: "18px",
-    background: "#f7efe6",
-    border: "1px solid #d6c7b8",
-    textAlign: "center",
-    boxSizing: "border-box",
-  }}
->
-  <div
-    style={{
-      fontWeight: "700",
-      color: "#4b2e1f",
-      fontSize: "15px",
-      marginBottom: "8px",
-    }}
-  >
-    {loggedInUser || "User"}
-  </div>
-
-  <div
-    style={{
-      display: "flex",
-      justifyContent: "center",
-      alignItems: "center",
-      gap: "6px",
-      color: "#4caf50",
-      fontWeight: "600",
-      fontSize: "13px",
-    }}
-  >
-    <span
-      style={{
-        width: "10px",
-        height: "10px",
-        borderRadius: "50%",
-        background: "#4caf50",
-        boxShadow: "0 0 10px #4caf50",
-        display: "inline-block",
-      }}
-    />
-    Online
-  </div>
-</div>
+            
           </aside>
         )}
 {showGlobalLayout && showGlobalClientForm && (
