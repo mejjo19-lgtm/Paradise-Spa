@@ -3992,7 +3992,7 @@ while (hasMoreScheduleRows) {
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
-        .replace(/\"/g, "&quot;");
+        .replace(/"/g, "&quot;");
     const safeSheetName = (name) => escapeXml(String(name || "Sheet").slice(0, 31));
     const isNumericCell = (value) =>
       typeof value === "number" ||
