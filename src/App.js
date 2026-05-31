@@ -7332,42 +7332,43 @@ const welcomeBoardNameStyle = {
 
   const settingsPageShellStyle = {
     direction: "rtl",
-    padding: "18px 20px 42px",
+    padding: "14px 16px 34px",
     color: "#3a2418",
   };
 
   const settingsSurfaceStyle = {
-    background: "linear-gradient(145deg, rgba(255,253,248,0.98), rgba(250,244,236,0.96))",
-    border: "1px solid rgba(214,199,184,0.86)",
-    borderRadius: "30px",
-    padding: "22px",
-    boxShadow: "0 22px 52px rgba(75,46,31,0.10)",
+    background: "linear-gradient(145deg, rgba(255,253,248,0.99), rgba(250,246,239,0.96))",
+    border: "1px solid rgba(214,199,184,0.78)",
+    borderRadius: "28px",
+    padding: "18px",
+    boxShadow: "0 18px 44px rgba(75,46,31,0.08)",
   };
 
   const settingsRowStyle = {
     ...settingsSurfaceStyle,
-    padding: "22px",
+    padding: "18px",
   };
 
   const settingsSectionTitleStyle = {
-    margin: "0 0 14px",
-    fontSize: "24px",
+    margin: "0 0 10px",
+    fontSize: "22px",
     fontWeight: 950,
     color: "#3a2418",
-    letterSpacing: "-0.35px",
+    letterSpacing: "-0.25px",
   };
 
   const settingsHelpTextStyle = {
     color: "#7a5a43",
     fontWeight: 800,
-    lineHeight: 1.9,
-    margin: "0 0 18px",
+    lineHeight: 1.7,
+    margin: "0 0 14px",
+    fontSize: "14px",
   };
 
   const settingsFieldGridStyle = {
     display: "grid",
-    gridTemplateColumns: "1.05fr 1.35fr 1.35fr 0.72fr",
-    gap: "14px",
+    gridTemplateColumns: "1fr 1fr 0.92fr 0.78fr",
+    gap: "12px",
     alignItems: "center",
   };
 
@@ -7375,51 +7376,60 @@ const welcomeBoardNameStyle = {
     ...inputStyle,
     width: "100%",
     margin: 0,
-    height: "54px",
-    borderRadius: "18px",
-    background: "rgba(255,255,255,0.72)",
-    border: "1px solid rgba(214,199,184,0.94)",
-    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.75)",
+    height: "48px",
+    minHeight: "48px",
+    borderRadius: "16px",
+    background: "rgba(255,255,255,0.82)",
+    border: "1px solid rgba(214,199,184,0.92)",
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.86)",
     fontWeight: 800,
+    fontSize: "14px",
+    padding: "0 16px",
   };
 
   const settingsMiniCardStyle = {
-    background: "linear-gradient(145deg, rgba(255,255,255,0.86), rgba(248,241,233,0.72))",
-    border: "1px solid rgba(214,199,184,0.9)",
-    borderRadius: "20px",
-    padding: "16px 18px",
+    background: "linear-gradient(145deg, rgba(255,255,255,0.9), rgba(249,243,236,0.78))",
+    border: "1px solid rgba(214,199,184,0.82)",
+    borderRadius: "18px",
+    padding: "12px 14px",
     color: "#4b2e1f",
-    boxShadow: "0 10px 24px rgba(75,46,31,0.055), inset 0 1px 0 rgba(255,255,255,0.86)",
+    boxShadow: "0 8px 20px rgba(75,46,31,0.045), inset 0 1px 0 rgba(255,255,255,0.88)",
   };
 
   const settingsPermissionCardStyle = {
     ...settingsMiniCardStyle,
-    minHeight: "76px",
+    minHeight: "54px",
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: "14px",
-    fontSize: "14px",
+    gap: "10px",
+    fontSize: "13px",
     fontWeight: 900,
   };
 
   const settingsPrimaryButtonStyle = {
     ...buttonStyle,
-    height: "54px",
-    borderRadius: "18px",
-    padding: "0 24px",
+    height: "48px",
+    minHeight: "48px",
+    borderRadius: "16px",
+    padding: "0 22px",
     background: "linear-gradient(135deg, #3a2418, #7a5a43)",
     color: "white",
-    boxShadow: "0 14px 30px rgba(75,46,31,0.18)",
+    boxShadow: "0 12px 24px rgba(75,46,31,0.16)",
+    fontSize: "14px",
+    fontWeight: 900,
   };
 
   const settingsMutedButtonStyle = {
     ...buttonStyle,
-    height: "46px",
-    borderRadius: "16px",
+    height: "40px",
+    minHeight: "40px",
+    borderRadius: "14px",
     background: "#e1d2c2",
     color: "#4b2e1f",
     boxShadow: "none",
+    fontSize: "13px",
+    fontWeight: 900,
   };
 
   const loadSettingsModuleData = async () => {
@@ -7851,15 +7861,15 @@ const welcomeBoardNameStyle = {
       onClick={() => setSettingsActiveTab(key)}
       style={{
         ...buttonStyle,
-        minHeight: "62px",
-        padding: "0 22px",
-        fontSize: "15px",
+        minHeight: "50px",
+        padding: "0 18px",
+        fontSize: "14px",
         fontWeight: 950,
         background: settingsActiveTab === key ? "linear-gradient(135deg, #4b2e1f, #805d45)" : "linear-gradient(145deg, rgba(255,255,255,0.92), rgba(248,241,233,0.82))",
         color: settingsActiveTab === key ? "white" : "#3a2418",
         border: settingsActiveTab === key ? "1px solid rgba(75,46,31,0.52)" : "1px solid rgba(214,199,184,0.95)",
-        borderRadius: "20px",
-        boxShadow: settingsActiveTab === key ? "0 16px 32px rgba(75,46,31,0.22)" : "0 11px 26px rgba(75,46,31,0.07), inset 0 1px 0 rgba(255,255,255,0.78)",
+        borderRadius: "17px",
+        boxShadow: settingsActiveTab === key ? "0 12px 24px rgba(75,46,31,0.20)" : "0 8px 20px rgba(75,46,31,0.055), inset 0 1px 0 rgba(255,255,255,0.78)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -7875,7 +7885,7 @@ const welcomeBoardNameStyle = {
     const key = type === "menu" ? "menuPermissions" : "actionPermissions";
     const values = accountDraft[key] || [];
     return (
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: "14px", marginTop: "14px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(165px, 1fr))", gap: "10px", marginTop: "10px" }}>
         {options.map(([value, label]) => (
           <label key={value} style={settingsPermissionCardStyle}>
             <span style={{ lineHeight: 1.45 }}>{label}</span>
@@ -7883,7 +7893,7 @@ const welcomeBoardNameStyle = {
               type="checkbox"
               checked={values.includes(value)}
               onChange={() => toggleAccountPermission(type, value)}
-              style={{ width: "18px", height: "18px", accentColor: "#4b2e1f", flex: "0 0 auto" }}
+              style={{ width: "15px", height: "15px", accentColor: "#4b2e1f", flex: "0 0 auto" }}
             />
           </label>
         ))}
@@ -7892,37 +7902,37 @@ const welcomeBoardNameStyle = {
   };
 
   const renderSystemHealthCard = () => (
-    <div style={{ ...settingsRowStyle, padding: "22px 26px" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "18px", flexWrap: "wrap", marginBottom: "18px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-          <div style={{ width: "62px", height: "62px", borderRadius: "18px", background: "rgba(227,213,198,0.6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "26px" }}>⌁</div>
+    <div style={{ ...settingsRowStyle, padding: "18px 20px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "14px", flexWrap: "wrap", marginBottom: "14px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+          <div style={{ width: "50px", height: "50px", borderRadius: "16px", background: "rgba(227,213,198,0.6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "23px" }}>⌁</div>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
               <h3 style={{ ...settingsSectionTitleStyle, margin: 0 }}>حالة النظام — Realtime</h3>
-              <span style={{ background: "#dff2d8", color: "#34734f", borderRadius: "999px", padding: "7px 18px", fontWeight: 950, fontSize: "13px" }}>Healthy</span>
+              <span style={{ background: "#dff2d8", color: "#34734f", borderRadius: "999px", padding: "6px 15px", fontWeight: 950, fontSize: "12px" }}>Healthy</span>
             </div>
-            <div style={{ marginTop: "6px", color: "#7a5a43", fontWeight: 800 }}>{systemHealth?.checkedAt ? `آخر فحص: ${systemHealth.checkedAt}` : "اضغط فحص النظام لتحديث حالة الجداول"}</div>
+            <div style={{ marginTop: "5px", color: "#7a5a43", fontWeight: 800, fontSize: "13px" }}>{systemHealth?.checkedAt ? `آخر فحص: ${systemHealth.checkedAt}` : "اضغط فحص النظام لتحديث حالة الجداول"}</div>
           </div>
         </div>
         <button onClick={checkSystemHealth} style={settingsPrimaryButtonStyle}>فحص النظام الآن</button>
       </div>
       {systemHealth && (
         <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0 8px", direction: "ltr", textAlign: "left" }}>
+          <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0 5px", direction: "ltr", textAlign: "left" }}>
             <thead>
               <tr>
                 {['Status', 'Supabase Count', 'App Count', 'Table'].map((title) => (
-                  <th key={title} style={{ padding: "8px 14px", color: "#3a2418", fontSize: "14px" }}>{title}</th>
+                  <th key={title} style={{ padding: "7px 12px", color: "#3a2418", fontSize: "13px" }}>{title}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {systemHealth.rows.map((row) => (
                 <tr key={row.tableName}>
-                  <td style={{ padding: "4px 14px", fontWeight: 900 }}><span style={{ color: row.status === "OK" ? "#4caf35" : "#9b4b3d", marginRight: "8px" }}>●</span>{row.status}</td>
-                  <td style={{ padding: "4px 14px", fontWeight: 800 }}>{row.supabaseCount}</td>
-                  <td style={{ padding: "4px 14px", fontWeight: 800 }}>{row.localCount}</td>
-                  <td style={{ padding: "4px 14px", fontWeight: 800 }}>{row.tableName}</td>
+                  <td style={{ padding: "3px 12px", fontWeight: 900 }}><span style={{ color: row.status === "OK" ? "#4caf35" : "#9b4b3d", marginRight: "8px" }}>●</span>{row.status}</td>
+                  <td style={{ padding: "3px 12px", fontWeight: 800 }}>{row.supabaseCount}</td>
+                  <td style={{ padding: "3px 12px", fontWeight: 800 }}>{row.localCount}</td>
+                  <td style={{ padding: "3px 12px", fontWeight: 800 }}>{row.tableName}</td>
                 </tr>
               ))}
             </tbody>
@@ -7935,11 +7945,11 @@ const welcomeBoardNameStyle = {
   const renderSettingsContent = () => {
     if (settingsActiveTab === "accounts") {
       return (
-        <div style={{ display: "grid", gap: "18px" }}>
+        <div style={{ display: "grid", gap: "14px" }}>
           {renderSystemHealthCard()}
 
           <div style={settingsRowStyle}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "18px", flexWrap: "wrap", marginBottom: "18px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "14px", flexWrap: "wrap", marginBottom: "14px" }}>
               <div>
                 <h3 style={settingsSectionTitleStyle}>👥 الحسابات والصلاحيات</h3>
                 <p style={{ ...settingsHelpTextStyle, marginBottom: 0 }}>
@@ -7960,52 +7970,52 @@ const welcomeBoardNameStyle = {
               <input placeholder="كلمة المرور" type="password" value={accountDraft.password} onChange={(e) => setAccountDraft((prev) => ({ ...prev, password: e.target.value }))} style={settingsInputStyle} />
             </div>
 
-            <div style={{ display: "grid", gap: "22px", marginTop: "24px" }}>
+            <div style={{ display: "grid", gap: "16px", marginTop: "18px" }}>
               <div>
-                <h4 style={{ margin: "0 0 10px", fontSize: "17px", color: "#3a2418", fontWeight: 950 }}>صلاحيات القوائم</h4>
+                <h4 style={{ margin: "0 0 8px", fontSize: "15px", color: "#3a2418", fontWeight: 950 }}>صلاحيات القوائم</h4>
                 {renderPermissionChecks("menu", settingsMenuOptions)}
               </div>
               <div>
-                <h4 style={{ margin: "0 0 10px", fontSize: "17px", color: "#3a2418", fontWeight: 950 }}>صلاحيات الأزرار</h4>
+                <h4 style={{ margin: "0 0 8px", fontSize: "15px", color: "#3a2418", fontWeight: 950 }}>صلاحيات الأزرار</h4>
                 {renderPermissionChecks("action", settingsActionOptions)}
               </div>
             </div>
 
-            <div style={{ display: "flex", gap: "12px", marginTop: "24px", flexWrap: "wrap", justifyContent: "flex-start" }}>
+            <div style={{ display: "flex", gap: "10px", marginTop: "18px", flexWrap: "wrap", justifyContent: "flex-start" }}>
               <button onClick={saveEmployeeAccount} style={settingsPrimaryButtonStyle}>{editingAccountId ? "حفظ التعديل" : "إضافة حساب"}</button>
               <button onClick={resetAccountDraft} style={settingsMutedButtonStyle}>تفريغ</button>
             </div>
           </div>
 
-          <div style={{ ...settingsRowStyle, overflowX: "auto", padding: "18px" }}>
-            <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0", minWidth: "760px", overflow: "hidden", borderRadius: "20px" }}>
+          <div style={{ ...settingsRowStyle, overflowX: "auto", padding: "14px" }}>
+            <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0", minWidth: "760px", overflow: "hidden", borderRadius: "18px" }}>
               <thead>
                 <tr style={{ background: "rgba(241,230,219,0.78)" }}>
-                  <th style={{ padding: "16px 18px", textAlign: "right", color: "#3a2418" }}>اسم الموظف</th>
-                  <th style={{ padding: "16px 18px", textAlign: "center", color: "#3a2418" }}>نوع الحساب</th>
-                  <th style={{ padding: "16px 18px", textAlign: "center", color: "#3a2418" }}>الحالة</th>
-                  <th style={{ padding: "16px 18px", textAlign: "center", color: "#3a2418" }}>تاريخ الإنشاء</th>
-                  <th style={{ padding: "16px 18px", textAlign: "center", color: "#3a2418" }}>الإجراءات</th>
+                  <th style={{ padding: "12px 14px", textAlign: "right", color: "#3a2418", fontSize: "14px" }}>اسم الموظف</th>
+                  <th style={{ padding: "12px 14px", textAlign: "center", color: "#3a2418", fontSize: "14px" }}>نوع الحساب</th>
+                  <th style={{ padding: "12px 14px", textAlign: "center", color: "#3a2418", fontSize: "14px" }}>الحالة</th>
+                  <th style={{ padding: "12px 14px", textAlign: "center", color: "#3a2418", fontSize: "14px" }}>تاريخ الإنشاء</th>
+                  <th style={{ padding: "12px 14px", textAlign: "center", color: "#3a2418", fontSize: "14px" }}>الإجراءات</th>
                 </tr>
               </thead>
               <tbody>
                 {employeeAccounts.map((account, index) => (
                   <tr key={account.id} style={{ background: index % 2 === 0 ? "rgba(255,251,246,0.92)" : "rgba(248,241,233,0.72)", borderBottom: "1px solid rgba(214,199,184,0.42)" }}>
-                    <td style={{ padding: "18px", fontWeight: 950 }}>
+                    <td style={{ padding: "12px 14px", fontWeight: 950 }}>
                       <div>{account.displayName}</div>
                       <div style={{ marginTop: "5px", color: "#7a5a43", fontSize: "12px", fontWeight: 800 }}>{account.username}</div>
                     </td>
-                    <td style={{ padding: "18px", textAlign: "center", fontWeight: 850 }}>
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: "7px", padding: "8px 14px", borderRadius: "999px", background: "rgba(122,90,67,0.12)", color: "#4b2e1f" }}>{account.role}</span>
+                    <td style={{ padding: "12px 14px", textAlign: "center", fontWeight: 850 }}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: "7px", padding: "6px 12px", borderRadius: "999px", background: "rgba(122,90,67,0.12)", color: "#4b2e1f", fontSize: "13px" }}>{account.role}</span>
                     </td>
-                    <td style={{ padding: "18px", textAlign: "center" }}>
-                      <span style={{ display: "inline-block", padding: "7px 17px", borderRadius: "999px", background: account.active ? "#dff2d8" : "#f5d9d1", color: account.active ? "#34734f" : "#9b4b3d", fontWeight: 950 }}>{account.active ? "Active" : "Disabled"}</span>
+                    <td style={{ padding: "12px 14px", textAlign: "center" }}>
+                      <span style={{ display: "inline-block", padding: "6px 14px", borderRadius: "999px", background: account.active ? "#dff2d8" : "#f5d9d1", color: account.active ? "#34734f" : "#9b4b3d", fontWeight: 950, fontSize: "13px" }}>{account.active ? "Active" : "Disabled"}</span>
                     </td>
                     <td style={{ padding: "18px", textAlign: "center", fontWeight: 800, color: "#4b2e1f" }}>{account.createdAt ? new Date(account.createdAt).toLocaleString() : "-"}</td>
-                    <td style={{ padding: "18px", textAlign: "center" }}>
+                    <td style={{ padding: "12px 14px", textAlign: "center" }}>
                       <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", justifyContent: "center" }}>
-                        <button onClick={() => startEditAccount(account)} style={{ ...settingsMutedButtonStyle, minWidth: "82px", height: "40px" }}>تعديل</button>
-                        <button onClick={() => deleteEmployeeAccount(account)} style={{ ...settingsMutedButtonStyle, minWidth: "82px", height: "40px", background: "#fff4f1", color: "#c1372c", border: "1px solid rgba(193,55,44,0.32)" }}>حذف</button>
+                        <button onClick={() => startEditAccount(account)} style={{ ...settingsMutedButtonStyle, minWidth: "74px", height: "36px" }}>تعديل</button>
+                        <button onClick={() => deleteEmployeeAccount(account)} style={{ ...settingsMutedButtonStyle, minWidth: "74px", height: "36px", background: "#fff4f1", color: "#c1372c", border: "1px solid rgba(193,55,44,0.32)" }}>حذف</button>
                       </div>
                     </td>
                   </tr>
@@ -8039,7 +8049,7 @@ const welcomeBoardNameStyle = {
       return (
         <div style={{ display: "grid", gap: "16px" }}>
           <div style={settingsRowStyle}><h3 style={settingsSectionTitleStyle}>🛡️ الأمان</h3><p style={settingsHelpTextStyle}>تحكم سريع في الجلسات، الحذف، وحالة الصيانة.</p></div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "14px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: "10px" }}>
             <button onClick={logoutAllDevices} style={settingsPrimaryButtonStyle}>تسجيل خروج جميع الأجهزة</button>
             <button onClick={saveSettingsSecretCode} style={{ ...settingsPrimaryButtonStyle, background: "linear-gradient(135deg, #805d45, #9b7358)" }}>تغيير الرقم السري للإعدادات</button>
             <button onClick={() => saveSecuritySettings({ deleteLocked: !securitySettings.deleteLocked })} style={{ ...settingsPrimaryButtonStyle, background: securitySettings.deleteLocked ? "#9b4b3d" : "#e1d2c2", color: securitySettings.deleteLocked ? "white" : "#4b2e1f" }}>{securitySettings.deleteLocked ? "إلغاء قفل الحذف" : "قفل الحذف"}</button>
@@ -8087,13 +8097,13 @@ const welcomeBoardNameStyle = {
         style={{
           ...settingsSurfaceStyle,
           marginBottom: "18px",
-          padding: "26px 30px 22px",
+          padding: "22px 24px 20px",
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", gap: "18px", alignItems: "flex-start", flexWrap: "wrap", marginBottom: "24px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: "14px", alignItems: "flex-start", flexWrap: "wrap", marginBottom: "18px" }}>
           <div style={{ textAlign: "right" }}>
             <div style={{ color: "#b28b74", fontSize: "14px", fontWeight: 850, marginBottom: "3px" }}>Paradise Spa</div>
-            <h2 style={{ margin: 0, fontSize: "38px", fontWeight: 950, letterSpacing: "-0.6px", color: "#3a2418" }}>الإعدادات 👥</h2>
+            <h2 style={{ margin: 0, fontSize: "34px", fontWeight: 950, letterSpacing: "-0.5px", color: "#3a2418" }}>الإعدادات 👥</h2>
             <div style={{ marginTop: "8px", color: "#4b2e1f", fontWeight: 900, display: "flex", justifyContent: "flex-start", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
               <span style={{ width: "9px", height: "9px", borderRadius: "50%", background: isSystemFrozen ? "#c1372c" : "#48ad43", display: "inline-block" }} />
               <span>{isSystemFrozen ? "النظام مجمّد" : "النظام يعمل"} — {securitySettings.deleteLocked ? "الحذف مقفل" : "الحذف مفتوح حسب الصلاحيات"}</span>
@@ -8104,12 +8114,12 @@ const welcomeBoardNameStyle = {
         {!settingsUnlocked ? (
           <div style={{ ...settingsRowStyle, maxWidth: "520px", margin: "38px auto 10px", textAlign: "center" }}>
             <h3 style={settingsSectionTitleStyle}>أدخل الرقم السري للإعدادات</h3>
-            <input type="password" value={settingsSecretInput} onChange={(e) => setSettingsSecretInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") unlockSettings(); }} style={{ ...settingsInputStyle, marginBottom: "14px" }} placeholder="Settings Password" />
+            <input type="password" value={settingsSecretInput} onChange={(e) => setSettingsSecretInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") unlockSettings(); }} style={{ ...settingsInputStyle, marginBottom: "14px", textAlign: "center" }} placeholder="Settings Password" />
             <button onClick={unlockSettings} style={{ ...settingsPrimaryButtonStyle, width: "180px" }}>دخول</button>
           </div>
         ) : (
           <>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(145px, 1fr))", gap: "14px", marginBottom: "18px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))", gap: "10px", marginBottom: "14px" }}>
               {settingsTabButton("accounts", "الحسابات 👥")}
               {settingsTabButton("backup", "النسخ الاحتياطي 💾")}
               {settingsTabButton("security", "الأمان 🛡️")}
