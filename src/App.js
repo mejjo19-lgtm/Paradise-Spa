@@ -800,6 +800,34 @@ const [incomeExpensesFromMonth, setIncomeExpensesFromMonth] = useState(
 
   const [sharedDataLoaded, setSharedDataLoaded] = useState(false);
 
+
+  const [settingsUnlocked, setSettingsUnlocked] = useState(false);
+  const [settingsSecretInput, setSettingsSecretInput] = useState("");
+  const [settingsActiveTab, setSettingsActiveTab] = useState("accounts");
+  const [settingsSecretCode, setSettingsSecretCode] = useState("112244668800");
+  const [employeeAccounts, setEmployeeAccounts] = useState([]);
+  const [accountDraft, setAccountDraft] = useState({
+    username: "",
+    displayName: "",
+    role: "employee",
+    password: "",
+    menuPermissions: [],
+    actionPermissions: [],
+    active: true,
+  });
+  const [editingAccountId, setEditingAccountId] = useState(null);
+  const [securitySettings, setSecuritySettings] = useState({
+    deleteLocked: false,
+    systemFrozen: false,
+    logoutVersion: 0,
+  });
+  const [systemHealth, setSystemHealth] = useState(null);
+  const [serverHealth, setServerHealth] = useState(null);
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [restoreBusy, setRestoreBusy] = useState(false);
+  const [restoreFileName, setRestoreFileName] = useState("");
+  const [manualExcelMonth, setManualExcelMonth] = useState(() => getCurrentLocalDate().slice(0, 7));
+
   const sharedDataKeys = [
   "scheduleSettings",
   "financeMonthlySettings",
@@ -1303,6 +1331,7 @@ useEffect(() => {
 
   // ➕ ADD CLIENT
   const addClient = async () => {
+    if (!ensureSystemWritable() || !canAddData) return;
     if (!name || !phone) return;
 
     const cleanNewPhone = formatSaudiPhoneForStorage(phone);
@@ -1363,6 +1392,7 @@ setShowGlobalClientForm(false);
 
   // ✏️ START EDIT CLIENT
   const startEditClient = (client) => {
+    if (!canEditData || !ensureSystemWritable()) return;
     setEditingId(client.id);
     setEditedName(client.name);
     setEditedPhone(client.phone);
@@ -1371,6 +1401,7 @@ setShowGlobalClientForm(false);
 
   // 💾 SAVE EDIT CLIENT
   const saveEditClient = async (id) => {
+    if (!ensureSystemWritable() || !canEditData) return;
     if (!editedName || !editedPhone) return;
 
 const { data: updatedClient, error } = await supabase
@@ -1412,6 +1443,7 @@ if (error) {
 
   // 🗑️ DELETE CLIENT
   const deleteClient = async (client) => {
+    if (!ensureDeleteAllowed()) return;
     if (!client?.id) return;
 
     const confirmDelete = window.confirm(
@@ -1580,6 +1612,7 @@ if (error) {
 
   // 💾 SAVE CLIENT PROFILE
   const saveClientProfile = async () => {
+    if (!ensureSystemWritable() || !canEditData) return;
     const updatedReferrals = profileReferrals.filter(
       (referral) => referral.name || referral.phone
     );
@@ -1670,6 +1703,7 @@ if (error) {
   };
 
  const addVisit = async (id) => {
+  if (!ensureSystemWritable() || !canEditData) return;
   const client = clients.find((c) => c.id === id);
   if (!client) return;
 
@@ -1693,6 +1727,7 @@ if (error) {
 };
 
  const removeVisit = async (id) => {
+  if (!ensureSystemWritable() || !canEditData) return;
   const client = clients.find((c) => c.id === id);
   if (!client || client.visits <= 0) return;
 
@@ -1717,6 +1752,7 @@ if (error) {
 
   // 🖼️ UPDATE CLIENT FRAME
   const updateClientFrame = async (id, frameValue) => {
+    if (!ensureSystemWritable() || !canEditData) return;
     setClients((prev) =>
       prev.map((client) =>
         client.id === id ? { ...client, frame: frameValue } : client
@@ -2281,6 +2317,7 @@ while (hasMoreScheduleRows) {
   
 
     const updateManualForDate = (field, value) => {
+  if (!ensureSystemWritable() || !canEditData) return;
   dailyManualLastEditRef.current = Date.now();
 
   setDailyManualData((prev) => {
@@ -3172,6 +3209,7 @@ while (hasMoreScheduleRows) {
   };
 
   const saveAdditionalClient = async () => {
+    if (!ensureSystemWritable() || !canAddData) return;
     if (!additionalClientModal) return;
 
     const rowIndex = additionalClientModal.rowIndex;
@@ -3214,6 +3252,7 @@ while (hasMoreScheduleRows) {
   };
 
   const deleteAdditionalClient = async (rowIndex, extraClientIndex) => {
+    if (!ensureDeleteAllowed()) return;
     const currentDayData = scheduleData[selectedScheduleDate] || {};
     const currentRows = currentDayData.rows || timeSlots.map(createEmptyAppointmentRow);
     const baseRow = currentRows[rowIndex] || createEmptyAppointmentRow(timeSlots[rowIndex] || "");
@@ -3365,6 +3404,7 @@ while (hasMoreScheduleRows) {
   };
 
   const updateScheduleRow = async (rowIndex, field, value) => {
+    if (!ensureSystemWritable() || !canEditData) return;
     scheduleLastEditRef.current = Date.now();
 
     const currentDayData = scheduleData[selectedScheduleDate] || {};
@@ -4626,7 +4666,151 @@ const sendWhatsApp = async (client) => {
     ["printFrame", "طباعة اللوحة الترحيبية"],
     ["finance", "التقارير"],
     ["incomeExpenses", "الدخل والمصاريف"],
+    ["settings", "الإعدادات"],
   ];
+
+
+  const settingsTables = [
+    "clients",
+    "schedule_rows",
+    "daily_reports",
+    "app_data",
+    "gift_clients",
+    "referred_clients",
+    "potential_clients",
+    "employee_accounts",
+  ];
+
+  const settingsMenuOptions = [
+    ["appointments", "جدول المواعيد"],
+    ["clients", "عملائنا"],
+    ["loyalty", "كروت الولاء"],
+    ["giftClients", "عملاء الإهداء"],
+    ["referrals", "العملاء المرشحين"],
+    ["potentialClients", "العملاء المحتملين"],
+    ["availableAppointments", "المواعيد المتاحة"],
+    ["printFrame", "طباعة اللوحة الترحيبية"],
+    ["finance", "التقارير"],
+    ["incomeExpenses", "الدخل والمصاريف"],
+    ["settings", "الإعدادات"],
+  ];
+
+  const settingsActionOptions = [
+    ["add", "إضافة"],
+    ["edit", "تعديل"],
+    ["delete", "حذف"],
+    ["backup", "نسخ احتياطي"],
+    ["restore", "استعادة"],
+    ["security", "الأمان"],
+    ["server", "السيرفر"],
+  ];
+
+  const normalizePermissionArray = (value) => {
+    if (value === "all") return "all";
+    if (Array.isArray(value)) return value;
+    if (typeof value === "string" && value.trim()) {
+      try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return value.split(",").map((item) => item.trim()).filter(Boolean);
+      }
+    }
+    return [];
+  };
+
+  const normalizeEmployeeAccount = (account) => {
+    const usernameValue = account.username || account.user_name || account.email || "";
+    const displayValue = account.display_name || account.displayName || account.name || getDisplayNameFromEmail(usernameValue) || usernameValue;
+    const roleValue = account.role || (String(usernameValue).toLowerCase().includes("majed") ? "owner" : "employee");
+    return {
+      id: account.id || usernameValue || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      username: usernameValue,
+      displayName: displayValue,
+      role: roleValue,
+      menuPermissions: roleValue === "owner" || roleValue === "manager" ? "all" : normalizePermissionArray(account.menu_permissions || account.menuPermissions),
+      actionPermissions: roleValue === "owner" ? "all" : normalizePermissionArray(account.action_permissions || account.actionPermissions),
+      active: account.active !== false,
+      createdAt: account.created_at || account.createdAt || "",
+    };
+  };
+
+  const getDefaultEmployeeAccounts = () => [
+    normalizeEmployeeAccount({
+      id: "default-majed",
+      username: "majed",
+      display_name: "ماجد",
+      role: "owner",
+      menu_permissions: "all",
+      action_permissions: "all",
+      active: true,
+    }),
+    normalizeEmployeeAccount({
+      id: "default-fatima",
+      username: "fatima",
+      display_name: "فاطمة",
+      role: "employee",
+      menu_permissions: ["appointments", "clients", "loyalty", "giftClients", "referrals", "potentialClients", "availableAppointments", "printFrame"],
+      action_permissions: ["add"],
+      active: true,
+    }),
+    normalizeEmployeeAccount({
+      id: "default-tahani",
+      username: "tahani",
+      display_name: "تهاني",
+      role: "employee",
+      menu_permissions: ["appointments", "clients", "loyalty", "giftClients", "referrals", "potentialClients", "availableAppointments", "printFrame"],
+      action_permissions: ["add"],
+      active: true,
+    }),
+  ];
+
+  const currentAccount = employeeAccounts.find((account) => {
+    const accountText = `${account.username || ""} ${account.displayName || ""}`.toLowerCase();
+    const loggedText = `${loggedInUser || ""} ${username || ""}`.toLowerCase();
+    return accountText.includes(loggedText) || loggedText.includes(account.username?.toLowerCase?.() || "__none__") || account.displayName === loggedInUser;
+  });
+
+  const isOwnerUser =
+    currentAccount?.role === "owner" ||
+    String(loggedInUser || "").includes("ماجد") ||
+    String(username || "").toLowerCase() === "majed";
+  const currentUserRole = isOwnerUser ? "owner" : currentAccount?.role || "employee";
+  const isManagerUser = currentUserRole === "manager";
+  const hasAllMenus = isOwnerUser || isManagerUser || currentAccount?.menuPermissions === "all";
+  const hasAllActions = isOwnerUser || currentAccount?.actionPermissions === "all";
+  const canUseAction = (action) => hasAllActions || (currentAccount?.actionPermissions || []).includes(action);
+  const canViewMenu = (key) => {
+    if (isOwnerUser) return true;
+    if (key === "settings") return false;
+    if (hasAllMenus) return true;
+    return (currentAccount?.menuPermissions || []).includes(key);
+  };
+  const canAddData = isOwnerUser || isManagerUser || canUseAction("add");
+  const canEditData = isOwnerUser || isManagerUser || canUseAction("edit");
+  const canDeleteData = isOwnerUser || isManagerUser || canUseAction("delete");
+  const isSystemFrozen = Boolean(securitySettings.systemFrozen) && !isOwnerUser;
+  const isDeleteLocked = Boolean(securitySettings.deleteLocked) && !isOwnerUser;
+
+  const ensureSystemWritable = () => {
+    if (isSystemFrozen) {
+      alert("النظام مجمّد حالياً للصيانة. المشاهدة والتنقل فقط.");
+      return false;
+    }
+    return true;
+  };
+
+  const ensureDeleteAllowed = () => {
+    if (isSystemFrozen) {
+      alert("النظام مجمّد حالياً للصيانة. لا يمكن الحذف الآن.");
+      return false;
+    }
+    if (isDeleteLocked || !canDeleteData) {
+      alert("الحذف مقفل أو لا تملك صلاحية الحذف. ماجد فقط يقدر يعطي الصلاحية.");
+      return false;
+    }
+    return true;
+  };
 
   const openDirectWhatsApp = (phoneNumber) => {
     const cleanPhone = cleanSaudiPhone(phoneNumber || "");
@@ -4640,6 +4824,7 @@ const sendWhatsApp = async (client) => {
   };
 
   const addManualReferral = async () => {
+    if (!ensureSystemWritable() || !canAddData) return;
     if (!referralName && !referralPhone && !referralSourceName && !referralSourcePhone) return;
 
     const { error } = await supabase.from("referred_clients").insert([
@@ -4665,6 +4850,7 @@ const sendWhatsApp = async (client) => {
   };
 
   const addPotentialClient = async () => {
+    if (!ensureSystemWritable() || !canAddData) return;
     if (!potentialName || !potentialPhone) return;
 
     const { error } = await supabase.from("potential_clients").insert([
@@ -4702,6 +4888,7 @@ const sendWhatsApp = async (client) => {
   });
 
   const addGiftClient = async () => {
+    if (!ensureSystemWritable() || !canAddData) return;
     if (!giftFromName && !giftFromPhone && !giftToName && !giftToPhone) return;
 
     const { error } = await supabase.from("gift_clients").insert([
@@ -4740,6 +4927,7 @@ const sendWhatsApp = async (client) => {
     `${referral.manual ? "manual" : "profile"}-${referral.id || referral.phone || referral.name}`;
 
   const startEditReferral = (referral) => {
+    if (!canEditData || !ensureSystemWritable()) return;
     setEditingReferralId(getReferralEditId(referral));
     setEditedReferralName(referral.name || "");
     setEditedReferralPhone(referral.phone || "");
@@ -4756,6 +4944,7 @@ const sendWhatsApp = async (client) => {
   };
 
   const saveEditedReferral = async (referral) => {
+    if (!ensureSystemWritable() || !canEditData) return;
     const { error } = await supabase
       .from("referred_clients")
       .update({
@@ -4776,6 +4965,7 @@ const sendWhatsApp = async (client) => {
   };
 
   const deleteReferral = async (referral) => {
+    if (!ensureDeleteAllowed()) return;
     const confirmDelete = window.confirm("هل أنت متأكد من حذف العميلة المرشحة؟");
     if (!confirmDelete) return;
 
@@ -4813,6 +5003,7 @@ const sendWhatsApp = async (client) => {
   };
 
   const startEditGift = (gift) => {
+    if (!canEditData || !ensureSystemWritable()) return;
     setEditingGiftId(gift.id);
     setEditedGiftFromName(gift.fromName || "");
     setEditedGiftFromPhone(gift.fromPhone || "");
@@ -4841,6 +5032,7 @@ const sendWhatsApp = async (client) => {
   };
 
   const saveEditedGift = async (id) => {
+    if (!ensureSystemWritable() || !canEditData) return;
     const { error } = await supabase
       .from("gift_clients")
       .update({
@@ -4863,6 +5055,7 @@ const sendWhatsApp = async (client) => {
   };
 
   const updateGiftTaken = async (gift, giftTaken) => {
+    if (!ensureSystemWritable() || !canEditData) return;
     const updatedItems = {
       ...(gift.items || {}),
       giftTaken,
@@ -4891,6 +5084,7 @@ const sendWhatsApp = async (client) => {
   };
 
   const deleteGiftClient = async (id) => {
+    if (!ensureDeleteAllowed()) return;
     const confirmDelete = window.confirm("هل أنت متأكد من حذف عميلة الإهداء؟");
     if (!confirmDelete) return;
 
@@ -4905,6 +5099,7 @@ const sendWhatsApp = async (client) => {
   };
 
   const startEditPotentialClient = (client) => {
+    if (!canEditData || !ensureSystemWritable()) return;
     setEditingPotentialId(client.id);
     setEditedPotentialName(client.name || "");
     setEditedPotentialPhone(client.phone || "");
@@ -4919,6 +5114,7 @@ const sendWhatsApp = async (client) => {
   };
 
   const saveEditedPotentialClient = async (id) => {
+    if (!ensureSystemWritable() || !canEditData) return;
     const { error } = await supabase
       .from("potential_clients")
       .update({
@@ -4938,6 +5134,7 @@ const sendWhatsApp = async (client) => {
   };
 
   const deletePotentialClient = async (id) => {
+    if (!ensureDeleteAllowed()) return;
     const confirmDelete = window.confirm("هل أنت متأكد من حذف العميلة المحتملة؟");
     if (!confirmDelete) return;
 
@@ -7038,6 +7235,650 @@ const welcomeBoardNameStyle = {
     setScreen("welcome");
   };
 
+
+
+  const settingsRowStyle = {
+    background: "rgba(255,250,243,0.78)",
+    border: "1px solid rgba(214,199,184,0.75)",
+    borderRadius: "18px",
+    padding: "14px",
+    color: "#4b2e1f",
+    boxShadow: "0 10px 28px rgba(75,46,31,0.08)",
+  };
+
+  const loadSettingsModuleData = async () => {
+    try {
+      const { data: settingsRows } = await supabase
+        .from("app_data")
+        .select("data_key, data")
+        .in("data_key", ["settingsSecretCode", "settingsSecurity"]);
+
+      const secretRow = settingsRows?.find((row) => row.data_key === "settingsSecretCode");
+      const securityRow = settingsRows?.find((row) => row.data_key === "settingsSecurity");
+      if (secretRow?.data?.code) setSettingsSecretCode(String(secretRow.data.code));
+      if (securityRow?.data) setSecuritySettings((prev) => ({ ...prev, ...securityRow.data }));
+    } catch (error) {
+      console.log("Settings module data load error:", error);
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("employee_accounts")
+        .select("*")
+        .order("created_at", { ascending: true });
+
+      if (error) throw error;
+      const normalized = (data || []).map(normalizeEmployeeAccount);
+      setEmployeeAccounts(normalized.length ? normalized : getDefaultEmployeeAccounts());
+    } catch (error) {
+      console.log("Employee accounts load error:", error);
+      setEmployeeAccounts(getDefaultEmployeeAccounts());
+    }
+  };
+
+  useEffect(() => {
+    if (!isLoggedIn) return undefined;
+
+    loadSettingsModuleData();
+
+    const settingsChannel = supabase
+      .channel("settings-module-sync")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "app_data" },
+        (payload) => {
+          const key = payload?.new?.data_key || payload?.old?.data_key || "";
+          if (key === "settingsSecretCode" && payload?.new?.data?.code) {
+            setSettingsSecretCode(String(payload.new.data.code));
+          }
+          if (key === "settingsSecurity" && payload?.new?.data) {
+            const nextSecurity = payload.new.data;
+            setSecuritySettings((prev) => ({ ...prev, ...nextSecurity }));
+            const localLogoutVersion = Number(localStorage.getItem("paradise-settings-logout-version") || 0);
+            const remoteLogoutVersion = Number(nextSecurity.logoutVersion || 0);
+            if (remoteLogoutVersion > localLogoutVersion && !isOwnerUser) {
+              localStorage.setItem("paradise-settings-logout-version", String(remoteLogoutVersion));
+              globalLogout();
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    const accountsChannel = supabase
+      .channel("employee-accounts-sync")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "employee_accounts" },
+        () => loadSettingsModuleData()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(settingsChannel);
+      supabase.removeChannel(accountsChannel);
+    };
+  }, [isLoggedIn, loggedInUser]);
+
+  const unlockSettings = () => {
+    if (settingsSecretInput !== settingsSecretCode) {
+      alert("الرقم السري غير صحيح");
+      return;
+    }
+    setSettingsUnlocked(true);
+    setSettingsSecretInput("");
+  };
+
+  const saveSettingsSecretCode = async () => {
+    const nextCode = window.prompt("اكتب الرقم السري الجديد للإعدادات");
+    if (!nextCode) return;
+    if (nextCode.length < 6) {
+      alert("الرقم السري قصير جداً");
+      return;
+    }
+
+    const { error } = await supabase.from("app_data").upsert(
+      {
+        data_key: "settingsSecretCode",
+        data: { code: nextCode, updatedAt: Date.now(), updatedBy: loggedInUser || "Majed" },
+      },
+      { onConflict: "data_key" }
+    );
+
+    if (error) {
+      console.log("Settings secret save error:", error);
+      alert("لم يتم حفظ الرقم السري");
+      return;
+    }
+
+    setSettingsSecretCode(nextCode);
+    alert("تم تغيير الرقم السري للإعدادات");
+  };
+
+  const saveSecuritySettings = async (nextSettings) => {
+    const merged = { ...securitySettings, ...nextSettings, updatedAt: Date.now(), updatedBy: loggedInUser || "" };
+    setSecuritySettings(merged);
+
+    const { error } = await supabase.from("app_data").upsert(
+      { data_key: "settingsSecurity", data: merged },
+      { onConflict: "data_key" }
+    );
+
+    if (error) {
+      console.log("Security settings save error:", error);
+      alert("لم يتم حفظ إعدادات الأمان");
+    }
+  };
+
+  const logoutAllDevices = async () => {
+    if (!window.confirm("تأكيد تسجيل خروج جميع الأجهزة؟")) return;
+    const nextVersion = Date.now();
+    localStorage.setItem("paradise-settings-logout-version", String(nextVersion));
+    await saveSecuritySettings({ logoutVersion: nextVersion });
+    alert("تم إرسال أمر تسجيل الخروج لجميع الأجهزة. الأجهزة الأخرى ستخرج عند استقبال التحديث.");
+  };
+
+  const toggleAccountPermission = (type, value) => {
+    const key = type === "menu" ? "menuPermissions" : "actionPermissions";
+    setAccountDraft((prev) => {
+      const current = prev[key] === "all" ? [] : prev[key] || [];
+      const next = current.includes(value)
+        ? current.filter((item) => item !== value)
+        : [...current, value];
+      return { ...prev, [key]: next };
+    });
+  };
+
+  const resetAccountDraft = () => {
+    setEditingAccountId(null);
+    setAccountDraft({ username: "", displayName: "", role: "employee", password: "", menuPermissions: [], actionPermissions: [], active: true });
+  };
+
+  const startEditAccount = (account) => {
+    setEditingAccountId(account.id);
+    setAccountDraft({
+      username: account.username || "",
+      displayName: account.displayName || "",
+      role: account.role || "employee",
+      password: "",
+      menuPermissions: account.menuPermissions === "all" ? settingsMenuOptions.map(([key]) => key) : account.menuPermissions || [],
+      actionPermissions: account.actionPermissions === "all" ? settingsActionOptions.map(([key]) => key) : account.actionPermissions || [],
+      active: account.active !== false,
+    });
+  };
+
+  const saveEmployeeAccount = async () => {
+    if (!accountDraft.username || !accountDraft.displayName) {
+      alert("اكتب ID واسم الموظف");
+      return;
+    }
+
+    const role = accountDraft.role || "employee";
+    const menuPermissions = role === "owner" || role === "manager" ? "all" : accountDraft.menuPermissions;
+    const actionPermissions = role === "owner" ? "all" : role === "manager" ? ["add", "edit", "delete"] : accountDraft.actionPermissions;
+    const payload = {
+      username: accountDraft.username.trim().toLowerCase(),
+      display_name: accountDraft.displayName.trim(),
+      role,
+      menu_permissions: menuPermissions,
+      action_permissions: actionPermissions,
+      active: accountDraft.active !== false,
+      updated_at: new Date().toISOString(),
+    };
+
+    let error;
+    if (editingAccountId && !String(editingAccountId).startsWith("default-")) {
+      ({ error } = await supabase.from("employee_accounts").update(payload).eq("id", editingAccountId));
+    } else {
+      ({ error } = await supabase.from("employee_accounts").insert([{ ...payload, created_at: new Date().toISOString() }]));
+    }
+
+    if (error) {
+      console.log("Employee account save error:", error);
+      alert("لم يتم حفظ الحساب. تأكد أن جدول employee_accounts موجود في Supabase.");
+      return;
+    }
+
+    if (accountDraft.password) {
+      alert("تم حفظ بيانات الحساب والصلاحيات. ملاحظة: كلمة المرور لحساب تسجيل الدخول الحقيقي تحتاج إنشاء/تعديل مستخدم Auth من Supabase أو API آمن لاحقاً.");
+    }
+
+    resetAccountDraft();
+    loadSettingsModuleData();
+  };
+
+  const deleteEmployeeAccount = async (account) => {
+    if (!window.confirm("هل تريد حذف هذا الحساب من جدول الصلاحيات؟")) return;
+    if (String(account.id).startsWith("default-")) {
+      alert("هذا حساب افتراضي ظاهر للحماية. بعد إنشاء جدول employee_accounts وحفظ الحسابات الحقيقية يمكن التحكم فيه من Supabase.");
+      return;
+    }
+    const { error } = await supabase.from("employee_accounts").delete().eq("id", account.id);
+    if (error) {
+      console.log("Employee account delete error:", error);
+      alert("لم يتم حذف الحساب");
+      return;
+    }
+    loadSettingsModuleData();
+  };
+
+  const fetchFullTableRows = async (tableName) => {
+    const pageSize = 1000;
+    let allRows = [];
+    let from = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      const to = from + pageSize - 1;
+      const { data, error } = await supabase.from(tableName).select("*").range(from, to);
+      if (error) throw error;
+      const page = data || [];
+      allRows = [...allRows, ...page];
+      hasMore = page.length === pageSize;
+      from += pageSize;
+    }
+
+    return allRows;
+  };
+
+  const downloadBlob = (content, filename, type = "application/json;charset=utf-8;") => {
+    const blob = new Blob([content], { type });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  };
+
+  const rowsToCsv = (rows) => {
+    if (!rows?.length) return "";
+    const columns = Array.from(rows.reduce((set, row) => {
+      Object.keys(row || {}).forEach((key) => set.add(key));
+      return set;
+    }, new Set()));
+    const escapeCsv = (value) => `"${String(typeof value === "object" && value !== null ? JSON.stringify(value) : value ?? "").replace(/"/g, '""')}"`;
+    return [columns.join(","), ...rows.map((row) => columns.map((column) => escapeCsv(row[column])).join(","))].join("\n");
+  };
+
+  const createFullBackup = async () => {
+    setBackupBusy(true);
+    try {
+      const today = getCurrentLocalDate();
+      const backup = {
+        app: "Paradise Spa",
+        version: "settings-module-backup-v1",
+        createdAt: new Date().toISOString(),
+        folderName: `ParadiseSpa_Backup_${today}`,
+        tables: {},
+      };
+
+      for (const tableName of settingsTables) {
+        try {
+          backup.tables[tableName] = await fetchFullTableRows(tableName);
+        } catch (error) {
+          backup.tables[tableName] = { error: error.message || String(error), rows: [] };
+        }
+      }
+
+      downloadBlob(JSON.stringify(backup, null, 2), `${backup.folderName}.json`);
+
+      Object.entries(backup.tables).forEach(([tableName, rows], index) => {
+        if (Array.isArray(rows)) {
+          setTimeout(() => {
+            downloadBlob("\uFEFF" + rowsToCsv(rows), `${backup.folderName}_${tableName}.csv`, "text/csv;charset=utf-8;");
+          }, 250 * (index + 1));
+        }
+      });
+
+      alert("تم إنشاء الباك أب. سيظهر ملف JSON كامل + ملفات CSV للجداول. احفظها داخل مجلد واحد بنفس تاريخ اليوم.");
+    } catch (error) {
+      console.log("Backup error:", error);
+      alert("فشل إنشاء الباك أب");
+    } finally {
+      setBackupBusy(false);
+    }
+  };
+
+  const restoreDeleteColumnByTable = {
+    clients: "id",
+    schedule_rows: "id",
+    daily_reports: "report_date",
+    app_data: "data_key",
+    gift_clients: "id",
+    referred_clients: "id",
+    potential_clients: "id",
+    employee_accounts: "id",
+  };
+
+  const restoreRowsToTable = async (tableName, rows) => {
+    if (!Array.isArray(rows)) return;
+    const deleteColumn = restoreDeleteColumnByTable[tableName];
+    if (deleteColumn) {
+      const { error: deleteError } = await supabase.from(tableName).delete().not(deleteColumn, "is", null);
+      if (deleteError) throw deleteError;
+    }
+
+    const chunkSize = 500;
+    for (let index = 0; index < rows.length; index += chunkSize) {
+      const chunk = rows.slice(index, index + chunkSize);
+      if (chunk.length > 0) {
+        const { error } = await supabase.from(tableName).insert(chunk);
+        if (error) throw error;
+      }
+    }
+  };
+
+  const restoreBackupFromFile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setRestoreFileName(file.name);
+
+    const text = await file.text();
+    let backup;
+    try {
+      backup = JSON.parse(text);
+    } catch {
+      alert("ملف الاستعادة غير صحيح. اختار ملف JSON الخاص بالباك أب.");
+      return;
+    }
+
+    if (!backup?.tables) {
+      alert("ملف الباك أب لا يحتوي على tables");
+      return;
+    }
+
+    const firstConfirm = window.confirm("استعادة الباك أب ستمسح الجداول الحالية وترجع بيانات الملف. لا تستخدمها إلا وقت الطوارئ. هل تريد المتابعة؟");
+    if (!firstConfirm) return;
+
+    const typed = window.prompt('للتأكيد النهائي اكتب RESTORE');
+    if (typed !== "RESTORE") {
+      alert("تم إلغاء الاستعادة");
+      return;
+    }
+
+    setRestoreBusy(true);
+    try {
+      for (const tableName of settingsTables) {
+        if (Array.isArray(backup.tables[tableName])) {
+          await restoreRowsToTable(tableName, backup.tables[tableName]);
+        }
+      }
+      alert("تمت الاستعادة. يفضل تحديث الصفحة والتأكد من العدادات.");
+      fetchClients();
+      fetchSharedClientLists();
+      loadScheduleRowsForDate(selectedScheduleDate);
+      loadDailyReportForDate(selectedScheduleDate);
+    } catch (error) {
+      console.log("Restore error:", error);
+      alert("فشلت الاستعادة. لا تعيد المحاولة قبل مراجعة الخطأ في Console.");
+    } finally {
+      setRestoreBusy(false);
+    }
+  };
+
+  const getTableCount = async (tableName) => {
+    const { count, error } = await supabase.from(tableName).select("*", { count: "exact", head: true });
+    if (error) throw error;
+    return count || 0;
+  };
+
+  const checkSystemHealth = async () => {
+    const result = {
+      checkedAt: new Date().toLocaleString(),
+      rows: [],
+      realtime: "Realtime healthy",
+    };
+
+    const localCounts = {
+      clients: clients.length,
+      gift_clients: giftClients.length,
+      referred_clients: manualReferrals.length,
+      potential_clients: potentialClients.length,
+    };
+
+    for (const tableName of ["clients", "schedule_rows", "daily_reports", "gift_clients", "referred_clients", "potential_clients", "app_data", "employee_accounts"]) {
+      try {
+        const supabaseCount = await getTableCount(tableName);
+        const localCount = localCounts[tableName];
+        result.rows.push({
+          tableName,
+          localCount: localCount === undefined ? "-" : localCount,
+          supabaseCount,
+          status: localCount === undefined || Number(localCount) === Number(supabaseCount) ? "OK" : "Mismatch",
+        });
+      } catch (error) {
+        result.rows.push({ tableName, localCount: "-", supabaseCount: "Error", status: error.message || "Error" });
+      }
+    }
+
+    setSystemHealth(result);
+  };
+
+  const checkServerHealth = async () => {
+    try {
+      const response = await fetch("/api/server-health", { cache: "no-store" });
+      if (!response.ok) throw new Error(`Server health API ${response.status}`);
+      setServerHealth(await response.json());
+    } catch (error) {
+      setServerHealth({
+        error: "Server health needs a secure server-side API on Contabo/Coolify. React alone should not read Docker/Contabo internals directly.",
+        details: error.message || String(error),
+      });
+    }
+  };
+
+  const settingsTabButton = (key, label) => (
+    <button
+      onClick={() => setSettingsActiveTab(key)}
+      style={{
+        ...buttonStyle,
+        background: settingsActiveTab === key ? "linear-gradient(135deg, #3a2418, #7a5a43)" : "rgba(255,255,255,0.72)",
+        color: settingsActiveTab === key ? "white" : "#4b2e1f",
+        border: "1px solid rgba(214,199,184,0.85)",
+        borderRadius: "18px",
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  const renderPermissionChecks = (type, options) => {
+    const key = type === "menu" ? "menuPermissions" : "actionPermissions";
+    const values = accountDraft[key] || [];
+    return (
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "8px", marginTop: "10px" }}>
+        {options.map(([value, label]) => (
+          <label key={value} style={{ ...settingsRowStyle, display: "flex", gap: "8px", alignItems: "center", padding: "9px" }}>
+            <input type="checkbox" checked={values.includes(value)} onChange={() => toggleAccountPermission(type, value)} />
+            {label}
+          </label>
+        ))}
+      </div>
+    );
+  };
+
+  const renderSettingsContent = () => {
+    if (settingsActiveTab === "accounts") {
+      return (
+        <div style={{ display: "grid", gap: "18px" }}>
+          <div style={settingsRowStyle}>
+            <h3 style={{ marginTop: 0 }}>👥 الحسابات والصلاحيات</h3>
+            <p style={{ color: "#7a5a43", fontWeight: 700 }}>
+              الحسابات الحالية تبقى كما هي. هذا القسم يدير سجل الموظفين والصلاحيات من Supabase بدون استبدال تسجيل الدخول الحالي.
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "10px" }}>
+              <input placeholder="Employee ID" value={accountDraft.username} onChange={(e) => setAccountDraft((prev) => ({ ...prev, username: e.target.value }))} style={{ ...inputStyle, width: "100%", margin: 0 }} />
+              <input placeholder="اسم الموظف" value={accountDraft.displayName} onChange={(e) => setAccountDraft((prev) => ({ ...prev, displayName: e.target.value }))} style={{ ...inputStyle, width: "100%", margin: 0 }} />
+              <select value={accountDraft.role} onChange={(e) => setAccountDraft((prev) => ({ ...prev, role: e.target.value }))} style={{ ...inputStyle, width: "100%", margin: 0 }}>
+                <option value="owner">owner majed</option>
+                <option value="manager">manager</option>
+                <option value="employee">employee</option>
+                <option value="readonly">read only</option>
+              </select>
+              <input placeholder="Password ملاحظة فقط" type="password" value={accountDraft.password} onChange={(e) => setAccountDraft((prev) => ({ ...prev, password: e.target.value }))} style={{ ...inputStyle, width: "100%", margin: 0 }} />
+            </div>
+            <h4>صلاحيات القوائم</h4>
+            {renderPermissionChecks("menu", settingsMenuOptions)}
+            <h4>صلاحيات الأزرار</h4>
+            {renderPermissionChecks("action", settingsActionOptions)}
+            <div style={{ display: "flex", gap: "10px", marginTop: "14px", flexWrap: "wrap" }}>
+              <button onClick={saveEmployeeAccount} style={{ ...buttonStyle, background: "#4b2e1f", color: "white" }}>{editingAccountId ? "حفظ التعديل" : "إضافة حساب"}</button>
+              <button onClick={resetAccountDraft} style={{ ...buttonStyle, background: "#d8c5b3", color: "#4b2e1f" }}>تفريغ</button>
+            </div>
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0 9px" }}>
+              <tbody>
+                {employeeAccounts.map((account) => (
+                  <tr key={account.id} style={settingsRowStyle}>
+                    <td style={{ padding: "12px" }}>{account.displayName}</td>
+                    <td style={{ padding: "12px" }}>{account.username}</td>
+                    <td style={{ padding: "12px" }}>{account.role}</td>
+                    <td style={{ padding: "12px" }}>{account.active ? "Active" : "Disabled"}</td>
+                    <td style={{ padding: "12px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                      <button onClick={() => startEditAccount(account)} style={{ ...buttonStyle, background: "#d8c5b3", color: "#4b2e1f" }}>تعديل</button>
+                      <button onClick={() => deleteEmployeeAccount(account)} style={{ ...buttonStyle, background: "#9b6b57", color: "white" }}>حذف</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    if (settingsActiveTab === "backup") {
+      return (
+        <div style={{ display: "grid", gap: "16px" }}>
+          <div style={settingsRowStyle}>
+            <h3>💾 النسخ الاحتياطي</h3>
+            <p>ينزل ملف JSON كامل للاستعادة + ملفات CSV للجداول للمراجعة. احفظ الملفات كلها داخل مجلد بتاريخ اليوم.</p>
+            <button onClick={createFullBackup} disabled={backupBusy} style={{ ...buttonStyle, background: "#4b2e1f", color: "white" }}>{backupBusy ? "جاري إنشاء الباك أب..." : "إنشاء Backup"}</button>
+          </div>
+          <div style={settingsRowStyle}>
+            <h3>استعادة الباك أب</h3>
+            <p style={{ color: "#9b4b3d", fontWeight: 900 }}>للطوارئ فقط. الاستعادة تمسح الجداول الحالية وترفع بيانات ملف الباك أب.</p>
+            <input type="file" accept="application/json,.json" onChange={restoreBackupFromFile} disabled={restoreBusy} />
+            <div style={{ marginTop: "10px" }}>{restoreBusy ? "جاري الاستعادة..." : restoreFileName ? `آخر ملف مختار: ${restoreFileName}` : "لم يتم اختيار ملف"}</div>
+          </div>
+        </div>
+      );
+    }
+
+    if (settingsActiveTab === "security") {
+      return (
+        <div style={{ display: "grid", gap: "16px" }}>
+          <div style={settingsRowStyle}><h3>🛡️ الأمان</h3></div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "14px" }}>
+            <button onClick={logoutAllDevices} style={{ ...buttonStyle, background: "#4b2e1f", color: "white" }}>تسجيل خروج جميع الأجهزة</button>
+            <button onClick={saveSettingsSecretCode} style={{ ...buttonStyle, background: "#8a6048", color: "white" }}>تغيير الرقم السري للإعدادات</button>
+            <button onClick={() => saveSecuritySettings({ deleteLocked: !securitySettings.deleteLocked })} style={{ ...buttonStyle, background: securitySettings.deleteLocked ? "#9b4b3d" : "#d8c5b3", color: securitySettings.deleteLocked ? "white" : "#4b2e1f" }}>{securitySettings.deleteLocked ? "إلغاء قفل الحذف" : "قفل الحذف"}</button>
+            <button onClick={() => saveSecuritySettings({ systemFrozen: !securitySettings.systemFrozen })} style={{ ...buttonStyle, background: securitySettings.systemFrozen ? "#9b4b3d" : "#d8c5b3", color: securitySettings.systemFrozen ? "white" : "#4b2e1f" }}>{securitySettings.systemFrozen ? "إلغاء تجميد النظام" : "تجميد النظام"}</button>
+          </div>
+        </div>
+      );
+    }
+
+    if (settingsActiveTab === "system") {
+      return (
+        <div style={{ display: "grid", gap: "16px" }}>
+          <div style={settingsRowStyle}>
+            <h3>📊 النظام</h3>
+            <button onClick={checkSystemHealth} style={{ ...buttonStyle, background: "#4b2e1f", color: "white" }}>فحص النظام الآن</button>
+          </div>
+          {systemHealth && (
+            <div style={settingsRowStyle}>
+              <div style={{ marginBottom: "10px", fontWeight: 900 }}>آخر فحص: {systemHealth.checkedAt} — {systemHealth.realtime}</div>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead><tr><th>Table</th><th>App Count</th><th>Supabase Count</th><th>Status</th></tr></thead>
+                <tbody>{systemHealth.rows.map((row) => <tr key={row.tableName}><td>{row.tableName}</td><td>{row.localCount}</td><td>{row.supabaseCount}</td><td>{row.status}</td></tr>)}</tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    if (settingsActiveTab === "server") {
+      const serverRows = serverHealth && !serverHealth.error
+        ? Object.entries(serverHealth)
+        : [["Status", serverHealth?.error || "اضغط فحص السيرفر"], ["Details", serverHealth?.details || ""]];
+      return (
+        <div style={{ display: "grid", gap: "16px" }}>
+          <div style={settingsRowStyle}>
+            <h3>🖥️ السيرفر</h3>
+            <p>أفضل وأأمن طريقة: API محمي على السيرفر يرجع RAM / CPU / Storage / Docker / Coolify / Realtime / Postgres / Kong / Restart Count / Health Status.</p>
+            <button onClick={checkServerHealth} style={{ ...buttonStyle, background: "#4b2e1f", color: "white" }}>فحص السيرفر</button>
+          </div>
+          <div style={settingsRowStyle}>{serverRows.map(([key, value]) => <div key={key} style={{ marginBottom: "8px" }}><b>{key}:</b> {String(value)}</div>)}</div>
+        </div>
+      );
+    }
+
+    return (
+      <div style={settingsRowStyle}>
+        <h3>📥 تحميل الجدول يدوي</h3>
+        <p>ينزل ملف Excel لنفس الشهر المختار بنفس تقرير النظام وصفحات أيام الشهر.</p>
+        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center" }}>
+          <input type="month" value={manualExcelMonth} onChange={(e) => setManualExcelMonth(e.target.value)} style={{ ...inputStyle, width: "220px", margin: 0 }} />
+          <button onClick={() => exportFinanceMonthToExcel(manualExcelMonth)} style={{ ...buttonStyle, background: "#4b2e1f", color: "white" }}>تحميل الجدول يدوي</button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderSettingsScreen = () => (
+    <div style={{ minHeight: "100%", direction: "rtl" }}>
+      <div
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 20,
+          marginBottom: "22px",
+          background: "linear-gradient(135deg, rgba(75,46,31,0.98), rgba(138,106,80,0.94))",
+          color: "white",
+          borderRadius: "28px",
+          padding: "22px",
+          boxShadow: "0 22px 48px rgba(75,46,31,0.18)",
+          display: "flex",
+          justifyContent: "space-between",
+          gap: "14px",
+          flexWrap: "wrap",
+          alignItems: "center",
+        }}
+      >
+        <div>
+          <div style={{ fontSize: "13px", opacity: 0.82, marginBottom: "6px" }}>Paradise Spa</div>
+          <h2 style={{ margin: 0, fontSize: "28px" }}>الإعدادات</h2>
+        </div>
+        <div style={{ fontWeight: 900 }}>{isSystemFrozen ? "النظام مجمّد" : "النظام يعمل"} — {securitySettings.deleteLocked ? "الحذف مقفل" : "الحذف مفتوح حسب الصلاحيات"}</div>
+      </div>
+
+      {!settingsUnlocked ? (
+        <div style={{ ...settingsRowStyle, maxWidth: "520px", margin: "80px auto", textAlign: "center" }}>
+          <h3>أدخل الرقم السري للإعدادات</h3>
+          <input type="password" value={settingsSecretInput} onChange={(e) => setSettingsSecretInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") unlockSettings(); }} style={{ ...inputStyle, width: "100%" }} placeholder="Settings Password" />
+          <button onClick={unlockSettings} style={{ ...buttonStyle, background: "#4b2e1f", color: "white", width: "180px" }}>دخول</button>
+        </div>
+      ) : (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "10px", marginBottom: "18px" }}>
+            {settingsTabButton("accounts", "👥 الحسابات")}
+            {settingsTabButton("backup", "💾 النسخ الاحتياطي")}
+            {settingsTabButton("security", "🛡️ الأمان")}
+            {settingsTabButton("system", "📊 النظام")}
+            {settingsTabButton("server", "🖥️ السيرفر")}
+            {settingsTabButton("excel", "📥 Excel شهري")}
+          </div>
+          {renderSettingsContent()}
+        </>
+      )}
+    </div>
+  );
   const globalSearchBox = (compact = false) => (
     <div
       ref={dashboardSearchRef}
@@ -7388,7 +8229,7 @@ const welcomeBoardNameStyle = {
               }}
             />
 <div className="paradise-global-sidebar-buttons">
-            {dashboardServices.map(([key, label]) => (
+            {dashboardServices.filter(([key]) => canViewMenu(key)).map(([key, label]) => (
               <button
                 key={key}
                 onClick={() => setScreen(key)}
@@ -7402,10 +8243,10 @@ const welcomeBoardNameStyle = {
                   background:
                     screen === key
                       ? "linear-gradient(135deg, #3a2418, #7a5a43)"
-                      : key === "finance" || key === "incomeExpenses"
+                      : ["finance", "incomeExpenses", "settings"].includes(key)
                       ? "linear-gradient(135deg, #a58979, #8a6048)"
                       : "rgba(255,255,255,0.68)",
-                  color: screen === key || key === "finance" || key === "incomeExpenses" ? "white" : "#4b2e1f",
+                  color: screen === key || ["finance", "incomeExpenses", "settings"].includes(key) ? "white" : "#4b2e1f",
                   border: "1px solid rgba(214,199,184,0.75)",
                   borderRadius: "18px",
                   transition: "0.25s ease",
@@ -7529,8 +8370,9 @@ const welcomeBoardNameStyle = {
             }}
           >
             {globalSearchBox(true)}
+{canAddData && (
 <button
-  onClick={() => setShowGlobalClientForm(true)}
+  onClick={() => { if (ensureSystemWritable()) setShowGlobalClientForm(true); }}
   style={{
     ...buttonStyle,
     height: "44px",
@@ -7550,6 +8392,7 @@ const welcomeBoardNameStyle = {
 >
   + Add Client
 </button>
+)}
             <div
               style={{
                 background: "linear-gradient(135deg, #fffaf3, #f3e8df)",
@@ -9305,22 +10148,24 @@ if (!isLoggedIn) {
                             Cancel
                           </button>
                         </div>
-                      ) : (
+                      ) : canEditData ? (
                         <button
                           onClick={() => startEditReferral(referral)}
                           style={{ ...buttonStyle, backgroundColor: "#f3e8df", color: "#4b2e1f", padding: "9px 16px" }}
                         >
                           Edit
                         </button>
-                      )}
+                      ) : null}
                     </td>
                     <td style={{ padding: "14px" }}>
+                      {canDeleteData && (
                       <button
                         onClick={() => deleteReferral(referral)}
                         style={{ ...buttonStyle, backgroundColor: "#c3b4a1", color: "white", padding: "9px 16px" }}
                       >
                         Delete
                       </button>
+                      )}
                     </td>
                   </tr>
                 );
@@ -9738,6 +10583,10 @@ if (screen === "finance") {
         </div>
       </div>
     );
+  }
+
+  if (screen === "settings") {
+    return withGreeting(renderSettingsScreen());
   }
 
   if (screen === "incomeExpenses") {
@@ -10340,12 +11189,12 @@ marginRight: "auto",
                           <button onClick={() => saveEditedGift(gift.id)} style={{ ...buttonStyle, backgroundColor: "#4b2e1f", color: "white", padding: "8px 12px" }}>Save</button>
                           <button onClick={cancelEditGift} style={{ ...buttonStyle, backgroundColor: "#f3e8df", color: "#4b2e1f", padding: "8px 12px" }}>Cancel</button>
                         </div>
-                      ) : (
+                      ) : canEditData ? (
                         <button onClick={() => startEditGift(gift)} style={{ ...buttonStyle, backgroundColor: "#f3e8df", color: "#4b2e1f", padding: "9px 16px" }}>Edit</button>
-                      )}
+                      ) : null}
                     </td>
                     <td style={{ padding: "14px" }}>
-                      <button onClick={() => deleteGiftClient(gift.id)} style={{ ...buttonStyle, backgroundColor: "#c3b4a1", color: "white", padding: "9px 16px" }}>Delete</button>
+                      {canDeleteData && <button onClick={() => deleteGiftClient(gift.id)} style={{ ...buttonStyle, backgroundColor: "#c3b4a1", color: "white", padding: "9px 16px" }}>Delete</button>}
                     </td>
                   </tr>
                 );
@@ -10644,22 +11493,24 @@ if (screen === "potentialClients") {
                             Cancel
                           </button>
                         </div>
-                      ) : (
+                      ) : canEditData ? (
                         <button
                           onClick={() => startEditPotentialClient(client)}
                           style={{ ...buttonStyle, backgroundColor: "#f3e8df", color: "#4b2e1f", padding: "9px 16px" }}
                         >
                           Edit
                         </button>
-                      )}
+                      ) : null}
                     </td>
                     <td style={{ padding: "14px" }}>
+                      {canDeleteData && (
                       <button
                         onClick={() => deletePotentialClient(client.id)}
                         style={{ ...buttonStyle, backgroundColor: "#c3b4a1", color: "white", padding: "9px 16px" }}
                       >
                         Delete
                       </button>
+                      )}
                     </td>
                   </tr>
                 );
@@ -11619,6 +12470,7 @@ if (screen === "availableAppointments") {
                   }}
                 />
 
+                {canDeleteData && (
                 <button
                   onClick={() => removeProfileReferral(referral.id)}
                   style={{
@@ -11630,6 +12482,7 @@ if (screen === "availableAppointments") {
                 >
                   حذف
                 </button>
+                )}
               </div>
             ))}
           </div>
