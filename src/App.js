@@ -3985,12 +3985,14 @@ while (hasMoreScheduleRows) {
   const exportFinanceMonthToExcel = (monthKey) => {
     const stats = getFinanceMonthStats(monthKey);
     const monthDates = getFinanceMonthDates(monthKey);
+    const monthLabel = getFinanceMonthLabel(monthKey);
+    const daysCount = Math.max(1, monthDates.length || 1);
     const escapeXml = (value) =>
       String(value ?? "")
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;");
+        .replace(/\"/g, "&quot;");
     const safeSheetName = (name) => escapeXml(String(name || "Sheet").slice(0, 31));
     const isNumericCell = (value) =>
       typeof value === "number" ||
@@ -4004,17 +4006,24 @@ while (hasMoreScheduleRows) {
       if (mergeAcross) cellAttrs.push(`ss:MergeAcross="${mergeAcross}"`);
       return `<Cell ${cellAttrs.filter(Boolean).join(" ")}><Data ss:Type="${type}">${escapeXml(type === "Number" ? excelNumber(value) : value)}</Data></Cell>`;
     };
-    const row = (values, styleId = "Body") =>
-      `<Row>${values.map((value) => cell(value, styleId)).join("")}</Row>`;
-    const titleRow = (title, columns = 12) =>
-      `<Row>${cell(title, "Title", Math.max(0, columns - 1))}</Row>`;
-    const sectionRow = (title, columns = 12) =>
-      `<Row>${cell(title, "Section", Math.max(0, columns - 1))}</Row>`;
-    const blankRow = () => `<Row>${cell("", "Blank")}</Row>`;
-    const worksheet = (name, rows, columnCount = 12) => `
+    const formulaCell = (formula, fallbackValue = 0, styleId = "Value", mergeAcross = 0) => {
+      const cellAttrs = [styleId ? `ss:StyleID="${styleId}"` : "", `ss:Formula="${escapeXml(formula)}"`];
+      if (mergeAcross) cellAttrs.push(`ss:MergeAcross="${mergeAcross}"`);
+      return `<Cell ${cellAttrs.filter(Boolean).join(" ")}><Data ss:Type="Number">${excelNumber(Number(fallbackValue || 0).toFixed(2))}</Data></Cell>`;
+    };
+    const rowXml = (cells) => `<Row>${cells.join("")}</Row>`;
+    const row = (values, styleId = "Body") => rowXml(values.map((value) => cell(value, styleId)));
+    const metricRow = (label, value, styleId = "Body") => rowXml([cell(label, "Label"), value && value.formula ? formulaCell(value.formula, value.fallback, value.styleId || "Value") : cell(value, styleId)]);
+    const titleRow = (title, columns = 12) => rowXml([cell(title, "Title", Math.max(0, columns - 1))]);
+    const sectionRow = (title, columns = 12) => rowXml([cell(title, "Section", Math.max(0, columns - 1))]);
+    const blankRow = () => rowXml([cell("", "Blank")]);
+    const worksheet = (name, rows, columnCount = 12, options = "") => `
       <Worksheet ss:Name="${safeSheetName(name)}">
         <Table>
-          ${Array.from({ length: columnCount }, () => '<Column ss:Width="110"/>').join("")}
+          ${Array.from({ length: columnCount }, (_, index) => {
+            const width = index === 0 ? 155 : index === 1 ? 120 : 105;
+            return `<Column ss:Width="${width}"/>`;
+          }).join("")}
           ${rows.join("")}
         </Table>
         <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
@@ -4023,100 +4032,184 @@ while (hasMoreScheduleRows) {
           <SplitHorizontal>1</SplitHorizontal>
           <TopRowBottomPane>1</TopRowBottomPane>
           <ActivePane>2</ActivePane>
+          ${options}
         </WorksheetOptions>
       </Worksheet>
     `;
-    const sectionRows = (title, rows, columns = 3) => [
-      sectionRow(title, columns),
-      ...rows.map(([label, value]) =>
-        `<Row>${cell(label, "Label")}${cell(formatCurrency(value), "Value")}${cell("", "Body")}</Row>`
-      ),
+    const sheetReference = (date, rowNumber, columnNumber = 2) => `'${date}'!R${rowNumber}C${columnNumber}`;
+    const sumDailyFormula = (rowNumber, columnNumber = 2) => {
+      const refs = monthDates.map((date) => sheetReference(date, rowNumber, columnNumber));
+      return refs.length ? `=SUM(${refs.join(",")})` : "=0";
+    };
+    const formulaValue = (formula, fallback, styleId = "Value") => ({ formula, fallback, styleId });
+    const monthlySettings = stats.monthlySettings || getFinanceMonthSettings(monthKey);
+    const paymentRows = [
+      ["Cash", 29, stats.paymentTotals.Cash],
+      ["Debit", 30, stats.paymentTotals.Debit],
+      ["Credit", 31, stats.paymentTotals.Credit],
+      ["Tabby", 32, stats.paymentTotals.Tabby],
+      ["Tamara", 33, stats.paymentTotals.Tamara],
+      ["Bank Transfer", 34, stats.paymentTotals["Bank Transfer"]],
+      ["Paid", 35, stats.paymentTotals.Paid],
     ];
-
-    const reportSheetRows = [
-      titleRow(`${getFinanceMonthLabel(monthKey)} Reports`, 12),
-      ...sectionRows("Summary", [
-        ["Total Income", stats.totalIncome],
-        ["Total Expenses", stats.totalExpenses],
-        ["Total Net Profit", stats.totalNetProfit],
-        ["AVG Daily Income", stats.averageDailyIncome],
-        ["AVG Daily Expenses", stats.averageDailyExpenses],
-        ["AVG Daily Net Income", stats.averageDailyNetIncome],
-        ["Last Update", stats.lastUpdate],
-      ], 12),
+    const operatingRows = [
+      ["Gas Station", sumDailyFormula(56), stats.operatingExpenses["Gas Station"]],
+      ["Commission", sumDailyFormula(59), stats.operatingExpenses.Commission],
+      ["Purchase", sumDailyFormula(58), stats.operatingExpenses.Purchase],
+      ["House Rent", "=R6C2", parseAmount(monthlySettings.houseRent)],
+      ["Car Rent", "=R7C2", parseAmount(monthlySettings.carRent)],
+      ["Uber", sumDailyFormula(57), stats.operatingExpenses.Uber],
+      ["Laundry", "=0", 0],
+      ["Food", "=0", 0],
+      ["Government Fees", "=R8C2", parseAmount(monthlySettings.governmentFees)],
+      ["Salary", "=R5C2", parseAmount(monthlySettings.staffSalary)],
+    ];
+    const reportsRows = [
+      titleRow(`${monthLabel} Reports Dashboard`, 8),
       blankRow(),
-      ...sectionRows("Payment Method", Object.entries(stats.paymentTotals), 12),
+      sectionRow("Monthly Settings", 8),
+      metricRow(`${monthLabel} Target`, parseAmount(monthlySettings.monthlyTarget)),
+      metricRow("Staff Salary", parseAmount(monthlySettings.staffSalary)),
+      metricRow("House Rent", parseAmount(monthlySettings.houseRent)),
+      metricRow("Car Rent", parseAmount(monthlySettings.carRent)),
+      metricRow("Government Fees", parseAmount(monthlySettings.governmentFees)),
       blankRow(),
-      ...sectionRows("Operating Expenses", Object.entries(stats.operatingExpenses), 12),
+      sectionRow("Payment Method", 8),
+      ...paymentRows.map(([label, sourceRow, fallback]) => metricRow(label, formulaValue(sumDailyFormula(sourceRow), fallback))),
+      metricRow("Total", formulaValue("=SUM(R[-7]C:R[-1]C)", stats.paymentTotal, "Total")),
       blankRow(),
-      ...sectionRows("Target", [
-        ["Monthly Target", stats.monthlyTarget],
-        ["Target by service", stats.targetByService],
-        ["Remaining Services To Achieve Target", stats.remainingServicesToTarget],
-        ["AVG Service Price", stats.averageServicePrice],
-        ["Total Services", stats.totalServices],
-      ], 12),
+      sectionRow("Operating Expenses", 8),
+      ...operatingRows.map(([label, formula, fallback]) => metricRow(label, formulaValue(formula, fallback))),
+      metricRow("Total", formulaValue("=SUM(R[-10]C:R[-1]C)", stats.totalExpenses, "Total")),
       blankRow(),
-      sectionRow("Daily Income / Expenses / Net Profit", 12),
+      sectionRow("Target", 8),
+      metricRow(`${monthLabel} Target`, formulaValue("=R4C2", stats.monthlyTarget)),
+      metricRow("Target by service", formulaValue("=IF(R37C2>0,R34C2/R37C2,0)", stats.targetByService)),
+      metricRow("Remaining Services", formulaValue("=MAX(0,R35C2-R38C2)", stats.remainingServicesToTarget)),
+      metricRow("AVG Service Price", formulaValue("=IF(R38C2>0,R18C2/R38C2,0)", stats.averageServicePrice)),
+      metricRow("Total Services", formulaValue(sumDailyFormula(43), stats.totalServices, "Total")),
+      blankRow(),
+      sectionRow("Clients", 8),
+      metricRow("New Clients", formulaValue(sumDailyFormula(46), stats.newClients)),
+      metricRow("Loyal Clients", formulaValue(sumDailyFormula(47), stats.loyalClients)),
+      blankRow(),
+      sectionRow("Gifts", 8),
+      metricRow("Gifts Added", formulaValue(sumDailyFormula(48), stats.giftsAdded)),
+      metricRow("Gifts Received", formulaValue(sumDailyFormula(49), stats.giftsReceived)),
+      blankRow(),
+      sectionRow("Loyalty Card Gifts", 8),
+      metricRow("1 Service", formulaValue(sumDailyFormula(50), stats.freeGifts)),
+      metricRow("2 Service", formulaValue(sumDailyFormula(51), stats.twoFreeGifts)),
+      blankRow(),
+      sectionRow("Transportation", 8),
+      metricRow("Transportation", formulaValue(sumDailyFormula(62), stats.totalTransportation, "Total")),
+      blankRow(),
+      sectionRow("Services Count", 8),
+      metricRow("Massage", formulaValue(sumDailyFormula(39), stats.servicesTotals.Massage)),
+      metricRow("Mani/Pedi", formulaValue(sumDailyFormula(40), stats.servicesTotals["Mani & Pedi"])),
+      metricRow("Moroccan Bath", formulaValue(sumDailyFormula(41), stats.servicesTotals["Moroccan Bath"])),
+      metricRow("Package", formulaValue(sumDailyFormula(42), stats.servicesTotals.Package)),
+      metricRow("Total Services", formulaValue("=SUM(R[-4]C:R[-1]C)", stats.totalServices, "Total")),
+      blankRow(),
+      sectionRow("Cancelled Appointments", 8),
+      metricRow("Cancelled Appointments", formulaValue(sumDailyFormula(52), stats.clientsTurnedAway)),
+      blankRow(),
+      sectionRow("Daily Income / Expenses / Net Profit", 8),
       row(["Date", "Income", "Expenses", "Net Profit"], "Header"),
-      ...stats.dayStats.map((day) =>
-        row([day.date, formatCurrency(day.income), formatCurrency(day.expenses), formatCurrency(day.netProfit)], "Body")
-      ),
-      row(["Total", formatCurrency(stats.totalIncome), formatCurrency(stats.totalExpenses), formatCurrency(stats.totalNetProfit)], "Total"),
+      ...monthDates.map((date) => {
+        const dayStats = getFinanceDayStats(date, monthlySettings);
+        return rowXml([
+          cell(date, "Body"),
+          formulaCell(`=${sheetReference(date, 55)}`, dayStats.income),
+          formulaCell(`=${sheetReference(date, 60)}`, dayStats.expenses),
+          formulaCell(`=${sheetReference(date, 61)}`, dayStats.netProfit),
+        ]);
+      }),
+      rowXml([
+        cell("Total", "Total"),
+        formulaCell("=SUM(R[-" + monthDates.length + "]C:R[-1]C)", stats.totalIncome, "Total"),
+        formulaCell("=SUM(R[-" + monthDates.length + "]C:R[-1]C)", stats.totalExpenses, "Total"),
+        formulaCell("=SUM(R[-" + monthDates.length + "]C:R[-1]C)", stats.totalNetProfit, "Total"),
+      ]),
     ];
 
     const scheduleHeader = scheduleColumns.map((column) => column.label);
-    const makeScheduleRowValue = (scheduleRow, column) => {
-      if (column.field === "frame") return scheduleRow.frame ? "TRUE" : "";
+    const scheduleColumnIndexByField = scheduleColumns.reduce((result, column, index) => {
+      result[column.field] = index + 1;
+      return result;
+    }, {});
+    const makeScheduleCell = (scheduleRow, column, rowNumber) => {
+      if (column.field === "frame") return cell(scheduleRow.frame ? "TRUE" : "", "Body");
       if (column.field === "totalPrice") {
-        return formatCurrency(parseAmount(scheduleRow.serviceAmount) + parseAmount(scheduleRow.transportation));
+        return formulaCell(`=RC[-1]+RC[-2]`, parseAmount(scheduleRow.serviceAmount) + parseAmount(scheduleRow.transportation), "Value");
       }
-      return scheduleRow[column.field] || "";
+      return cell(scheduleRow[column.field] || "", "Body");
     };
+    const dataStartRow = 3;
+    const dataEndRow = dataStartRow + timeSlots.length - 1;
+    const statusCol = scheduleColumnIndexByField.status;
+    const orderCol = scheduleColumnIndexByField.order;
+    const servicesCol = scheduleColumnIndexByField.services;
+    const transportationCol = scheduleColumnIndexByField.transportation;
+    const serviceAmountCol = scheduleColumnIndexByField.serviceAmount;
+    const totalPriceCol = scheduleColumnIndexByField.totalPrice;
+    const paymentCol = scheduleColumnIndexByField.paymentMethod;
+    const r = (rowNumber, colNumber) => `R${rowNumber}C${colNumber}`;
+    const range = (colNumber) => `${r(dataStartRow, colNumber)}:${r(dataEndRow, colNumber)}`;
+    const activeCriteria = `${range(statusCol)},"<>Cancel"`;
     const scheduleSheets = monthDates.map((date) => {
       const rowsForDate = getRowsForDate(date);
-      const dayStats = getFinanceDayStats(date, stats.monthlySettings);
+      const dayStats = getFinanceDayStats(date, monthlySettings);
+      const dayFormula = {
+        payment: (method) => `=SUMIFS(${range(totalPriceCol)},${range(paymentCol)},"${method}",${activeCriteria})`,
+        serviceCount: (keyword) => `=COUNTIFS(${range(servicesCol)},"*${keyword}*",${activeCriteria})`,
+      };
       const sheetRows = [
         titleRow(`Schedule ${date}`, scheduleHeader.length),
         row(scheduleHeader, "Header"),
         ...rowsForDate.map((scheduleRow, index) =>
-          row(scheduleColumns.map((column) => makeScheduleRowValue(scheduleRow, column)), index % 2 === 0 ? "Body" : "AltBody")
+          rowXml(scheduleColumns.map((column) => makeScheduleCell(scheduleRow, column, dataStartRow + index)))
         ),
         blankRow(),
         sectionRow("Payment Method", scheduleHeader.length),
-        ...Object.entries(dayStats.paymentTotals).map(([label, value]) =>
-          row([label, formatCurrency(value)], "Body")
-        ),
-        row(["Total", formatCurrency(dayStats.income)], "Total"),
+        metricRow("Cash", formulaValue(dayFormula.payment("Cash"), dayStats.paymentTotals.Cash)),
+        metricRow("Debit", formulaValue(dayFormula.payment("Debit"), dayStats.paymentTotals.Debit)),
+        metricRow("Credit", formulaValue(dayFormula.payment("Credit"), dayStats.paymentTotals.Credit)),
+        metricRow("Tabby", formulaValue(dayFormula.payment("Tabby"), dayStats.paymentTotals.Tabby)),
+        metricRow("Tamara", formulaValue(dayFormula.payment("Tamara"), dayStats.paymentTotals.Tamara)),
+        metricRow("Bank Transfer", formulaValue(dayFormula.payment("Bank Transfer"), dayStats.paymentTotals["Bank Transfer"])),
+        metricRow("Paid", formulaValue(dayFormula.payment("Paid"), dayStats.paymentTotals.Paid)),
+        metricRow("Total", formulaValue("=SUM(R[-7]C:R[-1]C)", dayStats.income, "Total")),
         blankRow(),
         sectionRow("Services", scheduleHeader.length),
-        ...Object.entries(dayStats.servicesTotals).map(([label, value]) =>
-          row([label, formatCurrency(value)], "Body")
-        ),
-        row(["Total Services", formatCurrency(dayStats.totalServices)], "Total"),
+        metricRow("Massage", formulaValue(dayFormula.serviceCount("Massage"), dayStats.servicesTotals.Massage)),
+        metricRow("Mani/Pedi", formulaValue(dayFormula.serviceCount("Mani/Pedi"), dayStats.servicesTotals["Mani & Pedi"])),
+        metricRow("Moroccan Bath", formulaValue(dayFormula.serviceCount("Moroccan"), dayStats.servicesTotals["Moroccan Bath"])),
+        metricRow("Package", formulaValue(dayFormula.serviceCount("Package"), dayStats.servicesTotals.Package)),
+        metricRow("Total Services", formulaValue("=SUM(R[-4]C:R[-1]C)", dayStats.totalServices, "Total")),
         blankRow(),
         sectionRow("Clients & Gifts", scheduleHeader.length),
-        row(["New Clients", formatCurrency(dayStats.newClients)], "Body"),
-        row(["Loyal Clients", formatCurrency(dayStats.loyalClients)], "Body"),
-        row(["Gifts Added", formatCurrency(dayStats.giftsAdded)], "Body"),
-        row(["Gifts Received", formatCurrency(dayStats.giftsReceived)], "Body"),
-        row(["Free", formatCurrency(dayStats.freeGifts)], "Body"),
-        row(["2 Free", formatCurrency(dayStats.twoFreeGifts)], "Body"),
-        row(["Clients Turned Away", formatCurrency(dayStats.clientsTurnedAway)], "Body"),
+        metricRow("New Clients", formulaValue(`=COUNTIFS(${range(orderCol)},"1",${activeCriteria})`, dayStats.newClients)),
+        metricRow("Loyal Clients", formulaValue(`=COUNTIFS(${range(orderCol)},"<>",${range(orderCol)},"<>1",${activeCriteria})`, dayStats.loyalClients)),
+        metricRow("Gifts Added", formulaValue(`=COUNTIF(${range(statusCol)},"Gift Giver")`, dayStats.giftsAdded)),
+        metricRow("Gifts Received", formulaValue(`=COUNTIF(${range(statusCol)},"Gift Done")`, dayStats.giftsReceived)),
+        metricRow("Free", formulaValue(`=COUNTIF(${range(orderCol)},"Free")`, dayStats.freeGifts)),
+        metricRow("2 Free", formulaValue(`=COUNTIF(${range(orderCol)},"2 Free")`, dayStats.twoFreeGifts)),
+        metricRow("Clients Turned Away", formulaValue(`=COUNTIF(${range(statusCol)},"Cancel")`, dayStats.clientsTurnedAway)),
         blankRow(),
         sectionRow("Daily Collection", scheduleHeader.length),
-        row(["Total Income", formatCurrency(dayStats.income)], "Body"),
-        row(["Naft", formatCurrency(dayStats.naft)], "Body"),
-        row(["Uber", formatCurrency(dayStats.uber)], "Body"),
-        row(["Purchase", formatCurrency(dayStats.purchase)], "Body"),
-        row(["Commission", formatCurrency(dayStats.commission)], "Body"),
-        row(["Daily Cost", formatCurrency(dayStats.expenses)], "Body"),
-        row(["Net Profit", formatCurrency(dayStats.netProfit)], "Total"),
-        row(["Total Transportation", formatCurrency(dayStats.transportation)], "Body"),
+        metricRow("Total Income", formulaValue("=R36C2", dayStats.income, "Total")),
+        metricRow("Naft", dayStats.naft),
+        metricRow("Uber", dayStats.uber),
+        metricRow("Purchase", dayStats.purchase),
+        metricRow("Commission", formulaValue("=SUM(R[6]C:R[7]C)", dayStats.commission)),
+        metricRow("Daily Cost", formulaValue(`=SUM(R[-4]C:R[-1]C)+(('Reports'!R5C2+'Reports'!R6C2+'Reports'!R7C2+'Reports'!R8C2)/${daysCount})`, dayStats.expenses, "Total")),
+        metricRow("Net Profit", formulaValue("=R[-6]C-R[-1]C", dayStats.netProfit, "Total")),
+        metricRow("Total Transportation", formulaValue(`=SUMIFS(${range(transportationCol)},${activeCriteria})`, dayStats.transportation)),
         blankRow(),
         sectionRow("Commission", scheduleHeader.length),
-        row(["Joce", formatCurrency(dayStats.manual.commissionJoce)], "Body"),
-        row(["Caren", formatCurrency(dayStats.manual.commissionCaren)], "Body"),
+        metricRow("Joce", parseAmount(dayStats.manual.commissionJoce)),
+        metricRow("Caren", parseAmount(dayStats.manual.commissionCaren)),
         blankRow(),
         sectionRow("Availability", scheduleHeader.length),
         ...therapistOptions.map((name) => row([name], "Body")),
@@ -4133,17 +4226,16 @@ while (hasMoreScheduleRows) {
         xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
         xmlns:html="http://www.w3.org/TR/REC-html40">
         <Styles>
-          <Style ss:ID="Title"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="14" ss:Bold="1"/><Interior ss:Color="#cbb7a4" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
+          <Style ss:ID="Title"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="16" ss:Bold="1" ss:Color="#3a2418"/><Interior ss:Color="#cbb7a4" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="2"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
           <Style ss:ID="Section"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="12" ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#7a5a43" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
           <Style ss:ID="Header"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="11" ss:Bold="1"/><Interior ss:Color="#ead8c9" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
-          <Style ss:ID="Body"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="10"/><Interior ss:Color="#fffaf3" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
-          <Style ss:ID="AltBody"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="10"/><Interior ss:Color="#f2e7da" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
-          <Style ss:ID="Label"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="10" ss:Bold="1"/><Interior ss:Color="#fffaf3" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
-          <Style ss:ID="Value"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="10" ss:Bold="1"/><Interior ss:Color="#fffaf3" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
-          <Style ss:ID="Total"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="10" ss:Bold="1"/><Interior ss:Color="#f2a879" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
+          <Style ss:ID="Body"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="Arial" ss:Size="10"/><Interior ss:Color="#fffaf3" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
+          <Style ss:ID="Label"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="10" ss:Bold="1" ss:Color="#4b2e1f"/><Interior ss:Color="#fffaf3" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
+          <Style ss:ID="Value"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="10" ss:Bold="1" ss:Color="#4b2e1f"/><Interior ss:Color="#fffaf3" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
+          <Style ss:ID="Total"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="10" ss:Bold="1" ss:Color="#3a2418"/><Interior ss:Color="#f2a879" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
           <Style ss:ID="Blank"><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/></Style>
         </Styles>
-        ${worksheet("Reports", reportSheetRows, 12)}
+        ${worksheet("Reports", reportsRows, 8)}
         ${scheduleSheets.join("")}
       </Workbook>`;
 
@@ -4152,12 +4244,13 @@ while (hasMoreScheduleRows) {
     });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = `Paradise-${getFinanceMonthLabel(monthKey).replace(/\s+/g, "-")}-Reports.xls`;
+    link.download = `Paradise-${monthLabel.replace(/\s+/g, "-")}-Reports.xls`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     setTimeout(() => URL.revokeObjectURL(link.href), 1000);
   };
+
 
   const appointmentStats = getAppointmentStats();
 
@@ -7238,12 +7331,43 @@ const welcomeBoardNameStyle = {
 
 
   const settingsRowStyle = {
-    background: "rgba(255,250,243,0.78)",
-    border: "1px solid rgba(214,199,184,0.75)",
-    borderRadius: "18px",
-    padding: "14px",
+    background: "linear-gradient(145deg, rgba(255,253,248,0.98), rgba(248,241,233,0.96))",
+    border: "1px solid rgba(199,176,154,0.82)",
+    borderRadius: "24px",
+    padding: "24px",
     color: "#4b2e1f",
-    boxShadow: "0 10px 28px rgba(75,46,31,0.08)",
+    boxShadow: "0 18px 44px rgba(75,46,31,0.10)",
+  };
+
+  const settingsSectionTitleStyle = {
+    margin: "0 0 16px",
+    fontSize: "22px",
+    fontWeight: 950,
+    color: "#3a2418",
+    letterSpacing: "-0.3px",
+  };
+
+  const settingsHelpTextStyle = {
+    color: "#7a5a43",
+    fontWeight: 800,
+    lineHeight: 1.9,
+    margin: "0 0 20px",
+  };
+
+  const settingsFieldGridStyle = {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+    gap: "16px",
+    alignItems: "center",
+  };
+
+  const settingsMiniCardStyle = {
+    background: "rgba(255,255,255,0.66)",
+    border: "1px solid rgba(214,199,184,0.88)",
+    borderRadius: "20px",
+    padding: "14px 16px",
+    color: "#4b2e1f",
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.75)",
   };
 
   const loadSettingsModuleData = async () => {
@@ -7675,10 +7799,15 @@ const welcomeBoardNameStyle = {
       onClick={() => setSettingsActiveTab(key)}
       style={{
         ...buttonStyle,
-        background: settingsActiveTab === key ? "linear-gradient(135deg, #3a2418, #7a5a43)" : "rgba(255,255,255,0.72)",
+        minHeight: "54px",
+        padding: "15px 18px",
+        fontSize: "14px",
+        fontWeight: 950,
+        background: settingsActiveTab === key ? "linear-gradient(135deg, #3a2418, #7a5a43)" : "linear-gradient(145deg, rgba(255,255,255,0.92), rgba(248,241,233,0.82))",
         color: settingsActiveTab === key ? "white" : "#4b2e1f",
-        border: "1px solid rgba(214,199,184,0.85)",
-        borderRadius: "18px",
+        border: settingsActiveTab === key ? "1px solid rgba(75,46,31,0.45)" : "1px solid rgba(214,199,184,0.95)",
+        borderRadius: "20px",
+        boxShadow: settingsActiveTab === key ? "0 14px 30px rgba(75,46,31,0.20)" : "0 10px 22px rgba(75,46,31,0.07)",
       }}
     >
       {label}
@@ -7689,11 +7818,11 @@ const welcomeBoardNameStyle = {
     const key = type === "menu" ? "menuPermissions" : "actionPermissions";
     const values = accountDraft[key] || [];
     return (
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "8px", marginTop: "10px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: "12px", marginTop: "12px" }}>
         {options.map(([value, label]) => (
-          <label key={value} style={{ ...settingsRowStyle, display: "flex", gap: "8px", alignItems: "center", padding: "9px" }}>
-            <input type="checkbox" checked={values.includes(value)} onChange={() => toggleAccountPermission(type, value)} />
-            {label}
+          <label key={value} style={{ ...settingsMiniCardStyle, display: "flex", gap: "10px", alignItems: "center", justifyContent: "space-between", minHeight: "48px", fontWeight: 850 }}>
+            <span>{label}</span>
+            <input type="checkbox" checked={values.includes(value)} onChange={() => toggleAccountPermission(type, value)} style={{ width: "18px", height: "18px", accentColor: "#4b2e1f" }} />
           </label>
         ))}
       </div>
@@ -7705,11 +7834,11 @@ const welcomeBoardNameStyle = {
       return (
         <div style={{ display: "grid", gap: "18px" }}>
           <div style={settingsRowStyle}>
-            <h3 style={{ marginTop: 0 }}>👥 الحسابات والصلاحيات</h3>
-            <p style={{ color: "#7a5a43", fontWeight: 700 }}>
+            <h3 style={settingsSectionTitleStyle}>👥 الحسابات والصلاحيات</h3>
+            <p style={settingsHelpTextStyle}>
               الحسابات الحالية تبقى كما هي. هذا القسم يدير سجل الموظفين والصلاحيات من Supabase بدون استبدال تسجيل الدخول الحالي.
             </p>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "10px" }}>
+            <div style={settingsFieldGridStyle}>
               <input placeholder="Employee ID" value={accountDraft.username} onChange={(e) => setAccountDraft((prev) => ({ ...prev, username: e.target.value }))} style={{ ...inputStyle, width: "100%", margin: 0 }} />
               <input placeholder="اسم الموظف" value={accountDraft.displayName} onChange={(e) => setAccountDraft((prev) => ({ ...prev, displayName: e.target.value }))} style={{ ...inputStyle, width: "100%", margin: 0 }} />
               <select value={accountDraft.role} onChange={(e) => setAccountDraft((prev) => ({ ...prev, role: e.target.value }))} style={{ ...inputStyle, width: "100%", margin: 0 }}>
@@ -7720,25 +7849,25 @@ const welcomeBoardNameStyle = {
               </select>
               <input placeholder="Password ملاحظة فقط" type="password" value={accountDraft.password} onChange={(e) => setAccountDraft((prev) => ({ ...prev, password: e.target.value }))} style={{ ...inputStyle, width: "100%", margin: 0 }} />
             </div>
-            <h4>صلاحيات القوائم</h4>
+            <h4 style={{ margin: "22px 0 8px", fontSize: "17px", color: "#3a2418" }}>صلاحيات القوائم</h4>
             {renderPermissionChecks("menu", settingsMenuOptions)}
-            <h4>صلاحيات الأزرار</h4>
+            <h4 style={{ margin: "22px 0 8px", fontSize: "17px", color: "#3a2418" }}>صلاحيات الأزرار</h4>
             {renderPermissionChecks("action", settingsActionOptions)}
-            <div style={{ display: "flex", gap: "10px", marginTop: "14px", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: "12px", marginTop: "20px", flexWrap: "wrap", justifyContent: "flex-end" }}>
               <button onClick={saveEmployeeAccount} style={{ ...buttonStyle, background: "#4b2e1f", color: "white" }}>{editingAccountId ? "حفظ التعديل" : "إضافة حساب"}</button>
               <button onClick={resetAccountDraft} style={{ ...buttonStyle, background: "#d8c5b3", color: "#4b2e1f" }}>تفريغ</button>
             </div>
           </div>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0 9px" }}>
+          <div style={{ ...settingsRowStyle, overflowX: "auto", padding: "18px" }}>
+            <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0 12px" }}>
               <tbody>
                 {employeeAccounts.map((account) => (
-                  <tr key={account.id} style={settingsRowStyle}>
-                    <td style={{ padding: "12px" }}>{account.displayName}</td>
-                    <td style={{ padding: "12px" }}>{account.username}</td>
-                    <td style={{ padding: "12px" }}>{account.role}</td>
-                    <td style={{ padding: "12px" }}>{account.active ? "Active" : "Disabled"}</td>
-                    <td style={{ padding: "12px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                  <tr key={account.id} style={{ background: "linear-gradient(145deg, rgba(255,250,243,0.95), rgba(241,230,219,0.88))", boxShadow: "0 10px 24px rgba(75,46,31,0.08)" }}>
+                    <td style={{ padding: "18px", borderRadius: "18px 0 0 18px", fontWeight: 950 }}>{account.displayName}</td>
+                    <td style={{ padding: "18px", fontWeight: 800 }}>{account.username}</td>
+                    <td style={{ padding: "18px", fontWeight: 800 }}>{account.role}</td>
+                    <td style={{ padding: "18px", fontWeight: 900, color: account.active ? "#34734f" : "#9b4b3d" }}>{account.active ? "Active" : "Disabled"}</td>
+                    <td style={{ padding: "18px", borderRadius: "0 18px 18px 0", display: "flex", gap: "10px", flexWrap: "wrap", justifyContent: "flex-end" }}>
                       <button onClick={() => startEditAccount(account)} style={{ ...buttonStyle, background: "#d8c5b3", color: "#4b2e1f" }}>تعديل</button>
                       <button onClick={() => deleteEmployeeAccount(account)} style={{ ...buttonStyle, background: "#9b6b57", color: "white" }}>حذف</button>
                     </td>
@@ -7832,18 +7961,19 @@ const welcomeBoardNameStyle = {
   };
 
   const renderSettingsScreen = () => (
-    <div style={{ minHeight: "100%", direction: "rtl" }}>
+    <div style={{ minHeight: "100%", direction: "rtl", padding: "6px 6px 34px" }}>
       <div
         style={{
           position: "sticky",
           top: 0,
           zIndex: 20,
-          marginBottom: "22px",
-          background: "linear-gradient(135deg, rgba(75,46,31,0.98), rgba(138,106,80,0.94))",
+          marginBottom: "24px",
+          background: "linear-gradient(135deg, rgba(58,36,24,0.98), rgba(122,90,67,0.95))",
           color: "white",
-          borderRadius: "28px",
-          padding: "22px",
-          boxShadow: "0 22px 48px rgba(75,46,31,0.18)",
+          borderRadius: "32px",
+          padding: "28px 32px",
+          boxShadow: "0 26px 58px rgba(75,46,31,0.22)",
+          border: "1px solid rgba(255,255,255,0.35)",
           display: "flex",
           justifyContent: "space-between",
           gap: "14px",
@@ -7853,7 +7983,7 @@ const welcomeBoardNameStyle = {
       >
         <div>
           <div style={{ fontSize: "13px", opacity: 0.82, marginBottom: "6px" }}>Paradise Spa</div>
-          <h2 style={{ margin: 0, fontSize: "28px" }}>الإعدادات</h2>
+          <h2 style={{ margin: 0, fontSize: "34px", fontWeight: 950, letterSpacing: "-0.5px" }}>الإعدادات</h2>
         </div>
         <div style={{ fontWeight: 900 }}>{isSystemFrozen ? "النظام مجمّد" : "النظام يعمل"} — {securitySettings.deleteLocked ? "الحذف مقفل" : "الحذف مفتوح حسب الصلاحيات"}</div>
       </div>
@@ -7866,7 +7996,7 @@ const welcomeBoardNameStyle = {
         </div>
       ) : (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "10px", marginBottom: "18px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "14px", marginBottom: "22px" }}>
             {settingsTabButton("accounts", "👥 الحسابات")}
             {settingsTabButton("backup", "💾 النسخ الاحتياطي")}
             {settingsTabButton("security", "🛡️ الأمان")}
