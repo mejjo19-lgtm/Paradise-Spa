@@ -8143,7 +8143,24 @@ const settingsFieldGridStyle = {
         {!settingsUnlocked ? (
           <div style={{ ...settingsRowStyle, maxWidth: "520px", margin: "38px auto 10px", textAlign: "center" }}>
             <h3 style={settingsSectionTitleStyle}>أدخل الرقم السري للإعدادات</h3>
-            <input type="password" value={settingsSecretInput} onChange={(e) => setSettingsSecretInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") unlockSettings(); }} style={{ ...settingsInputStyle, marginBottom: "14px", textAlign: "center" }} placeholder="Settings Password" />
+            <input
+  type="text"
+  name="settings-secret-code"
+  autoComplete="one-time-code"
+  inputMode="numeric"
+  value={settingsSecretInput}
+  onChange={(e) => setSettingsSecretInput(e.target.value)}
+  onKeyDown={(e) => {
+    if (e.key === "Enter") unlockSettings();
+  }}
+  style={{
+    ...settingsInputStyle,
+    marginBottom: "14px",
+    textAlign: "center",
+    WebkitTextSecurity: "disc",
+  }}
+  placeholder="Settings Password"
+/>
             <button onClick={unlockSettings} style={{ ...settingsPrimaryButtonStyle, width: "180px" }}>دخول</button>
           </div>
         ) : (
