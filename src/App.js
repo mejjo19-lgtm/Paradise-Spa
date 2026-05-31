@@ -7330,44 +7330,96 @@ const welcomeBoardNameStyle = {
 
 
 
+  const settingsPageShellStyle = {
+    direction: "rtl",
+    padding: "18px 20px 42px",
+    color: "#3a2418",
+  };
+
+  const settingsSurfaceStyle = {
+    background: "linear-gradient(145deg, rgba(255,253,248,0.98), rgba(250,244,236,0.96))",
+    border: "1px solid rgba(214,199,184,0.86)",
+    borderRadius: "30px",
+    padding: "22px",
+    boxShadow: "0 22px 52px rgba(75,46,31,0.10)",
+  };
+
   const settingsRowStyle = {
-    background: "linear-gradient(145deg, rgba(255,253,248,0.98), rgba(248,241,233,0.96))",
-    border: "1px solid rgba(199,176,154,0.82)",
-    borderRadius: "24px",
-    padding: "24px",
-    color: "#4b2e1f",
-    boxShadow: "0 18px 44px rgba(75,46,31,0.10)",
+    ...settingsSurfaceStyle,
+    padding: "22px",
   };
 
   const settingsSectionTitleStyle = {
-    margin: "0 0 16px",
-    fontSize: "22px",
+    margin: "0 0 14px",
+    fontSize: "24px",
     fontWeight: 950,
     color: "#3a2418",
-    letterSpacing: "-0.3px",
+    letterSpacing: "-0.35px",
   };
 
   const settingsHelpTextStyle = {
     color: "#7a5a43",
     fontWeight: 800,
     lineHeight: 1.9,
-    margin: "0 0 20px",
+    margin: "0 0 18px",
   };
 
   const settingsFieldGridStyle = {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-    gap: "16px",
+    gridTemplateColumns: "1.05fr 1.35fr 1.35fr 0.72fr",
+    gap: "14px",
     alignItems: "center",
   };
 
-  const settingsMiniCardStyle = {
-    background: "rgba(255,255,255,0.66)",
-    border: "1px solid rgba(214,199,184,0.88)",
-    borderRadius: "20px",
-    padding: "14px 16px",
-    color: "#4b2e1f",
+  const settingsInputStyle = {
+    ...inputStyle,
+    width: "100%",
+    margin: 0,
+    height: "54px",
+    borderRadius: "18px",
+    background: "rgba(255,255,255,0.72)",
+    border: "1px solid rgba(214,199,184,0.94)",
     boxShadow: "inset 0 1px 0 rgba(255,255,255,0.75)",
+    fontWeight: 800,
+  };
+
+  const settingsMiniCardStyle = {
+    background: "linear-gradient(145deg, rgba(255,255,255,0.86), rgba(248,241,233,0.72))",
+    border: "1px solid rgba(214,199,184,0.9)",
+    borderRadius: "20px",
+    padding: "16px 18px",
+    color: "#4b2e1f",
+    boxShadow: "0 10px 24px rgba(75,46,31,0.055), inset 0 1px 0 rgba(255,255,255,0.86)",
+  };
+
+  const settingsPermissionCardStyle = {
+    ...settingsMiniCardStyle,
+    minHeight: "76px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "14px",
+    fontSize: "14px",
+    fontWeight: 900,
+  };
+
+  const settingsPrimaryButtonStyle = {
+    ...buttonStyle,
+    height: "54px",
+    borderRadius: "18px",
+    padding: "0 24px",
+    background: "linear-gradient(135deg, #3a2418, #7a5a43)",
+    color: "white",
+    boxShadow: "0 14px 30px rgba(75,46,31,0.18)",
+  };
+
+  const settingsMutedButtonStyle = {
+    ...buttonStyle,
+    height: "46px",
+    borderRadius: "16px",
+    background: "#e1d2c2",
+    color: "#4b2e1f",
+    boxShadow: "none",
   };
 
   const loadSettingsModuleData = async () => {
@@ -7799,15 +7851,20 @@ const welcomeBoardNameStyle = {
       onClick={() => setSettingsActiveTab(key)}
       style={{
         ...buttonStyle,
-        minHeight: "54px",
-        padding: "15px 18px",
-        fontSize: "14px",
+        minHeight: "62px",
+        padding: "0 22px",
+        fontSize: "15px",
         fontWeight: 950,
-        background: settingsActiveTab === key ? "linear-gradient(135deg, #3a2418, #7a5a43)" : "linear-gradient(145deg, rgba(255,255,255,0.92), rgba(248,241,233,0.82))",
-        color: settingsActiveTab === key ? "white" : "#4b2e1f",
-        border: settingsActiveTab === key ? "1px solid rgba(75,46,31,0.45)" : "1px solid rgba(214,199,184,0.95)",
+        background: settingsActiveTab === key ? "linear-gradient(135deg, #4b2e1f, #805d45)" : "linear-gradient(145deg, rgba(255,255,255,0.92), rgba(248,241,233,0.82))",
+        color: settingsActiveTab === key ? "white" : "#3a2418",
+        border: settingsActiveTab === key ? "1px solid rgba(75,46,31,0.52)" : "1px solid rgba(214,199,184,0.95)",
         borderRadius: "20px",
-        boxShadow: settingsActiveTab === key ? "0 14px 30px rgba(75,46,31,0.20)" : "0 10px 22px rgba(75,46,31,0.07)",
+        boxShadow: settingsActiveTab === key ? "0 16px 32px rgba(75,46,31,0.22)" : "0 11px 26px rgba(75,46,31,0.07), inset 0 1px 0 rgba(255,255,255,0.78)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "10px",
+        whiteSpace: "nowrap",
       }}
     >
       {label}
@@ -7818,58 +7875,138 @@ const welcomeBoardNameStyle = {
     const key = type === "menu" ? "menuPermissions" : "actionPermissions";
     const values = accountDraft[key] || [];
     return (
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: "12px", marginTop: "12px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: "14px", marginTop: "14px" }}>
         {options.map(([value, label]) => (
-          <label key={value} style={{ ...settingsMiniCardStyle, display: "flex", gap: "10px", alignItems: "center", justifyContent: "space-between", minHeight: "48px", fontWeight: 850 }}>
-            <span>{label}</span>
-            <input type="checkbox" checked={values.includes(value)} onChange={() => toggleAccountPermission(type, value)} style={{ width: "18px", height: "18px", accentColor: "#4b2e1f" }} />
+          <label key={value} style={settingsPermissionCardStyle}>
+            <span style={{ lineHeight: 1.45 }}>{label}</span>
+            <input
+              type="checkbox"
+              checked={values.includes(value)}
+              onChange={() => toggleAccountPermission(type, value)}
+              style={{ width: "18px", height: "18px", accentColor: "#4b2e1f", flex: "0 0 auto" }}
+            />
           </label>
         ))}
       </div>
     );
   };
 
+  const renderSystemHealthCard = () => (
+    <div style={{ ...settingsRowStyle, padding: "22px 26px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "18px", flexWrap: "wrap", marginBottom: "18px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+          <div style={{ width: "62px", height: "62px", borderRadius: "18px", background: "rgba(227,213,198,0.6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "26px" }}>⌁</div>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+              <h3 style={{ ...settingsSectionTitleStyle, margin: 0 }}>حالة النظام — Realtime</h3>
+              <span style={{ background: "#dff2d8", color: "#34734f", borderRadius: "999px", padding: "7px 18px", fontWeight: 950, fontSize: "13px" }}>Healthy</span>
+            </div>
+            <div style={{ marginTop: "6px", color: "#7a5a43", fontWeight: 800 }}>{systemHealth?.checkedAt ? `آخر فحص: ${systemHealth.checkedAt}` : "اضغط فحص النظام لتحديث حالة الجداول"}</div>
+          </div>
+        </div>
+        <button onClick={checkSystemHealth} style={settingsPrimaryButtonStyle}>فحص النظام الآن</button>
+      </div>
+      {systemHealth && (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0 8px", direction: "ltr", textAlign: "left" }}>
+            <thead>
+              <tr>
+                {['Status', 'Supabase Count', 'App Count', 'Table'].map((title) => (
+                  <th key={title} style={{ padding: "8px 14px", color: "#3a2418", fontSize: "14px" }}>{title}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {systemHealth.rows.map((row) => (
+                <tr key={row.tableName}>
+                  <td style={{ padding: "4px 14px", fontWeight: 900 }}><span style={{ color: row.status === "OK" ? "#4caf35" : "#9b4b3d", marginRight: "8px" }}>●</span>{row.status}</td>
+                  <td style={{ padding: "4px 14px", fontWeight: 800 }}>{row.supabaseCount}</td>
+                  <td style={{ padding: "4px 14px", fontWeight: 800 }}>{row.localCount}</td>
+                  <td style={{ padding: "4px 14px", fontWeight: 800 }}>{row.tableName}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+
   const renderSettingsContent = () => {
     if (settingsActiveTab === "accounts") {
       return (
         <div style={{ display: "grid", gap: "18px" }}>
+          {renderSystemHealthCard()}
+
           <div style={settingsRowStyle}>
-            <h3 style={settingsSectionTitleStyle}>👥 الحسابات والصلاحيات</h3>
-            <p style={settingsHelpTextStyle}>
-              الحسابات الحالية تبقى كما هي. هذا القسم يدير سجل الموظفين والصلاحيات من Supabase بدون استبدال تسجيل الدخول الحالي.
-            </p>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "18px", flexWrap: "wrap", marginBottom: "18px" }}>
+              <div>
+                <h3 style={settingsSectionTitleStyle}>👥 الحسابات والصلاحيات</h3>
+                <p style={{ ...settingsHelpTextStyle, marginBottom: 0 }}>
+                  الحسابات الحالية تبقى كما هي. هذا القسم يدير سجل الموظفين والصلاحيات من Supabase بدون استبدال تسجيل الدخول الحالي.
+                </p>
+              </div>
+            </div>
+
             <div style={settingsFieldGridStyle}>
-              <input placeholder="Employee ID" value={accountDraft.username} onChange={(e) => setAccountDraft((prev) => ({ ...prev, username: e.target.value }))} style={{ ...inputStyle, width: "100%", margin: 0 }} />
-              <input placeholder="اسم الموظف" value={accountDraft.displayName} onChange={(e) => setAccountDraft((prev) => ({ ...prev, displayName: e.target.value }))} style={{ ...inputStyle, width: "100%", margin: 0 }} />
-              <select value={accountDraft.role} onChange={(e) => setAccountDraft((prev) => ({ ...prev, role: e.target.value }))} style={{ ...inputStyle, width: "100%", margin: 0 }}>
+              <input placeholder="رقم الموظف" value={accountDraft.username} onChange={(e) => setAccountDraft((prev) => ({ ...prev, username: e.target.value }))} style={settingsInputStyle} />
+              <input placeholder="اسم الموظف" value={accountDraft.displayName} onChange={(e) => setAccountDraft((prev) => ({ ...prev, displayName: e.target.value }))} style={settingsInputStyle} />
+              <select value={accountDraft.role} onChange={(e) => setAccountDraft((prev) => ({ ...prev, role: e.target.value }))} style={settingsInputStyle}>
                 <option value="owner">owner majed</option>
                 <option value="manager">manager</option>
                 <option value="employee">employee</option>
                 <option value="readonly">read only</option>
               </select>
-              <input placeholder="Password ملاحظة فقط" type="password" value={accountDraft.password} onChange={(e) => setAccountDraft((prev) => ({ ...prev, password: e.target.value }))} style={{ ...inputStyle, width: "100%", margin: 0 }} />
+              <input placeholder="كلمة المرور" type="password" value={accountDraft.password} onChange={(e) => setAccountDraft((prev) => ({ ...prev, password: e.target.value }))} style={settingsInputStyle} />
             </div>
-            <h4 style={{ margin: "22px 0 8px", fontSize: "17px", color: "#3a2418" }}>صلاحيات القوائم</h4>
-            {renderPermissionChecks("menu", settingsMenuOptions)}
-            <h4 style={{ margin: "22px 0 8px", fontSize: "17px", color: "#3a2418" }}>صلاحيات الأزرار</h4>
-            {renderPermissionChecks("action", settingsActionOptions)}
-            <div style={{ display: "flex", gap: "12px", marginTop: "20px", flexWrap: "wrap", justifyContent: "flex-end" }}>
-              <button onClick={saveEmployeeAccount} style={{ ...buttonStyle, background: "#4b2e1f", color: "white" }}>{editingAccountId ? "حفظ التعديل" : "إضافة حساب"}</button>
-              <button onClick={resetAccountDraft} style={{ ...buttonStyle, background: "#d8c5b3", color: "#4b2e1f" }}>تفريغ</button>
+
+            <div style={{ display: "grid", gap: "22px", marginTop: "24px" }}>
+              <div>
+                <h4 style={{ margin: "0 0 10px", fontSize: "17px", color: "#3a2418", fontWeight: 950 }}>صلاحيات القوائم</h4>
+                {renderPermissionChecks("menu", settingsMenuOptions)}
+              </div>
+              <div>
+                <h4 style={{ margin: "0 0 10px", fontSize: "17px", color: "#3a2418", fontWeight: 950 }}>صلاحيات الأزرار</h4>
+                {renderPermissionChecks("action", settingsActionOptions)}
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: "12px", marginTop: "24px", flexWrap: "wrap", justifyContent: "flex-start" }}>
+              <button onClick={saveEmployeeAccount} style={settingsPrimaryButtonStyle}>{editingAccountId ? "حفظ التعديل" : "إضافة حساب"}</button>
+              <button onClick={resetAccountDraft} style={settingsMutedButtonStyle}>تفريغ</button>
             </div>
           </div>
+
           <div style={{ ...settingsRowStyle, overflowX: "auto", padding: "18px" }}>
-            <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0 12px" }}>
+            <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0", minWidth: "760px", overflow: "hidden", borderRadius: "20px" }}>
+              <thead>
+                <tr style={{ background: "rgba(241,230,219,0.78)" }}>
+                  <th style={{ padding: "16px 18px", textAlign: "right", color: "#3a2418" }}>اسم الموظف</th>
+                  <th style={{ padding: "16px 18px", textAlign: "center", color: "#3a2418" }}>نوع الحساب</th>
+                  <th style={{ padding: "16px 18px", textAlign: "center", color: "#3a2418" }}>الحالة</th>
+                  <th style={{ padding: "16px 18px", textAlign: "center", color: "#3a2418" }}>تاريخ الإنشاء</th>
+                  <th style={{ padding: "16px 18px", textAlign: "center", color: "#3a2418" }}>الإجراءات</th>
+                </tr>
+              </thead>
               <tbody>
-                {employeeAccounts.map((account) => (
-                  <tr key={account.id} style={{ background: "linear-gradient(145deg, rgba(255,250,243,0.95), rgba(241,230,219,0.88))", boxShadow: "0 10px 24px rgba(75,46,31,0.08)" }}>
-                    <td style={{ padding: "18px", borderRadius: "18px 0 0 18px", fontWeight: 950 }}>{account.displayName}</td>
-                    <td style={{ padding: "18px", fontWeight: 800 }}>{account.username}</td>
-                    <td style={{ padding: "18px", fontWeight: 800 }}>{account.role}</td>
-                    <td style={{ padding: "18px", fontWeight: 900, color: account.active ? "#34734f" : "#9b4b3d" }}>{account.active ? "Active" : "Disabled"}</td>
-                    <td style={{ padding: "18px", borderRadius: "0 18px 18px 0", display: "flex", gap: "10px", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                      <button onClick={() => startEditAccount(account)} style={{ ...buttonStyle, background: "#d8c5b3", color: "#4b2e1f" }}>تعديل</button>
-                      <button onClick={() => deleteEmployeeAccount(account)} style={{ ...buttonStyle, background: "#9b6b57", color: "white" }}>حذف</button>
+                {employeeAccounts.map((account, index) => (
+                  <tr key={account.id} style={{ background: index % 2 === 0 ? "rgba(255,251,246,0.92)" : "rgba(248,241,233,0.72)", borderBottom: "1px solid rgba(214,199,184,0.42)" }}>
+                    <td style={{ padding: "18px", fontWeight: 950 }}>
+                      <div>{account.displayName}</div>
+                      <div style={{ marginTop: "5px", color: "#7a5a43", fontSize: "12px", fontWeight: 800 }}>{account.username}</div>
+                    </td>
+                    <td style={{ padding: "18px", textAlign: "center", fontWeight: 850 }}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: "7px", padding: "8px 14px", borderRadius: "999px", background: "rgba(122,90,67,0.12)", color: "#4b2e1f" }}>{account.role}</span>
+                    </td>
+                    <td style={{ padding: "18px", textAlign: "center" }}>
+                      <span style={{ display: "inline-block", padding: "7px 17px", borderRadius: "999px", background: account.active ? "#dff2d8" : "#f5d9d1", color: account.active ? "#34734f" : "#9b4b3d", fontWeight: 950 }}>{account.active ? "Active" : "Disabled"}</span>
+                    </td>
+                    <td style={{ padding: "18px", textAlign: "center", fontWeight: 800, color: "#4b2e1f" }}>{account.createdAt ? new Date(account.createdAt).toLocaleString() : "-"}</td>
+                    <td style={{ padding: "18px", textAlign: "center" }}>
+                      <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", justifyContent: "center" }}>
+                        <button onClick={() => startEditAccount(account)} style={{ ...settingsMutedButtonStyle, minWidth: "82px", height: "40px" }}>تعديل</button>
+                        <button onClick={() => deleteEmployeeAccount(account)} style={{ ...settingsMutedButtonStyle, minWidth: "82px", height: "40px", background: "#fff4f1", color: "#c1372c", border: "1px solid rgba(193,55,44,0.32)" }}>حذف</button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -7884,15 +8021,15 @@ const welcomeBoardNameStyle = {
       return (
         <div style={{ display: "grid", gap: "16px" }}>
           <div style={settingsRowStyle}>
-            <h3>💾 النسخ الاحتياطي</h3>
-            <p>ينزل ملف JSON كامل للاستعادة + ملفات CSV للجداول للمراجعة. احفظ الملفات كلها داخل مجلد بتاريخ اليوم.</p>
-            <button onClick={createFullBackup} disabled={backupBusy} style={{ ...buttonStyle, background: "#4b2e1f", color: "white" }}>{backupBusy ? "جاري إنشاء الباك أب..." : "إنشاء Backup"}</button>
+            <h3 style={settingsSectionTitleStyle}>💾 النسخ الاحتياطي</h3>
+            <p style={settingsHelpTextStyle}>ينزل ملف JSON كامل للاستعادة + ملفات CSV للجداول للمراجعة. احفظ الملفات كلها داخل مجلد بتاريخ اليوم.</p>
+            <button onClick={createFullBackup} disabled={backupBusy} style={settingsPrimaryButtonStyle}>{backupBusy ? "جاري إنشاء الباك أب..." : "إنشاء Backup"}</button>
           </div>
           <div style={settingsRowStyle}>
-            <h3>استعادة الباك أب</h3>
-            <p style={{ color: "#9b4b3d", fontWeight: 900 }}>للطوارئ فقط. الاستعادة تمسح الجداول الحالية وترفع بيانات ملف الباك أب.</p>
-            <input type="file" accept="application/json,.json" onChange={restoreBackupFromFile} disabled={restoreBusy} />
-            <div style={{ marginTop: "10px" }}>{restoreBusy ? "جاري الاستعادة..." : restoreFileName ? `آخر ملف مختار: ${restoreFileName}` : "لم يتم اختيار ملف"}</div>
+            <h3 style={settingsSectionTitleStyle}>استعادة الباك أب</h3>
+            <p style={{ ...settingsHelpTextStyle, color: "#9b4b3d", fontWeight: 950 }}>للطوارئ فقط. الاستعادة تمسح الجداول الحالية وترفع بيانات ملف الباك أب.</p>
+            <input type="file" accept="application/json,.json" onChange={restoreBackupFromFile} disabled={restoreBusy} style={settingsInputStyle} />
+            <div style={{ marginTop: "12px", fontWeight: 850, color: "#4b2e1f" }}>{restoreBusy ? "جاري الاستعادة..." : restoreFileName ? `آخر ملف مختار: ${restoreFileName}` : "لم يتم اختيار ملف"}</div>
           </div>
         </div>
       );
@@ -7901,35 +8038,19 @@ const welcomeBoardNameStyle = {
     if (settingsActiveTab === "security") {
       return (
         <div style={{ display: "grid", gap: "16px" }}>
-          <div style={settingsRowStyle}><h3>🛡️ الأمان</h3></div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "14px" }}>
-            <button onClick={logoutAllDevices} style={{ ...buttonStyle, background: "#4b2e1f", color: "white" }}>تسجيل خروج جميع الأجهزة</button>
-            <button onClick={saveSettingsSecretCode} style={{ ...buttonStyle, background: "#8a6048", color: "white" }}>تغيير الرقم السري للإعدادات</button>
-            <button onClick={() => saveSecuritySettings({ deleteLocked: !securitySettings.deleteLocked })} style={{ ...buttonStyle, background: securitySettings.deleteLocked ? "#9b4b3d" : "#d8c5b3", color: securitySettings.deleteLocked ? "white" : "#4b2e1f" }}>{securitySettings.deleteLocked ? "إلغاء قفل الحذف" : "قفل الحذف"}</button>
-            <button onClick={() => saveSecuritySettings({ systemFrozen: !securitySettings.systemFrozen })} style={{ ...buttonStyle, background: securitySettings.systemFrozen ? "#9b4b3d" : "#d8c5b3", color: securitySettings.systemFrozen ? "white" : "#4b2e1f" }}>{securitySettings.systemFrozen ? "إلغاء تجميد النظام" : "تجميد النظام"}</button>
+          <div style={settingsRowStyle}><h3 style={settingsSectionTitleStyle}>🛡️ الأمان</h3><p style={settingsHelpTextStyle}>تحكم سريع في الجلسات، الحذف، وحالة الصيانة.</p></div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "14px" }}>
+            <button onClick={logoutAllDevices} style={settingsPrimaryButtonStyle}>تسجيل خروج جميع الأجهزة</button>
+            <button onClick={saveSettingsSecretCode} style={{ ...settingsPrimaryButtonStyle, background: "linear-gradient(135deg, #805d45, #9b7358)" }}>تغيير الرقم السري للإعدادات</button>
+            <button onClick={() => saveSecuritySettings({ deleteLocked: !securitySettings.deleteLocked })} style={{ ...settingsPrimaryButtonStyle, background: securitySettings.deleteLocked ? "#9b4b3d" : "#e1d2c2", color: securitySettings.deleteLocked ? "white" : "#4b2e1f" }}>{securitySettings.deleteLocked ? "إلغاء قفل الحذف" : "قفل الحذف"}</button>
+            <button onClick={() => saveSecuritySettings({ systemFrozen: !securitySettings.systemFrozen })} style={{ ...settingsPrimaryButtonStyle, background: securitySettings.systemFrozen ? "#9b4b3d" : "#e1d2c2", color: securitySettings.systemFrozen ? "white" : "#4b2e1f" }}>{securitySettings.systemFrozen ? "إلغاء تجميد النظام" : "تجميد النظام"}</button>
           </div>
         </div>
       );
     }
 
     if (settingsActiveTab === "system") {
-      return (
-        <div style={{ display: "grid", gap: "16px" }}>
-          <div style={settingsRowStyle}>
-            <h3>📊 النظام</h3>
-            <button onClick={checkSystemHealth} style={{ ...buttonStyle, background: "#4b2e1f", color: "white" }}>فحص النظام الآن</button>
-          </div>
-          {systemHealth && (
-            <div style={settingsRowStyle}>
-              <div style={{ marginBottom: "10px", fontWeight: 900 }}>آخر فحص: {systemHealth.checkedAt} — {systemHealth.realtime}</div>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead><tr><th>Table</th><th>App Count</th><th>Supabase Count</th><th>Status</th></tr></thead>
-                <tbody>{systemHealth.rows.map((row) => <tr key={row.tableName}><td>{row.tableName}</td><td>{row.localCount}</td><td>{row.supabaseCount}</td><td>{row.status}</td></tr>)}</tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      );
+      return renderSystemHealthCard();
     }
 
     if (settingsActiveTab === "server") {
@@ -7939,76 +8060,70 @@ const welcomeBoardNameStyle = {
       return (
         <div style={{ display: "grid", gap: "16px" }}>
           <div style={settingsRowStyle}>
-            <h3>🖥️ السيرفر</h3>
-            <p>أفضل وأأمن طريقة: API محمي على السيرفر يرجع RAM / CPU / Storage / Docker / Coolify / Realtime / Postgres / Kong / Restart Count / Health Status.</p>
-            <button onClick={checkServerHealth} style={{ ...buttonStyle, background: "#4b2e1f", color: "white" }}>فحص السيرفر</button>
+            <h3 style={settingsSectionTitleStyle}>🖥️ السيرفر</h3>
+            <p style={settingsHelpTextStyle}>أفضل وأأمن طريقة: API محمي على السيرفر يرجع RAM / CPU / Storage / Docker / Coolify / Realtime / Postgres / Kong / Restart Count / Health Status.</p>
+            <button onClick={checkServerHealth} style={settingsPrimaryButtonStyle}>فحص السيرفر</button>
           </div>
-          <div style={settingsRowStyle}>{serverRows.map(([key, value]) => <div key={key} style={{ marginBottom: "8px" }}><b>{key}:</b> {String(value)}</div>)}</div>
+          <div style={settingsRowStyle}>{serverRows.map(([key, value]) => <div key={key} style={{ marginBottom: "10px", fontWeight: 850 }}><b>{key}:</b> {String(value)}</div>)}</div>
         </div>
       );
     }
 
     return (
       <div style={settingsRowStyle}>
-        <h3>📥 تحميل الجدول يدوي</h3>
-        <p>ينزل ملف Excel لنفس الشهر المختار بنفس تقرير النظام وصفحات أيام الشهر.</p>
-        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center" }}>
-          <input type="month" value={manualExcelMonth} onChange={(e) => setManualExcelMonth(e.target.value)} style={{ ...inputStyle, width: "220px", margin: 0 }} />
-          <button onClick={() => exportFinanceMonthToExcel(manualExcelMonth)} style={{ ...buttonStyle, background: "#4b2e1f", color: "white" }}>تحميل الجدول يدوي</button>
+        <h3 style={settingsSectionTitleStyle}>📥 تحميل الجدول يدوي</h3>
+        <p style={settingsHelpTextStyle}>ينزل ملف Excel لنفس الشهر المختار بنفس تقرير النظام وصفحات أيام الشهر.</p>
+        <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
+          <input type="month" value={manualExcelMonth} onChange={(e) => setManualExcelMonth(e.target.value)} style={{ ...settingsInputStyle, width: "240px" }} />
+          <button onClick={() => exportFinanceMonthToExcel(manualExcelMonth)} style={settingsPrimaryButtonStyle}>تحميل الجدول يدوي</button>
         </div>
       </div>
     );
   };
 
   const renderSettingsScreen = () => (
-    <div style={{ minHeight: "100%", direction: "rtl", padding: "6px 6px 34px" }}>
+    <div style={settingsPageShellStyle}>
       <div
         style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 20,
-          marginBottom: "24px",
-          background: "linear-gradient(135deg, rgba(58,36,24,0.98), rgba(122,90,67,0.95))",
-          color: "white",
-          borderRadius: "32px",
-          padding: "28px 32px",
-          boxShadow: "0 26px 58px rgba(75,46,31,0.22)",
-          border: "1px solid rgba(255,255,255,0.35)",
-          display: "flex",
-          justifyContent: "space-between",
-          gap: "14px",
-          flexWrap: "wrap",
-          alignItems: "center",
+          ...settingsSurfaceStyle,
+          marginBottom: "18px",
+          padding: "26px 30px 22px",
         }}
       >
-        <div>
-          <div style={{ fontSize: "13px", opacity: 0.82, marginBottom: "6px" }}>Paradise Spa</div>
-          <h2 style={{ margin: 0, fontSize: "34px", fontWeight: 950, letterSpacing: "-0.5px" }}>الإعدادات</h2>
-        </div>
-        <div style={{ fontWeight: 900 }}>{isSystemFrozen ? "النظام مجمّد" : "النظام يعمل"} — {securitySettings.deleteLocked ? "الحذف مقفل" : "الحذف مفتوح حسب الصلاحيات"}</div>
-      </div>
-
-      {!settingsUnlocked ? (
-        <div style={{ ...settingsRowStyle, maxWidth: "520px", margin: "80px auto", textAlign: "center" }}>
-          <h3>أدخل الرقم السري للإعدادات</h3>
-          <input type="password" value={settingsSecretInput} onChange={(e) => setSettingsSecretInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") unlockSettings(); }} style={{ ...inputStyle, width: "100%" }} placeholder="Settings Password" />
-          <button onClick={unlockSettings} style={{ ...buttonStyle, background: "#4b2e1f", color: "white", width: "180px" }}>دخول</button>
-        </div>
-      ) : (
-        <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "14px", marginBottom: "22px" }}>
-            {settingsTabButton("accounts", "👥 الحسابات")}
-            {settingsTabButton("backup", "💾 النسخ الاحتياطي")}
-            {settingsTabButton("security", "🛡️ الأمان")}
-            {settingsTabButton("system", "📊 النظام")}
-            {settingsTabButton("server", "🖥️ السيرفر")}
-            {settingsTabButton("excel", "📥 Excel شهري")}
+        <div style={{ display: "flex", justifyContent: "space-between", gap: "18px", alignItems: "flex-start", flexWrap: "wrap", marginBottom: "24px" }}>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ color: "#b28b74", fontSize: "14px", fontWeight: 850, marginBottom: "3px" }}>Paradise Spa</div>
+            <h2 style={{ margin: 0, fontSize: "38px", fontWeight: 950, letterSpacing: "-0.6px", color: "#3a2418" }}>الإعدادات 👥</h2>
+            <div style={{ marginTop: "8px", color: "#4b2e1f", fontWeight: 900, display: "flex", justifyContent: "flex-start", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+              <span style={{ width: "9px", height: "9px", borderRadius: "50%", background: isSystemFrozen ? "#c1372c" : "#48ad43", display: "inline-block" }} />
+              <span>{isSystemFrozen ? "النظام مجمّد" : "النظام يعمل"} — {securitySettings.deleteLocked ? "الحذف مقفل" : "الحذف مفتوح حسب الصلاحيات"}</span>
+            </div>
           </div>
-          {renderSettingsContent()}
-        </>
-      )}
+        </div>
+
+        {!settingsUnlocked ? (
+          <div style={{ ...settingsRowStyle, maxWidth: "520px", margin: "38px auto 10px", textAlign: "center" }}>
+            <h3 style={settingsSectionTitleStyle}>أدخل الرقم السري للإعدادات</h3>
+            <input type="password" value={settingsSecretInput} onChange={(e) => setSettingsSecretInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") unlockSettings(); }} style={{ ...settingsInputStyle, marginBottom: "14px" }} placeholder="Settings Password" />
+            <button onClick={unlockSettings} style={{ ...settingsPrimaryButtonStyle, width: "180px" }}>دخول</button>
+          </div>
+        ) : (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(145px, 1fr))", gap: "14px", marginBottom: "18px" }}>
+              {settingsTabButton("accounts", "الحسابات 👥")}
+              {settingsTabButton("backup", "النسخ الاحتياطي 💾")}
+              {settingsTabButton("security", "الأمان 🛡️")}
+              {settingsTabButton("system", "النظام 📊")}
+              {settingsTabButton("server", "السيرفر 🖥️")}
+              {settingsTabButton("excel", "شهري Excel 📥")}
+            </div>
+            {renderSettingsContent()}
+          </>
+        )}
+      </div>
     </div>
   );
+
   const globalSearchBox = (compact = false) => (
     <div
       ref={dashboardSearchRef}
