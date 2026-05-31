@@ -7365,28 +7365,29 @@ const welcomeBoardNameStyle = {
     fontSize: "14px",
   };
 
-  const settingsFieldGridStyle = {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr 0.92fr 0.78fr",
-    gap: "12px",
-    alignItems: "center",
-  };
+const settingsFieldGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+  gap: "16px",
+  alignItems: "center",
+};
 
   const settingsInputStyle = {
-    ...inputStyle,
-    width: "100%",
-    margin: 0,
-    height: "48px",
-    minHeight: "48px",
-    borderRadius: "16px",
-    background: "rgba(255,255,255,0.82)",
-    border: "1px solid rgba(214,199,184,0.92)",
-    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.86)",
-    fontWeight: 800,
-    fontSize: "14px",
-    padding: "0 16px",
-  };
-
+  width: "100%",
+  height: "50px",
+  minHeight: "50px",
+  margin: 0,
+  padding: "0 18px",
+  boxSizing: "border-box",
+  borderRadius: "14px",
+  border: "1px solid rgba(214,199,184,0.85)",
+  background: "rgba(255,255,255,0.72)",
+  color: "#4b2e1f",
+  fontWeight: 700,
+  fontSize: "14px",
+  outline: "none",
+  boxShadow: "0 8px 18px rgba(75,46,31,0.04)",
+};
   const settingsMiniCardStyle = {
     background: "linear-gradient(145deg, rgba(255,255,255,0.9), rgba(249,243,236,0.78))",
     border: "1px solid rgba(214,199,184,0.82)",
@@ -7397,28 +7398,30 @@ const welcomeBoardNameStyle = {
   };
 
   const settingsPermissionCardStyle = {
-    ...settingsMiniCardStyle,
-    minHeight: "54px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: "10px",
-    fontSize: "13px",
-    fontWeight: 900,
-  };
+  ...settingsMiniCardStyle,
+  height: "50px",
+  minHeight: "50px",
+  padding: "8px 12px",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: "8px",
+  fontSize: "14px",
+  fontWeight: 900,
+  boxSizing: "border-box",
+};
 
   const settingsPrimaryButtonStyle = {
-    ...buttonStyle,
-    height: "48px",
-    minHeight: "48px",
-    borderRadius: "16px",
-    padding: "0 22px",
-    background: "linear-gradient(135deg, #3a2418, #7a5a43)",
-    color: "white",
-    boxShadow: "0 12px 24px rgba(75,46,31,0.16)",
-    fontSize: "14px",
-    fontWeight: 900,
-  };
+  ...buttonStyle,
+  height: "40px",
+  minHeight: "40px",
+  borderRadius: "14px",
+  background: "linear-gradient(135deg, #3a2418, #7a5a43)",
+  color: "white",
+  boxShadow: "0 12px 24px rgba(75,46,31,0.16)",
+  fontSize: "13px",
+  fontWeight: 900,
+};
 
   const settingsMutedButtonStyle = {
     ...buttonStyle,
@@ -7882,33 +7885,48 @@ const welcomeBoardNameStyle = {
   );
 
   const renderPermissionChecks = (type, options) => {
-    const key = type === "menu" ? "menuPermissions" : "actionPermissions";
-    const values = accountDraft[key] || [];
-    return (
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(165px, 1fr))", gap: "10px", marginTop: "10px" }}>
-        {options.map(([value, label]) => (
-          <label key={value} style={settingsPermissionCardStyle}>
-            <span style={{ lineHeight: 1.45 }}>{label}</span>
-            <input
-              type="checkbox"
-              checked={values.includes(value)}
-              onChange={() => toggleAccountPermission(type, value)}
-              style={{ width: "15px", height: "15px", accentColor: "#4b2e1f", flex: "0 0 auto" }}
-            />
-          </label>
-        ))}
-      </div>
-    );
-  };
+  const key = type === "menu" ? "menuPermissions" : "actionPermissions";
+  const values = accountDraft[key] || [];
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+        gap: "10px",
+        marginTop: "10px",
+      
+      }}
+    >
+      {options.map(([value, label]) => (
+        <label key={value} style={settingsPermissionCardStyle}>
+          <span style={{ lineHeight: 1.3 }}>{label}</span>
+
+          <input
+            type="checkbox"
+            checked={values.includes(value)}
+            onChange={() => toggleAccountPermission(type, value)}
+            style={{
+              width: "15px",
+              height: "15px",
+              accentColor: "#4b2e1f",
+              flex: "0 0 auto",
+            }}
+          />
+        </label>
+      ))}
+    </div>
+  );
+};
 
   const renderSystemHealthCard = () => (
     <div style={{ ...settingsRowStyle, padding: "18px 20px" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "14px", flexWrap: "wrap", marginBottom: "14px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "14px", flexWrap: "wrap", marginBottom: systemHealth ? "14px" : 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
           <div style={{ width: "50px", height: "50px", borderRadius: "16px", background: "rgba(227,213,198,0.6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "23px" }}>⌁</div>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-              <h3 style={{ ...settingsSectionTitleStyle, margin: 0 }}>حالة النظام — Realtime</h3>
+              <h3 style={{ ...settingsSectionTitleStyle, margin: 0 }}>حالة النظام</h3>
               <span style={{ background: "#dff2d8", color: "#34734f", borderRadius: "999px", padding: "6px 15px", fontWeight: 950, fontSize: "12px" }}>Healthy</span>
             </div>
             <div style={{ marginTop: "5px", color: "#7a5a43", fontWeight: 800, fontSize: "13px" }}>{systemHealth?.checkedAt ? `آخر فحص: ${systemHealth.checkedAt}` : "اضغط فحص النظام لتحديث حالة الجداول"}</div>
@@ -7947,47 +7965,7 @@ const welcomeBoardNameStyle = {
       return (
         <div style={{ display: "grid", gap: "14px" }}>
           {renderSystemHealthCard()}
-
-          <div style={settingsRowStyle}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "14px", flexWrap: "wrap", marginBottom: "14px" }}>
-              <div>
-                <h3 style={settingsSectionTitleStyle}>👥 الحسابات والصلاحيات</h3>
-                <p style={{ ...settingsHelpTextStyle, marginBottom: 0 }}>
-                  الحسابات الحالية تبقى كما هي. هذا القسم يدير سجل الموظفين والصلاحيات من Supabase بدون استبدال تسجيل الدخول الحالي.
-                </p>
-              </div>
-            </div>
-
-            <div style={settingsFieldGridStyle}>
-              <input placeholder="رقم الموظف" value={accountDraft.username} onChange={(e) => setAccountDraft((prev) => ({ ...prev, username: e.target.value }))} style={settingsInputStyle} />
-              <input placeholder="اسم الموظف" value={accountDraft.displayName} onChange={(e) => setAccountDraft((prev) => ({ ...prev, displayName: e.target.value }))} style={settingsInputStyle} />
-              <select value={accountDraft.role} onChange={(e) => setAccountDraft((prev) => ({ ...prev, role: e.target.value }))} style={settingsInputStyle}>
-                <option value="owner">owner majed</option>
-                <option value="manager">manager</option>
-                <option value="employee">employee</option>
-                <option value="readonly">read only</option>
-              </select>
-              <input placeholder="كلمة المرور" type="password" value={accountDraft.password} onChange={(e) => setAccountDraft((prev) => ({ ...prev, password: e.target.value }))} style={settingsInputStyle} />
-            </div>
-
-            <div style={{ display: "grid", gap: "16px", marginTop: "18px" }}>
-              <div>
-                <h4 style={{ margin: "0 0 8px", fontSize: "15px", color: "#3a2418", fontWeight: 950 }}>صلاحيات القوائم</h4>
-                {renderPermissionChecks("menu", settingsMenuOptions)}
-              </div>
-              <div>
-                <h4 style={{ margin: "0 0 8px", fontSize: "15px", color: "#3a2418", fontWeight: 950 }}>صلاحيات الأزرار</h4>
-                {renderPermissionChecks("action", settingsActionOptions)}
-              </div>
-            </div>
-
-            <div style={{ display: "flex", gap: "10px", marginTop: "18px", flexWrap: "wrap", justifyContent: "flex-start" }}>
-              <button onClick={saveEmployeeAccount} style={settingsPrimaryButtonStyle}>{editingAccountId ? "حفظ التعديل" : "إضافة حساب"}</button>
-              <button onClick={resetAccountDraft} style={settingsMutedButtonStyle}>تفريغ</button>
-            </div>
-          </div>
-
-          <div style={{ ...settingsRowStyle, overflowX: "auto", padding: "14px" }}>
+<div style={{ ...settingsRowStyle, overflowX: "auto", padding: "14px" }}>
             <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0", minWidth: "760px", overflow: "hidden", borderRadius: "18px" }}>
               <thead>
                 <tr style={{ background: "rgba(241,230,219,0.78)" }}>
@@ -8023,6 +8001,44 @@ const welcomeBoardNameStyle = {
               </tbody>
             </table>
           </div>
+          <div style={settingsRowStyle}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "14px", flexWrap: "wrap", marginBottom: "14px" }}>
+              <div>
+                <h3 style={settingsSectionTitleStyle}> الحسابات والصلاحيات</h3>
+               
+              </div>
+            </div>
+
+            <div style={settingsFieldGridStyle}>
+              <input placeholder="رقم الموظف" value={accountDraft.username} onChange={(e) => setAccountDraft((prev) => ({ ...prev, username: e.target.value }))} style={settingsInputStyle} />
+              <input placeholder="اسم الموظف" value={accountDraft.displayName} onChange={(e) => setAccountDraft((prev) => ({ ...prev, displayName: e.target.value }))} style={settingsInputStyle} />
+              <select value={accountDraft.role} onChange={(e) => setAccountDraft((prev) => ({ ...prev, role: e.target.value }))} style={settingsInputStyle}>
+                <option value="owner">Owner Majed</option>
+                <option value="manager">Manager</option>
+                <option value="employee">Employee</option>
+                <option value="readonly">Read Only</option>
+              </select>
+              <input placeholder="كلمة المرور" type="password" value={accountDraft.password} onChange={(e) => setAccountDraft((prev) => ({ ...prev, password: e.target.value }))} style={settingsInputStyle} />
+            </div>
+
+            <div style={{ display: "grid", gap: "16px", marginTop: "18px" }}>
+              <div>
+                <h4 style={{ margin: "0 0 8px", fontSize: "15px", color: "#3a2418", fontWeight: 950 }}>صلاحيات القوائم</h4>
+                {renderPermissionChecks("menu", settingsMenuOptions)}
+              </div>
+              <div>
+                <h4 style={{ margin: "0 0 8px", fontSize: "15px", color: "#3a2418", fontWeight: 950 }}>صلاحيات الأزرار</h4>
+                {renderPermissionChecks("action", settingsActionOptions)}
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: "10px", marginTop: "18px", flexWrap: "wrap", justifyContent: "flex-start" }}>
+              <button onClick={saveEmployeeAccount} style={settingsPrimaryButtonStyle}>{editingAccountId ? "حفظ التعديل" : "إضافة حساب"}</button>
+              <button onClick={resetAccountDraft} style={settingsMutedButtonStyle}>تفريغ</button>
+            </div>
+          </div>
+
+          
         </div>
       );
     }
@@ -8031,8 +8047,8 @@ const welcomeBoardNameStyle = {
       return (
         <div style={{ display: "grid", gap: "16px" }}>
           <div style={settingsRowStyle}>
-            <h3 style={settingsSectionTitleStyle}>💾 النسخ الاحتياطي</h3>
-            <p style={settingsHelpTextStyle}>ينزل ملف JSON كامل للاستعادة + ملفات CSV للجداول للمراجعة. احفظ الملفات كلها داخل مجلد بتاريخ اليوم.</p>
+            <h3 style={settingsSectionTitleStyle}> النسخ الإحتياطي</h3>
+            
             <button onClick={createFullBackup} disabled={backupBusy} style={settingsPrimaryButtonStyle}>{backupBusy ? "جاري إنشاء الباك أب..." : "إنشاء Backup"}</button>
           </div>
           <div style={settingsRowStyle}>
@@ -8048,7 +8064,20 @@ const welcomeBoardNameStyle = {
     if (settingsActiveTab === "security") {
       return (
         <div style={{ display: "grid", gap: "16px" }}>
-          <div style={settingsRowStyle}><h3 style={settingsSectionTitleStyle}>🛡️ الأمان</h3><p style={settingsHelpTextStyle}>تحكم سريع في الجلسات، الحذف، وحالة الصيانة.</p></div>
+          <div style={{ ...settingsRowStyle, padding: "14px 18px" }}>
+  <h3 style={{ ...settingsSectionTitleStyle, margin: 0 }}>الأمان</h3>
+
+  <div
+    style={{
+      marginTop: "4px",
+      color: "#7a5a43",
+      fontWeight: 800,
+      fontSize: "13px",
+    }}
+  >
+    تحكم سريع في الجلسات، الحذف، وحالة الصيانة.
+  </div>
+</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: "10px" }}>
             <button onClick={logoutAllDevices} style={settingsPrimaryButtonStyle}>تسجيل خروج جميع الأجهزة</button>
             <button onClick={saveSettingsSecretCode} style={{ ...settingsPrimaryButtonStyle, background: "linear-gradient(135deg, #805d45, #9b7358)" }}>تغيير الرقم السري للإعدادات</button>
@@ -8069,9 +8098,9 @@ const welcomeBoardNameStyle = {
         : [["Status", serverHealth?.error || "اضغط فحص السيرفر"], ["Details", serverHealth?.details || ""]];
       return (
         <div style={{ display: "grid", gap: "16px" }}>
-          <div style={settingsRowStyle}>
-            <h3 style={settingsSectionTitleStyle}>🖥️ السيرفر</h3>
-            <p style={settingsHelpTextStyle}>أفضل وأأمن طريقة: API محمي على السيرفر يرجع RAM / CPU / Storage / Docker / Coolify / Realtime / Postgres / Kong / Restart Count / Health Status.</p>
+          <div style={{ ...settingsRowStyle, padding: "14px 18px" }}>
+            <h3 style={settingsSectionTitleStyle}>السيرفر</h3>
+           
             <button onClick={checkServerHealth} style={settingsPrimaryButtonStyle}>فحص السيرفر</button>
           </div>
           <div style={settingsRowStyle}>{serverRows.map(([key, value]) => <div key={key} style={{ marginBottom: "10px", fontWeight: 850 }}><b>{key}:</b> {String(value)}</div>)}</div>
@@ -8081,8 +8110,8 @@ const welcomeBoardNameStyle = {
 
     return (
       <div style={settingsRowStyle}>
-        <h3 style={settingsSectionTitleStyle}>📥 تحميل الجدول يدوي</h3>
-        <p style={settingsHelpTextStyle}>ينزل ملف Excel لنفس الشهر المختار بنفس تقرير النظام وصفحات أيام الشهر.</p>
+        <h3 style={settingsSectionTitleStyle}>تحميل الجدول يدوي</h3>
+        
         <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
           <input type="month" value={manualExcelMonth} onChange={(e) => setManualExcelMonth(e.target.value)} style={{ ...settingsInputStyle, width: "240px" }} />
           <button onClick={() => exportFinanceMonthToExcel(manualExcelMonth)} style={settingsPrimaryButtonStyle}>تحميل الجدول يدوي</button>
@@ -8102,11 +8131,11 @@ const welcomeBoardNameStyle = {
       >
         <div style={{ display: "flex", justifyContent: "space-between", gap: "14px", alignItems: "flex-start", flexWrap: "wrap", marginBottom: "18px" }}>
           <div style={{ textAlign: "right" }}>
-            <div style={{ color: "#b28b74", fontSize: "14px", fontWeight: 850, marginBottom: "3px" }}>Paradise Spa</div>
-            <h2 style={{ margin: 0, fontSize: "34px", fontWeight: 950, letterSpacing: "-0.5px", color: "#3a2418" }}>الإعدادات 👥</h2>
+            
+            <h2 style={{ margin: 0, fontSize: "34px", fontWeight: 950, letterSpacing: "-0.5px", color: "#3a2418" }}>الإعدادات</h2>
             <div style={{ marginTop: "8px", color: "#4b2e1f", fontWeight: 900, display: "flex", justifyContent: "flex-start", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
               <span style={{ width: "9px", height: "9px", borderRadius: "50%", background: isSystemFrozen ? "#c1372c" : "#48ad43", display: "inline-block" }} />
-              <span>{isSystemFrozen ? "النظام مجمّد" : "النظام يعمل"} — {securitySettings.deleteLocked ? "الحذف مقفل" : "الحذف مفتوح حسب الصلاحيات"}</span>
+              <span>{isSystemFrozen ? "النظام مجمّد" : "النظام يعمل"} — {securitySettings.deleteLocked ? "الحذف مقفل" : "الحذف يعمل"}</span>
             </div>
           </div>
         </div>
@@ -8120,12 +8149,12 @@ const welcomeBoardNameStyle = {
         ) : (
           <>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))", gap: "10px", marginBottom: "14px" }}>
-              {settingsTabButton("accounts", "الحسابات 👥")}
-              {settingsTabButton("backup", "النسخ الاحتياطي 💾")}
-              {settingsTabButton("security", "الأمان 🛡️")}
-              {settingsTabButton("system", "النظام 📊")}
-              {settingsTabButton("server", "السيرفر 🖥️")}
-              {settingsTabButton("excel", "شهري Excel 📥")}
+              {settingsTabButton("accounts", "الحسابات")}
+              {settingsTabButton("backup", "النسخ الاحتياطي")}
+              {settingsTabButton("security", "الأمان")}
+              {settingsTabButton("system", "النظام")}
+              {settingsTabButton("server", "السيرفر")}
+              {settingsTabButton("excel", "شهري Excel")}
             </div>
             {renderSettingsContent()}
           </>
