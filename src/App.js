@@ -1256,7 +1256,7 @@ useEffect(() => {
 
 useEffect(() => {
   if (!isLoggedIn) return;
-  
+
   if (screen === "incomeExpenses") {
     loadIncomeExpenseReportDataRange(
       incomeExpensesFromMonth,
@@ -1264,7 +1264,7 @@ useEffect(() => {
     );
   }
 
-  if (screen === "reports") {
+  if (screen === "finance") {
     loadIncomeExpenseReportDataRange(
       selectedFinanceMonth,
       selectedFinanceMonth
