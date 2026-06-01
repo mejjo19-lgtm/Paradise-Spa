@@ -3799,6 +3799,8 @@ while (hasMoreScheduleRows) {
       freeGifts: rows.filter((row) => row.order === "Free").length,
       twoFreeGifts: rows.filter((row) => row.order === "2 Free").length,
       clientsTurnedAway,
+      commissionJoce: parseAmount(manual.commissionJoce),
+      commissionCaren: parseAmount(manual.commissionCaren),
       commission: parseAmount(manual.commissionJoce) + parseAmount(manual.commissionCaren),
       naft: parseAmount(manual.naft),
       uber: parseAmount(manual.uber),
@@ -3874,6 +3876,8 @@ while (hasMoreScheduleRows) {
         Salary: parseAmount(monthlySettings.staffSalary) * fixedExpenseRatio,
       },
       servicesTotals,
+      commissionJoce: sum((day) => day.commissionJoce),
+      commissionCaren: sum((day) => day.commissionCaren),
       totalServices,
       newClients: sum((day) => day.newClients),
       loyalClients: sum((day) => day.loyalClients),
@@ -3999,223 +4003,207 @@ while (hasMoreScheduleRows) {
       (String(value ?? "").trim() !== "" && /^-?\d+(\.\d+)?$/.test(String(value).replace(/,/g, "")));
     const excelNumber = (value) => String(value ?? "").replace(/,/g, "");
     const cell = (value, styleId = "Body", mergeAcross = 0) => {
-      const type = isNumericCell(value) && styleId !== "Title" && styleId !== "Section" && styleId !== "Header"
+      const type = isNumericCell(value) && !["Title", "Section", "Header", "DashboardTitle"].includes(styleId)
         ? "Number"
         : "String";
       const cellAttrs = [styleId ? `ss:StyleID="${styleId}"` : ""];
       if (mergeAcross) cellAttrs.push(`ss:MergeAcross="${mergeAcross}"`);
       return `<Cell ${cellAttrs.filter(Boolean).join(" ")}><Data ss:Type="${type}">${escapeXml(type === "Number" ? excelNumber(value) : value)}</Data></Cell>`;
     };
+    const emptyCells = (count) => Array.from({ length: Math.max(0, count) }, () => cell("", "Blank"));
     const formulaCell = (formula, fallbackValue = 0, styleId = "Value", mergeAcross = 0) => {
       const cellAttrs = [styleId ? `ss:StyleID="${styleId}"` : "", `ss:Formula="${escapeXml(formula)}"`];
       if (mergeAcross) cellAttrs.push(`ss:MergeAcross="${mergeAcross}"`);
       return `<Cell ${cellAttrs.filter(Boolean).join(" ")}><Data ss:Type="Number">${excelNumber(Number(fallbackValue || 0).toFixed(2))}</Data></Cell>`;
     };
-    const rowXml = (cells) => `<Row>${cells.join("")}</Row>`;
-    const row = (values, styleId = "Body") => rowXml(values.map((value) => cell(value, styleId)));
-    const metricRow = (label, value, styleId = "Body") => rowXml([cell(label, "Label"), value && value.formula ? formulaCell(value.formula, value.fallback, value.styleId || "Value") : cell(value, styleId)]);
-    const titleRow = (title, columns = 12) => rowXml([cell(title, "Title", Math.max(0, columns - 1))]);
-    const sectionRow = (title, columns = 12) => rowXml([cell(title, "Section", Math.max(0, columns - 1))]);
+    const rowXml = (cells, height = "") => `<Row${height ? ` ss:Height="${height}"` : ""}>${cells.join("")}</Row>`;
+    const row = (values, styleId = "Body", height = "") => rowXml(values.map((value) => cell(value, styleId)), height);
+    const metricRow = (label, value, styleId = "Body") =>
+      rowXml([
+        cell(label, styleId === "Total" ? "Total" : "Label"),
+        value && value.formula ? formulaCell(value.formula, value.fallback, value.styleId || "Value") : cell(value, styleId),
+      ]);
     const blankRow = () => rowXml([cell("", "Blank")]);
-    const worksheet = (name, rows, columnCount = 12, options = "") => `
+    const formulaValue = (formula, fallback, styleId = "Value") => ({ formula, fallback, styleId });
+    const daySheetName = (dateString) => {
+      const date = new Date(`${dateString}T12:00:00`);
+      const dayName = date.toLocaleDateString("en-US", { weekday: "short" }).replace("Tue", "Tus");
+      const monthName = date.toLocaleDateString("en-US", { month: "short" });
+      return `${dayName} ${monthName} ${date.getDate()} ${date.getFullYear()}`;
+    };
+    const sheetReference = (sheetName, rowNumber, columnNumber = 2) => `'${sheetName}'!R${rowNumber}C${columnNumber}`;
+    const sumDailyFormula = (rowNumber, columnNumber = 10) => {
+      const refs = monthDates.map((date) => sheetReference(daySheetName(date), rowNumber, columnNumber));
+      return refs.length ? `=SUM(${refs.join(",")})` : "=0";
+    };
+    const monthlySettings = stats.monthlySettings || getFinanceMonthSettings(monthKey);
+    const dailyColumns = [
+      { field: "clientBy", label: "Client By", width: 92 },
+      { field: "serviceTime", label: "Service Time", width: 88 },
+      { field: "driver", label: "Driver", width: 80 },
+      { field: "therapist", label: "Therapist", width: 84 },
+      { field: "district", label: "District", width: 92 },
+      { field: "client", label: "Client", width: 112 },
+      { field: "frame", label: "Frame", width: 54 },
+      { field: "order", label: "Orders", width: 64 },
+      { field: "services", label: "Services", width: 155 },
+      { field: "number", label: "Number", width: 104 },
+      { field: "transportation", label: "Transportation", width: 94 },
+      { field: "serviceAmount", label: "Service Amount", width: 94 },
+      { field: "paymentMethod", label: "Payment Methomd", width: 112 },
+    ];
+    const dailyColumnIndexByField = dailyColumns.reduce((result, column, index) => {
+      result[column.field] = index + 1;
+      return result;
+    }, {});
+    const worksheet = (name, rows, columns, freezeRow = 1) => `
       <Worksheet ss:Name="${safeSheetName(name)}">
         <Table>
-          ${Array.from({ length: columnCount }, (_, index) => {
-            const width = index === 0 ? 155 : index === 1 ? 120 : 105;
-            return `<Column ss:Width="${width}"/>`;
-          }).join("")}
+          ${columns.map((width) => `<Column ss:Width="${width}"/>`).join("")}
           ${rows.join("")}
         </Table>
         <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
           <FreezePanes/>
           <FrozenNoSplit/>
-          <SplitHorizontal>1</SplitHorizontal>
-          <TopRowBottomPane>1</TopRowBottomPane>
+          <SplitHorizontal>${freezeRow}</SplitHorizontal>
+          <TopRowBottomPane>${freezeRow}</TopRowBottomPane>
           <ActivePane>2</ActivePane>
-          ${options}
         </WorksheetOptions>
       </Worksheet>
     `;
-    const sheetReference = (date, rowNumber, columnNumber = 2) => `'${date}'!R${rowNumber}C${columnNumber}`;
-    const sumDailyFormula = (rowNumber, columnNumber = 2) => {
-      const refs = monthDates.map((date) => sheetReference(date, rowNumber, columnNumber));
-      return refs.length ? `=SUM(${refs.join(",")})` : "=0";
+    const scheduleStartRow = 2;
+    const scheduleEndRow = scheduleStartRow + timeSlots.length - 1;
+    const r = (rowNumber, colNumber) => `R${rowNumber}C${colNumber}`;
+    const range = (colNumber) => `${r(scheduleStartRow, colNumber)}:${r(scheduleEndRow, colNumber)}`;
+    const statusCol = dailyColumnIndexByField.status;
+    const orderCol = dailyColumnIndexByField.order;
+    const servicesCol = dailyColumnIndexByField.services;
+    const transportationCol = dailyColumnIndexByField.transportation;
+    const serviceAmountCol = dailyColumnIndexByField.serviceAmount;
+    const paymentCol = dailyColumnIndexByField.paymentMethod;
+    const activeCriteria = statusCol ? `${range(statusCol)},"<>Cancel"` : `${range(serviceAmountCol)},">=0"`;
+    const totalAmountFormula = `${range(serviceAmountCol)}+${range(transportationCol)}`;
+    const dayFormula = {
+      payment: (method) => `=SUMIFS(${range(serviceAmountCol)},${range(paymentCol)},"${method}")+SUMIFS(${range(transportationCol)},${range(paymentCol)},"${method}")`,
+      serviceCount: (keyword) => `=COUNTIF(${range(servicesCol)},"*${keyword}*")`,
     };
-    const formulaValue = (formula, fallback, styleId = "Value") => ({ formula, fallback, styleId });
-    const monthlySettings = stats.monthlySettings || getFinanceMonthSettings(monthKey);
-    const paymentRows = [
-      ["Cash", 29, stats.paymentTotals.Cash],
-      ["Debit", 30, stats.paymentTotals.Debit],
-      ["Credit", 31, stats.paymentTotals.Credit],
-      ["Tabby", 32, stats.paymentTotals.Tabby],
-      ["Tamara", 33, stats.paymentTotals.Tamara],
-      ["Bank Transfer", 34, stats.paymentTotals["Bank Transfer"]],
-      ["Paid", 35, stats.paymentTotals.Paid],
-    ];
-    const operatingRows = [
-      ["Gas Station", sumDailyFormula(56), stats.operatingExpenses["Gas Station"]],
-      ["Commission", sumDailyFormula(59), stats.operatingExpenses.Commission],
-      ["Purchase", sumDailyFormula(58), stats.operatingExpenses.Purchase],
-      ["House Rent", "=R6C2", parseAmount(monthlySettings.houseRent)],
-      ["Car Rent", "=R7C2", parseAmount(monthlySettings.carRent)],
-      ["Uber", sumDailyFormula(57), stats.operatingExpenses.Uber],
-      ["Laundry", "=0", 0],
-      ["Food", "=0", 0],
-      ["Government Fees", "=R8C2", parseAmount(monthlySettings.governmentFees)],
-      ["Salary", "=R5C2", parseAmount(monthlySettings.staffSalary)],
-    ];
-    const reportsRows = [
-      titleRow(`${monthLabel} Reports Dashboard`, 8),
-      blankRow(),
-      sectionRow("Monthly Settings", 8),
-      metricRow(`${monthLabel} Target`, parseAmount(monthlySettings.monthlyTarget)),
-      metricRow("Staff Salary", parseAmount(monthlySettings.staffSalary)),
-      metricRow("House Rent", parseAmount(monthlySettings.houseRent)),
-      metricRow("Car Rent", parseAmount(monthlySettings.carRent)),
-      metricRow("Government Fees", parseAmount(monthlySettings.governmentFees)),
-      blankRow(),
-      sectionRow("Payment Method", 8),
-      ...paymentRows.map(([label, sourceRow, fallback]) => metricRow(label, formulaValue(sumDailyFormula(sourceRow), fallback))),
-      metricRow("Total", formulaValue("=SUM(R[-7]C:R[-1]C)", stats.paymentTotal, "Total")),
-      blankRow(),
-      sectionRow("Operating Expenses", 8),
-      ...operatingRows.map(([label, formula, fallback]) => metricRow(label, formulaValue(formula, fallback))),
-      metricRow("Total", formulaValue("=SUM(R[-10]C:R[-1]C)", stats.totalExpenses, "Total")),
-      blankRow(),
-      sectionRow("Target", 8),
-      metricRow(`${monthLabel} Target`, formulaValue("=R4C2", stats.monthlyTarget)),
-      metricRow("Target by service", formulaValue("=IF(R37C2>0,R34C2/R37C2,0)", stats.targetByService)),
-      metricRow("Remaining Services", formulaValue("=MAX(0,R35C2-R38C2)", stats.remainingServicesToTarget)),
-      metricRow("AVG Service Price", formulaValue("=IF(R38C2>0,R18C2/R38C2,0)", stats.averageServicePrice)),
-      metricRow("Total Services", formulaValue(sumDailyFormula(43), stats.totalServices, "Total")),
-      blankRow(),
-      sectionRow("Clients", 8),
-      metricRow("New Clients", formulaValue(sumDailyFormula(46), stats.newClients)),
-      metricRow("Loyal Clients", formulaValue(sumDailyFormula(47), stats.loyalClients)),
-      blankRow(),
-      sectionRow("Gifts", 8),
-      metricRow("Gifts Added", formulaValue(sumDailyFormula(48), stats.giftsAdded)),
-      metricRow("Gifts Received", formulaValue(sumDailyFormula(49), stats.giftsReceived)),
-      blankRow(),
-      sectionRow("Loyalty Card Gifts", 8),
-      metricRow("1 Service", formulaValue(sumDailyFormula(50), stats.freeGifts)),
-      metricRow("2 Service", formulaValue(sumDailyFormula(51), stats.twoFreeGifts)),
-      blankRow(),
-      sectionRow("Transportation", 8),
-      metricRow("Transportation", formulaValue(sumDailyFormula(62), stats.totalTransportation, "Total")),
-      blankRow(),
-      sectionRow("Services Count", 8),
-      metricRow("Massage", formulaValue(sumDailyFormula(39), stats.servicesTotals.Massage)),
-      metricRow("Mani/Pedi", formulaValue(sumDailyFormula(40), stats.servicesTotals["Mani & Pedi"])),
-      metricRow("Moroccan Bath", formulaValue(sumDailyFormula(41), stats.servicesTotals["Moroccan Bath"])),
-      metricRow("Package", formulaValue(sumDailyFormula(42), stats.servicesTotals.Package)),
-      metricRow("Total Services", formulaValue("=SUM(R[-4]C:R[-1]C)", stats.totalServices, "Total")),
-      blankRow(),
-      sectionRow("Cancelled Appointments", 8),
-      metricRow("Cancelled Appointments", formulaValue(sumDailyFormula(52), stats.clientsTurnedAway)),
-      blankRow(),
-      sectionRow("Daily Income / Expenses / Net Profit", 8),
-      row(["Date", "Income", "Expenses", "Net Profit"], "Header"),
-      ...monthDates.map((date) => {
-        const dayStats = getFinanceDayStats(date, monthlySettings);
-        return rowXml([
-          cell(date, "Body"),
-          formulaCell(`=${sheetReference(date, 55)}`, dayStats.income),
-          formulaCell(`=${sheetReference(date, 60)}`, dayStats.expenses),
-          formulaCell(`=${sheetReference(date, 61)}`, dayStats.netProfit),
-        ]);
-      }),
-      rowXml([
-        cell("Total", "Total"),
-        formulaCell("=SUM(R[-" + monthDates.length + "]C:R[-1]C)", stats.totalIncome, "Total"),
-        formulaCell("=SUM(R[-" + monthDates.length + "]C:R[-1]C)", stats.totalExpenses, "Total"),
-        formulaCell("=SUM(R[-" + monthDates.length + "]C:R[-1]C)", stats.totalNetProfit, "Total"),
-      ]),
-    ];
-
-    const scheduleHeader = scheduleColumns.map((column) => column.label);
-    const scheduleColumnIndexByField = scheduleColumns.reduce((result, column, index) => {
-      result[column.field] = index + 1;
-      return result;
-    }, {});
-    const makeScheduleCell = (scheduleRow, column, rowNumber) => {
+    const makeScheduleCell = (scheduleRow, column) => {
       if (column.field === "frame") return cell(scheduleRow.frame ? "TRUE" : "", "Body");
-      if (column.field === "totalPrice") {
-        return formulaCell(`=RC[-1]+RC[-2]`, parseAmount(scheduleRow.serviceAmount) + parseAmount(scheduleRow.transportation), "Value");
-      }
       return cell(scheduleRow[column.field] || "", "Body");
     };
-    const dataStartRow = 3;
-    const dataEndRow = dataStartRow + timeSlots.length - 1;
-    const statusCol = scheduleColumnIndexByField.status;
-    const orderCol = scheduleColumnIndexByField.order;
-    const servicesCol = scheduleColumnIndexByField.services;
-    const transportationCol = scheduleColumnIndexByField.transportation;
-    const serviceAmountCol = scheduleColumnIndexByField.serviceAmount;
-    const totalPriceCol = scheduleColumnIndexByField.totalPrice;
-    const paymentCol = scheduleColumnIndexByField.paymentMethod;
-    const r = (rowNumber, colNumber) => `R${rowNumber}C${colNumber}`;
-    const range = (colNumber) => `${r(dataStartRow, colNumber)}:${r(dataEndRow, colNumber)}`;
-    const activeCriteria = `${range(statusCol)},"<>Cancel"`;
+    const dashboardRows = [];
+    const dashRow = (cells) => rowXml(cells);
+    const dashboardFormulaMetric = (label, formula, fallback, labelStyle = "DashboardLabel", valueStyle = "DashboardValue") => [
+      cell(label, labelStyle),
+      formulaCell(formula, fallback, valueStyle),
+    ];
+    dashboardRows.push(rowXml(emptyCells(8)));
+    dashboardRows.push(dashRow([cell("", "Blank"), cell(`${monthLabel.split(" ")[0]} Income & Expenses`, "DashboardTitle", 3), cell("", "Blank"), cell("", "Blank"), cell(`${monthLabel.split(" ")[0]} Operating Expenses`, "DashboardTitle", 1)]));
+    dashboardRows.push(dashRow([cell("", "Blank"), ...dashboardFormulaMetric("Total Income", "=SUM(R12C3:R42C3)", stats.totalIncome), cell("", "Blank"), cell("", "Blank"), ...dashboardFormulaMetric("Gas Station", sumDailyFormula(51), stats.operatingExpenses["Gas Station"])]));
+    dashboardRows.push(dashRow([cell("", "Blank"), ...dashboardFormulaMetric("Total Expenses", "=SUM(R12C4:R42C4)", stats.totalExpenses), cell("", "Blank"), cell("", "Blank"), ...dashboardFormulaMetric("Commision", sumDailyFormula(62), stats.operatingExpenses.Commission)]));
+    dashboardRows.push(dashRow([cell("", "Blank"), ...dashboardFormulaMetric("Total Net Profit", "=R3C3-R4C3", stats.totalNetProfit), cell("", "Blank"), cell("", "Blank"), ...dashboardFormulaMetric("Purchase", sumDailyFormula(53), stats.operatingExpenses.Purchase)]));
+    dashboardRows.push(dashRow([cell("", "Blank"), ...dashboardFormulaMetric("AVG Daily Income", `=IF(${daysCount}>0,R3C3/${daysCount},0)`, stats.averageDailyIncome), cell("", "Blank"), cell("", "Blank"), ...dashboardFormulaMetric("House Rent", `=${parseAmount(monthlySettings.houseRent)}`, stats.operatingExpenses["House Rent"])]));
+    dashboardRows.push(dashRow([cell("", "Blank"), ...dashboardFormulaMetric("AVG Daily Expenses", `=IF(${daysCount}>0,R4C3/${daysCount},0)`, stats.averageDailyExpenses), cell("", "Blank"), cell("", "Blank"), ...dashboardFormulaMetric("Car Rent", `=${parseAmount(monthlySettings.carRent)}`, stats.operatingExpenses["Car Rent"])]));
+    dashboardRows.push(dashRow([cell("", "Blank"), ...dashboardFormulaMetric("AVG Daily Net Income", `=IF(${daysCount}>0,R5C3/${daysCount},0)`, stats.averageDailyNetIncome), cell("", "Blank"), cell("", "Blank"), ...dashboardFormulaMetric("Uber", sumDailyFormula(52), stats.operatingExpenses.Uber)]));
+    dashboardRows.push(dashRow([cell("", "Blank"), ...dashboardFormulaMetric("Last Update", `=${stats.lastUpdate || 0}`, stats.lastUpdate), cell("", "Blank"), cell("", "Blank"), ...dashboardFormulaMetric("Lundry", "=0", 0)]));
+    dashboardRows.push(dashRow([cell("", "Blank"), cell("", "Blank"), cell("", "Blank"), cell("", "Blank"), cell("", "Blank"), cell("", "Blank"), ...dashboardFormulaMetric("Food", "=0", 0)]));
+    dashboardRows.push(dashRow([cell("", "Blank"), cell(`${monthLabel.split(" ")[0]} Collection`, "DashboardTitle", 3), cell("", "Blank"), cell("", "Blank"), ...dashboardFormulaMetric("Government Fees", `=${parseAmount(monthlySettings.governmentFees)}`, stats.operatingExpenses["Government Fees"])]));
+    dashboardRows.push(dashRow([cell("", "Blank"), cell("Date", "Header"), cell("Income", "Header"), cell("Expenses", "Header"), cell("Net Profit", "Header"), cell("", "Blank"), ...dashboardFormulaMetric("Salary", `=${parseAmount(monthlySettings.staffSalary)}`, stats.operatingExpenses.Salary)]));
+    monthDates.forEach((date, index) => {
+      const dayStats = getFinanceDayStats(date, monthlySettings);
+      const rowNumber = 12 + index;
+      dashboardRows.push(dashRow([
+        cell("", "Blank"),
+        cell(new Date(`${date}T12:00:00`).getDate(), "Body"),
+        formulaCell(`=${sheetReference(daySheetName(date), 50, 10)}`, dayStats.income),
+        formulaCell(`=${sheetReference(daySheetName(date), 55, 10)}`, dayStats.expenses),
+        formulaCell(`=R${rowNumber}C3-R${rowNumber}C4`, dayStats.netProfit),
+        cell("", "Blank"),
+        ...(index === 0 ? dashboardFormulaMetric("Total", "=SUM(R3C8:R12C8)", stats.totalExpenses, "Total", "Total") : [cell("", "Blank"), cell("", "Blank")]),
+      ]));
+    });
+    dashboardRows.push(dashRow([
+      cell("", "Blank"),
+      cell("Total", "Total"),
+      formulaCell(`=SUM(R12C3:R${11 + monthDates.length}C3)`, stats.totalIncome, "Total"),
+      formulaCell(`=SUM(R12C4:R${11 + monthDates.length}C4)`, stats.totalExpenses, "Total"),
+      formulaCell(`=SUM(R12C5:R${11 + monthDates.length}C5)`, stats.totalNetProfit, "Total"),
+      cell("", "Blank"),
+      cell("EOM Expected", "DashboardTitle"),
+      cell("", "DashboardValue"),
+    ]));
+    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), ...dashboardFormulaMetric("Income", "=R3C3", stats.totalIncome)]));
+    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), ...dashboardFormulaMetric("Expenses", "=R4C3", stats.totalExpenses)]));
+    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), ...dashboardFormulaMetric("Net Profit", "=R5C3", stats.totalNetProfit)]));
+    dashboardRows.push(blankRow());
+    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), cell("Target by service", "DashboardTitle", 1)]));
+    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), dashboardFormulaMetric(`${monthLabel.split(" ")[0]} Target`, `=${stats.monthlyTarget}`, stats.monthlyTarget)[0], dashboardFormulaMetric(`${monthLabel.split(" ")[0]} Target`, `=${stats.monthlyTarget}`, stats.monthlyTarget)[1]]));
+    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), ...dashboardFormulaMetric("AVG Service Price", "=IF(R31C8>0,R3C3/R31C8,0)", stats.averageServicePrice)]));
+    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), ...dashboardFormulaMetric("Target by service", "=IF(R48C8>0,R47C8/R48C8,0)", stats.targetByService)]));
+    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), ...dashboardFormulaMetric("Remaining Services To Achieve Target", "=MAX(0,R49C8-R31C8)", stats.remainingServicesToTarget)]));
+    dashboardRows.push(blankRow());
+    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), cell("Total Services", "DashboardTitle", 1)]));
+    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), ...dashboardFormulaMetric("Massage", sumDailyFormula(38), stats.servicesTotals.Massage)]));
+    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), ...dashboardFormulaMetric("Mani & Pedi", sumDailyFormula(39), stats.servicesTotals["Mani & Pedi"])]));
+    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), ...dashboardFormulaMetric("Moroccan Bath", sumDailyFormula(40), stats.servicesTotals["Moroccan Bath"])]));
+    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), ...dashboardFormulaMetric("Package", sumDailyFormula(41), stats.servicesTotals.Package)]));
+    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), ...dashboardFormulaMetric("Total Services", "=SUM(R52C8:R55C8)", stats.totalServices, "Total", "Total")]));
+    dashboardRows.push(blankRow());
+    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), cell("Total Commision", "DashboardTitle", 1)]));
+    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), ...dashboardFormulaMetric("Joce", sumDailyFormula(60), stats.commissionJoce)]));
+    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), ...dashboardFormulaMetric("Caren", sumDailyFormula(61), stats.commissionCaren)]));
+    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), ...dashboardFormulaMetric("Total Commision", "=SUM(R59C8:R60C8)", stats.operatingExpenses.Commission, "Total", "Total")]));
+
     const scheduleSheets = monthDates.map((date) => {
+      const sheetName = daySheetName(date);
       const rowsForDate = getRowsForDate(date);
       const dayStats = getFinanceDayStats(date, monthlySettings);
-      const dayFormula = {
-        payment: (method) => `=SUMIFS(${range(totalPriceCol)},${range(paymentCol)},"${method}",${activeCriteria})`,
-        serviceCount: (keyword) => `=COUNTIFS(${range(servicesCol)},"*${keyword}*",${activeCriteria})`,
-      };
       const sheetRows = [
-        titleRow(`Schedule ${date}`, scheduleHeader.length),
-        row(scheduleHeader, "Header"),
-        ...rowsForDate.map((scheduleRow, index) =>
-          rowXml(scheduleColumns.map((column) => makeScheduleCell(scheduleRow, column, dataStartRow + index)))
-        ),
+        row(dailyColumns.map((column) => column.label), "Header"),
+        ...timeSlots.map((_, index) => {
+          const scheduleRow = rowsForDate[index] || createEmptyAppointmentRow(timeSlots[index] || "");
+          return rowXml(dailyColumns.map((column) => makeScheduleCell(scheduleRow, column)));
+        }),
         blankRow(),
-        sectionRow("Payment Method", scheduleHeader.length),
-        metricRow("Cash", formulaValue(dayFormula.payment("Cash"), dayStats.paymentTotals.Cash)),
-        metricRow("Debit", formulaValue(dayFormula.payment("Debit"), dayStats.paymentTotals.Debit)),
-        metricRow("Credit", formulaValue(dayFormula.payment("Credit"), dayStats.paymentTotals.Credit)),
-        metricRow("Tabby", formulaValue(dayFormula.payment("Tabby"), dayStats.paymentTotals.Tabby)),
-        metricRow("Tamara", formulaValue(dayFormula.payment("Tamara"), dayStats.paymentTotals.Tamara)),
-        metricRow("Bank Transfer", formulaValue(dayFormula.payment("Bank Transfer"), dayStats.paymentTotals["Bank Transfer"])),
-        metricRow("Paid", formulaValue(dayFormula.payment("Paid"), dayStats.paymentTotals.Paid)),
-        metricRow("Total", formulaValue("=SUM(R[-7]C:R[-1]C)", dayStats.income, "Total")),
+        rowXml([...emptyCells(8), cell("Payment Methomd", "Section"), cell("", "Section"), ...emptyCells(3)]),
+        rowXml([...emptyCells(4), cell("Availability", "Section"), cell("", "Section"), ...emptyCells(2), cell("Cash", "Label"), formulaCell(dayFormula.payment("Cash"), dayStats.paymentTotals.Cash), ...emptyCells(3)]),
+        rowXml([...emptyCells(2), cell("Gift Giver", "StatusGiftGiver"), cell("", "Blank"), cell("Joce", "Body"), cell("", "Body"), ...emptyCells(2), cell("Debit", "Label"), formulaCell(dayFormula.payment("Debit"), dayStats.paymentTotals.Debit), ...emptyCells(3)]),
+        rowXml([...emptyCells(2), cell("Gift Done", "StatusGiftDone"), cell("", "Blank"), cell("Caren", "Body"), cell("", "Body"), ...emptyCells(2), cell("Credit", "Label"), formulaCell(dayFormula.payment("Credit"), dayStats.paymentTotals.Credit), ...emptyCells(3)]),
+        rowXml([...emptyCells(2), cell("Not Sure", "StatusNotSure"), cell("", "Blank"), ...emptyCells(4), cell("Tabby", "Label"), formulaCell(dayFormula.payment("Tabby"), dayStats.paymentTotals.Tabby), ...emptyCells(3)]),
+        rowXml([...emptyCells(2), cell("Therapist OFF", "StatusOff"), cell("", "Blank"), ...emptyCells(4), cell("Tamara", "Label"), formulaCell(dayFormula.payment("Tamara"), dayStats.paymentTotals.Tamara), ...emptyCells(3)]),
+        rowXml([...emptyCells(2), cell("Cancel", "StatusCancel"), cell("", "Blank"), cell("Avg Services Price", "Label"), formulaCell("=IF(R42C10>0,R35C10/R42C10,0)", dayStats.totalServices ? dayStats.income / dayStats.totalServices : 0), ...emptyCells(2), cell("Bank Transfer", "Label"), formulaCell(dayFormula.payment("Bank Transfer"), dayStats.paymentTotals["Bank Transfer"]), ...emptyCells(3)]),
+        rowXml([...emptyCells(2), cell("Postboned", "StatusPostponed"), cell("", "Blank"), ...emptyCells(4), cell("Paid", "Label"), formulaCell(dayFormula.payment("Paid"), dayStats.paymentTotals.Paid), ...emptyCells(3)]),
+        rowXml([...emptyCells(8), cell("Total", "Total"), formulaCell("=SUM(R[-7]C:R[-1]C)", dayStats.income, "Total"), ...emptyCells(3)]),
         blankRow(),
-        sectionRow("Services", scheduleHeader.length),
-        metricRow("Massage", formulaValue(dayFormula.serviceCount("Massage"), dayStats.servicesTotals.Massage)),
-        metricRow("Mani/Pedi", formulaValue(dayFormula.serviceCount("Mani/Pedi"), dayStats.servicesTotals["Mani & Pedi"])),
-        metricRow("Moroccan Bath", formulaValue(dayFormula.serviceCount("Moroccan"), dayStats.servicesTotals["Moroccan Bath"])),
-        metricRow("Package", formulaValue(dayFormula.serviceCount("Package"), dayStats.servicesTotals.Package)),
-        metricRow("Total Services", formulaValue("=SUM(R[-4]C:R[-1]C)", dayStats.totalServices, "Total")),
+        rowXml([...emptyCells(4), cell("Gift Card", "Section"), cell("", "Section"), ...emptyCells(2), cell("Services", "Section"), cell("", "Section"), ...emptyCells(3)]),
+        rowXml([...emptyCells(4), cell("Gifts Added", "Label"), cell(dayStats.giftsAdded, "Value"), ...emptyCells(2), cell("Massage", "Label"), formulaCell(dayFormula.serviceCount("Massage"), dayStats.servicesTotals.Massage), ...emptyCells(3)]),
+        rowXml([...emptyCells(4), cell("Gifts Received", "Label"), cell(dayStats.giftsReceived, "Value"), ...emptyCells(2), cell("Mani & Pedi", "Label"), formulaCell(dayFormula.serviceCount("Mani/Pedi"), dayStats.servicesTotals["Mani & Pedi"]), ...emptyCells(3)]),
+        rowXml([...emptyCells(8), cell("Moroccan Bath", "Label"), formulaCell(dayFormula.serviceCount("Moroccan"), dayStats.servicesTotals["Moroccan Bath"]), ...emptyCells(3)]),
+        rowXml([...emptyCells(4), cell("Loyalty Card Gifts", "Section"), cell("", "Section"), ...emptyCells(2), cell("Package", "Label"), formulaCell(dayFormula.serviceCount("Package"), dayStats.servicesTotals.Package), ...emptyCells(3)]),
+        rowXml([...emptyCells(4), cell("1 Service", "Label"), formulaCell(`=COUNTIF(${range(orderCol)},"Free")`, dayStats.freeGifts), ...emptyCells(2), cell("Total Services", "Total"), formulaCell("=SUM(R[-4]C:R[-1]C)", dayStats.totalServices, "Total"), ...emptyCells(3)]),
+        rowXml([...emptyCells(4), cell("2 Service", "Label"), formulaCell(`=COUNTIF(${range(orderCol)},"2 Free")`, dayStats.twoFreeGifts), ...emptyCells(7)]),
         blankRow(),
-        sectionRow("Clients & Gifts", scheduleHeader.length),
-        metricRow("New Clients", formulaValue(`=COUNTIFS(${range(orderCol)},"1",${activeCriteria})`, dayStats.newClients)),
-        metricRow("Loyal Clients", formulaValue(`=COUNTIFS(${range(orderCol)},"<>",${range(orderCol)},"<>1",${activeCriteria})`, dayStats.loyalClients)),
-        metricRow("Gifts Added", formulaValue(`=COUNTIF(${range(statusCol)},"Gift Giver")`, dayStats.giftsAdded)),
-        metricRow("Gifts Received", formulaValue(`=COUNTIF(${range(statusCol)},"Gift Done")`, dayStats.giftsReceived)),
-        metricRow("Free", formulaValue(`=COUNTIF(${range(orderCol)},"Free")`, dayStats.freeGifts)),
-        metricRow("2 Free", formulaValue(`=COUNTIF(${range(orderCol)},"2 Free")`, dayStats.twoFreeGifts)),
-        metricRow("Clients Turned Away", formulaValue(`=COUNTIF(${range(statusCol)},"Cancel")`, dayStats.clientsTurnedAway)),
+        rowXml([...emptyCells(4), cell("Clients Turned away ", "Label"), cell(dayStats.clientsTurnedAway, "Value"), ...emptyCells(2), cell("Clients", "Section"), cell("", "Section"), ...emptyCells(3)]),
+        rowXml([...emptyCells(8), cell("New Clients", "Label"), formulaCell(`=COUNTIF(${range(orderCol)},"1")`, dayStats.newClients), ...emptyCells(3)]),
+        rowXml([...emptyCells(8), cell("Loyal Clients", "Label"), formulaCell(`=COUNTIFS(${range(orderCol)},"<>",${range(orderCol)},"<>1")`, dayStats.loyalClients), ...emptyCells(3)]),
         blankRow(),
-        sectionRow("Daily Collection", scheduleHeader.length),
-        metricRow("Total Income", formulaValue("=R36C2", dayStats.income, "Total")),
-        metricRow("Naft", dayStats.naft),
-        metricRow("Uber", dayStats.uber),
-        metricRow("Purchase", dayStats.purchase),
-        metricRow("Commission", formulaValue("=SUM(R[6]C:R[7]C)", dayStats.commission)),
-        metricRow("Daily Cost", formulaValue(`=SUM(R[-4]C:R[-1]C)+(('Reports'!R5C2+'Reports'!R6C2+'Reports'!R7C2+'Reports'!R8C2)/${daysCount})`, dayStats.expenses, "Total")),
-        metricRow("Net Profit", formulaValue("=R[-6]C-R[-1]C", dayStats.netProfit, "Total")),
-        metricRow("Total Transportation", formulaValue(`=SUMIFS(${range(transportationCol)},${activeCriteria})`, dayStats.transportation)),
+        rowXml([...emptyCells(8), cell("Daily Collection", "Section"), cell("", "Section"), ...emptyCells(3)]),
+        rowXml([...emptyCells(8), cell("Total Income", "Label"), formulaCell("=R35C10", dayStats.income, "Total"), ...emptyCells(3)]),
+        rowXml([...emptyCells(8), cell("Naft", "Label"), cell(dayStats.naft, "Value"), ...emptyCells(3)]),
+        rowXml([...emptyCells(8), cell("Uber", "Label"), cell(dayStats.uber, "Value"), ...emptyCells(3)]),
+        rowXml([...emptyCells(8), cell("Purchase", "Label"), cell(dayStats.purchase, "Value"), ...emptyCells(3)]),
+        rowXml([...emptyCells(8), cell("Commission", "Label"), formulaCell("=R60C10+R61C10", dayStats.commission), ...emptyCells(3)]),
+        rowXml([...emptyCells(8), cell("Daily Cost", "Total"), formulaCell(`=SUM(R[-4]C:R[-1]C)+(('Dashboard'!R6C8+'Dashboard'!R7C8+'Dashboard'!R10C8+'Dashboard'!R12C8)/${daysCount})`, dayStats.expenses, "Total"), ...emptyCells(3)]),
+        rowXml([...emptyCells(8), cell("Net Profit", "Total"), formulaCell("=R[-6]C-R[-1]C", dayStats.netProfit, "Total"), ...emptyCells(3)]),
+        rowXml([...emptyCells(8), cell("Total Transportation", "Label"), formulaCell(`=SUM(${range(transportationCol)})`, dayStats.transportation), ...emptyCells(3)]),
         blankRow(),
-        sectionRow("Commission", scheduleHeader.length),
-        metricRow("Joce", parseAmount(dayStats.manual.commissionJoce)),
-        metricRow("Caren", parseAmount(dayStats.manual.commissionCaren)),
-        blankRow(),
-        sectionRow("Availability", scheduleHeader.length),
-        ...therapistOptions.map((name) => row([name], "Body")),
+        rowXml([...emptyCells(8), cell("Commission", "Section"), cell("", "Section"), ...emptyCells(3)]),
+        rowXml([...emptyCells(8), cell("Joce", "Label"), cell(dayStats.commissionJoce, "Value"), ...emptyCells(3)]),
+        rowXml([...emptyCells(8), cell("Caren", "Label"), cell(dayStats.commissionCaren, "Value"), ...emptyCells(3)]),
+        rowXml([...emptyCells(8), cell("Total Commission", "Total"), formulaCell("=SUM(R[-2]C:R[-1]C)", dayStats.commission, "Total"), ...emptyCells(3)]),
       ];
 
-      return worksheet(date, sheetRows, Math.max(scheduleHeader.length, 12));
+      return worksheet(sheetName, sheetRows, dailyColumns.map((column) => column.width), 1);
     });
 
     const workbook = `<?xml version="1.0"?>
@@ -4226,16 +4214,25 @@ while (hasMoreScheduleRows) {
         xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
         xmlns:html="http://www.w3.org/TR/REC-html40">
         <Styles>
+          <Style ss:ID="DashboardTitle"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="12" ss:Bold="1" ss:Color="#3a2418"/><Interior ss:Color="#d8c5b3" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
           <Style ss:ID="Title"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="16" ss:Bold="1" ss:Color="#3a2418"/><Interior ss:Color="#cbb7a4" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="2"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
-          <Style ss:ID="Section"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="12" ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#7a5a43" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
-          <Style ss:ID="Header"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="11" ss:Bold="1"/><Interior ss:Color="#ead8c9" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
-          <Style ss:ID="Body"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="Arial" ss:Size="10"/><Interior ss:Color="#fffaf3" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
-          <Style ss:ID="Label"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="10" ss:Bold="1" ss:Color="#4b2e1f"/><Interior ss:Color="#fffaf3" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
-          <Style ss:ID="Value"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="10" ss:Bold="1" ss:Color="#4b2e1f"/><Interior ss:Color="#fffaf3" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
+          <Style ss:ID="Section"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="11" ss:Bold="1" ss:Color="#3a2418"/><Interior ss:Color="#d8c5b3" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
+          <Style ss:ID="Header"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="10" ss:Bold="1"/><Interior ss:Color="#d8c5b3" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
+          <Style ss:ID="Body"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="Arial" ss:Size="10"/><Interior ss:Color="#ffffff" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
+          <Style ss:ID="Label"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="10" ss:Bold="1" ss:Color="#4b2e1f"/><Interior ss:Color="#ffffff" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
+          <Style ss:ID="DashboardLabel"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="10" ss:Bold="1" ss:Color="#4b2e1f"/><Interior ss:Color="#ffffff" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
+          <Style ss:ID="Value"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="10" ss:Bold="1" ss:Color="#4b2e1f"/><Interior ss:Color="#ffffff" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
+          <Style ss:ID="DashboardValue"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="10" ss:Bold="1" ss:Color="#4b2e1f"/><Interior ss:Color="#ffffff" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
           <Style ss:ID="Total"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="10" ss:Bold="1" ss:Color="#3a2418"/><Interior ss:Color="#f2a879" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
-          <Style ss:ID="Blank"><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/></Style>
+          <Style ss:ID="Blank"><Interior ss:Color="#ffffff" ss:Pattern="Solid"/></Style>
+          <Style ss:ID="StatusGiftGiver"><Interior ss:Color="#e6b8df" ss:Pattern="Solid"/><Font ss:FontName="Arial" ss:Size="10"/></Style>
+          <Style ss:ID="StatusGiftDone"><Interior ss:Color="#b7e4f2" ss:Pattern="Solid"/><Font ss:FontName="Arial" ss:Size="10"/></Style>
+          <Style ss:ID="StatusNotSure"><Interior ss:Color="#d8c5b3" ss:Pattern="Solid"/><Font ss:FontName="Arial" ss:Size="10"/></Style>
+          <Style ss:ID="StatusOff"><Interior ss:Color="#cfcfcf" ss:Pattern="Solid"/><Font ss:FontName="Arial" ss:Size="10"/></Style>
+          <Style ss:ID="StatusCancel"><Interior ss:Color="#f4a6a6" ss:Pattern="Solid"/><Font ss:FontName="Arial" ss:Size="10"/></Style>
+          <Style ss:ID="StatusPostponed"><Interior ss:Color="#fff1a8" ss:Pattern="Solid"/><Font ss:FontName="Arial" ss:Size="10"/></Style>
         </Styles>
-        ${worksheet("Reports", reportsRows, 8)}
+        ${worksheet("Dashboard", dashboardRows, [34, 95, 85, 85, 85, 34, 165, 95], 1)}
         ${scheduleSheets.join("")}
       </Workbook>`;
 
@@ -10764,6 +10761,26 @@ if (screen === "finance") {
                       0
                     ),
                   ],
+                ])}
+              </div>
+
+              <div style={financeCardStyle}>
+                <h3 style={financeHeaderStyle}>Services</h3>
+                {renderFinanceRows([
+                  ["Massage", financeStats.servicesTotals.Massage],
+                  ["Mani & Pedi", financeStats.servicesTotals["Mani & Pedi"]],
+                  ["Moroccan Bath", financeStats.servicesTotals["Moroccan Bath"]],
+                  ["Package", financeStats.servicesTotals.Package],
+                  ["Total Services", financeStats.totalServices],
+                ])}
+              </div>
+
+              <div style={financeCardStyle}>
+                <h3 style={financeHeaderStyle}>Commission</h3>
+                {renderFinanceRows([
+                  ["Joce", financeStats.commissionJoce],
+                  ["Caren", financeStats.commissionCaren],
+                  ["Total", financeStats.operatingExpenses.Commission],
                 ])}
               </div>
 
