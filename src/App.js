@@ -1256,13 +1256,27 @@ useEffect(() => {
 
 useEffect(() => {
   if (!isLoggedIn) return;
-  if (screen !== "incomeExpenses") return;
+  
+  if (screen === "incomeExpenses") {
+    loadIncomeExpenseReportDataRange(
+      incomeExpensesFromMonth,
+      incomeExpensesToMonth
+    );
+  }
 
-  loadIncomeExpenseReportDataRange(
-    incomeExpensesFromMonth,
-    incomeExpensesToMonth
-  );
-}, [isLoggedIn, screen, incomeExpensesFromMonth, incomeExpensesToMonth]);
+  if (screen === "reports") {
+    loadIncomeExpenseReportDataRange(
+      selectedFinanceMonth,
+      selectedFinanceMonth
+    );
+  }
+}, [
+  isLoggedIn,
+  screen,
+  incomeExpensesFromMonth,
+  incomeExpensesToMonth,
+  selectedFinanceMonth,
+]);
 
   const [editingId, setEditingId] = useState(null);
   const [editedName, setEditedName] = useState("");
