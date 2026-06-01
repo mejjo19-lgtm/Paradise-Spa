@@ -1267,7 +1267,8 @@ useEffect(() => {
   if (screen === "finance") {
     loadIncomeExpenseReportDataRange(
       selectedFinanceMonth,
-      selectedFinanceMonth
+      selectedFinanceMonth,
+      true
     );
   }
 }, [
@@ -1980,12 +1981,12 @@ const getMonthEndDate = (monthKey) => {
   return new Date(year, month, 0).toISOString().slice(0, 10);
 };
 
-const loadIncomeExpenseReportDataRange = async (fromMonth, toMonth) => {
+const loadIncomeExpenseReportDataRange = async (fromMonth, toMonth, forceReload = false) => {
   if (!fromMonth || !toMonth) return;
 
   const rangeKey = `${fromMonth}_${toMonth}`;
 
-  if (incomeExpenseLoadedRangesRef.current[rangeKey]) return;
+  if (!forceReload && incomeExpenseLoadedRangesRef.current[rangeKey]) return;
 
   const fromDate = getMonthStartDate(fromMonth);
   const toDate = getMonthEndDate(toMonth);
