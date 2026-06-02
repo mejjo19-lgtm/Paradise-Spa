@@ -9883,7 +9883,7 @@ if (!isLoggedIn) {
                             height: "22px",
                             borderRadius: "999px",
                             border: "1px solid rgba(122,90,67,0.55)",
-                            background: "linear-gradient(135deg, #4b2e1f, #9b765c)",
+                            background: "linear-gradient(135deg, #cbbbb3, #9b765c)",
                             color: "white",
                             cursor: "pointer",
                             fontWeight: "900",
