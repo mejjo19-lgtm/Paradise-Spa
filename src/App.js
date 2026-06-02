@@ -1850,7 +1850,7 @@ if (error) {
     Availability: "#cfe8c9",
   };
 
-  const nonRevenueStatuses = ["Cancel", "Postponed", "Gift Giver"];
+  const nonRevenueStatuses = ["Cancel", "Postponed"];
   const hiddenFromDashboardStatuses = ["Cancel", "Postponed", "Gift Giver"];
   const excludedFromClientCountStatuses = ["Cancel", "Postponed", "Gift Giver"];
   const excludedFromProfileHistoryStatuses = ["Cancel", "Postponed", "Gift Giver"];
@@ -2405,7 +2405,7 @@ while (hasMoreScheduleRows) {
     { field: "therapist", label: "Therapist", width: 84 },
     { field: "district", label: "District", width: 92 },
     { field: "client", label: "Client", width: 110 },
-    { field: "addExtra", label: "Add Extra", width: 76 },
+    { field: "addExtra", label: "Profile", width: 76 },
     { field: "frame", label: "Frame", width: 52 },
     { field: "order", label: "Orders", width: 58 },
     { field: "services", label: "Services", width: 120 },
@@ -2665,6 +2665,9 @@ while (hasMoreScheduleRows) {
       width: `${getScheduleColumnWidth(field)}px`,
       minWidth: `${getScheduleColumnWidth(field)}px`,
       maxWidth: `${getScheduleColumnWidth(field)}px`,
+      height: "23px",
+  minHeight: "23px",
+  verticalAlign: "middle",
       backgroundColor: savedStyle.fillColor || "transparent",
       fontSize: `${savedStyle.fontSize || scheduleSettings.defaultFontSize || 14}px`,
       ...selectedStyle,
@@ -4684,6 +4687,21 @@ const sendWhatsApp = async (client) => {
           serviceTime: row.serviceTime || "",
           clientBy: row.clientBy || "",
         });
+        getAdditionalClientsForRow(row).forEach((extraClient) => {
+  const sameExtraClient =
+    normalizePhone(extraClient.phone) === clientPhone && clientPhone !== "";
+
+  if (!sameExtraClient) return;
+
+  serviceHistory.push({
+    date,
+    therapist: extraClient.therapist || row.therapist || "-",
+    services: extraClient.service || row.services || "-",
+    order: extraClient.order || "",
+    serviceTime: row.serviceTime || "",
+    clientBy: row.clientBy || "",
+  });
+});
 
         getAdditionalClientsForRow(row).forEach((extraClient) => {
           const sameExtraClient =
@@ -9446,10 +9464,10 @@ if (!isLoggedIn) {
               >
                 <div
                   style={{
-                    position: additionalClientModal.position && window.innerWidth > 700 ? "absolute" : "fixed",
-                    left: additionalClientModal.position && window.innerWidth > 700 ? `${additionalClientModal.position.left}px` : "50%",
-                    top: additionalClientModal.position && window.innerWidth > 700 ? `${additionalClientModal.position.top}px` : "50%",
-                    transform: additionalClientModal.position && window.innerWidth > 700 ? "none" : "translate(-50%, -50%)",
+                    position: "fixed",
+left: "50%",
+top: "37%",
+transform: "translate(-50%, -50%)",
                     width: "calc(100% - 32px)",
                     maxWidth: "520px",
                     maxHeight: "90vh",
@@ -9839,96 +9857,101 @@ if (!isLoggedIn) {
                     </td>
 
                     <td
-                      style={getScheduleCellStyle(index, "client")}
-                      {...getScheduleCellHandlers(index, "client")}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "4px",
-                          width: "100%",
-                        }}
-                      >
-                        <input
-                          value={
-                            getAdditionalClientCount(row) > 0
-                              ? `${row.client || ""} (+${getAdditionalClientCount(row)})`
-                              : row.client
-                          }
-                          onChange={(e) => {
-                            const cleanValue = String(e.target.value || "").replace(/\s*\(\+\d+\)\s*$/, "");
-                            updateScheduleRow(index, "client", cleanValue);
-                          }}
-                          {...getScheduleEditableProps(index, "client")}
-                          style={getScheduleInputStyle(index, "client", { flex: 1, minWidth: 0 })}
-                        />
-                        <button
-                          type="button"
-                          title="فتح بروفايل العميلة"
-                          onMouseDown={(event) => event.stopPropagation()}
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            const matchedClient = findClientByExactPhone(row.number || "");
-                            if (matchedClient) {
-                              openClientProfile(matchedClient);
-                            } else {
-                              alert("لم يتم العثور على العميلة في قائمة العملاء");
-                            }
-                          }}
-                          style={{
-                            width: "22px",
-                            minWidth: "22px",
-                            height: "22px",
-                            borderRadius: "999px",
-                            border: "1px solid rgba(122,90,67,0.55)",
-                            background: "linear-gradient(135deg, #cbbbb3, #9b765c)",
-                            color: "white",
-                            cursor: "pointer",
-                            fontWeight: "900",
-                            fontSize: "12px",
-                            lineHeight: "20px",
-                            padding: 0,
-                            boxShadow: "0 3px 8px rgba(75,46,31,0.22)",
-                          }}
-                        >
-                          👤
-                        </button>
-                      </div>
-                    </td>
+  style={getScheduleCellStyle(index, "client")}
+  {...getScheduleCellHandlers(index, "client")}
+>
+  <div
+    style={{
+      display: "grid",
+      gridTemplateColumns: "18px 1fr",
+      alignItems: "center",
+      gap: "4px",
+      width: "100%",
+    }}
+  >
+    <button
+  type="button"
+  title="إضافة عميلة لنفس البيت"
+  onMouseDown={(event) => event.stopPropagation()}
+  onClick={(event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openAdditionalClientModal(index, null, event);
+  }}
+  style={{
+    width: "16px",
+    height: "16px",
+    borderRadius: "999px",
+    border: "1px solid rgba(122,90,67,0.55)",
+    background: "linear-gradient(135deg, #cbbbb3, #eeeae6)",
+    color: "white",
+    cursor: "pointer",
+    fontWeight: "900",
+    fontSize: "16px",
+    lineHeight: "16px",
+    padding: 0,
+    boxShadow: "0 3px 8px rgba(75,46,31,0.18)",
+  }}
+>
+  +
+</button>
 
-                    <td
-                      style={getScheduleCellStyle(index, "addExtra", { textAlign: "center" })}
-                      {...getScheduleCellHandlers(index, "addExtra")}
-                    >
-                      <button
-                        type="button"
-                        title="إضافة عميلة لنفس البيت"
-                        onMouseDown={(event) => event.stopPropagation()}
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          openAdditionalClientModal(index, null, event);
-                        }}
-                        style={{
-                          width: "28px",
-                          height: "22px",
-                          borderRadius: "999px",
-                          border: "1px solid rgba(122,90,67,0.55)",
-                          background: "linear-gradient(135deg, #7a5a43, #c9ad95)",
-                          color: "white",
-                          cursor: "pointer",
-                          fontWeight: "900",
-                          fontSize: "15px",
-                          lineHeight: "20px",
-                          padding: 0,
-                          boxShadow: "0 3px 8px rgba(75,46,31,0.18)",
-                        }}
-                      >
-                        +
-                      </button>
-                    </td>
+<input
+  value={
+    getAdditionalClientCount(row) > 0
+      ? `${row.client || ""} (+${getAdditionalClientCount(row)})`
+      : row.client
+  }
+  onChange={(e) => {
+    const cleanValue = String(e.target.value || "").replace(/\s*\(\+\d+\)\s*$/, "");
+    updateScheduleRow(index, "client", cleanValue);
+  }}
+  {...getScheduleEditableProps(index, "client")}
+  style={getScheduleInputStyle(index, "client", {
+    width: "100%",
+    minWidth: 0,
+  })}
+/>
+</div>
+</td>
+
+<td
+  style={getScheduleCellStyle(index, "addExtra", { textAlign: "center" })}
+  {...getScheduleCellHandlers(index, "addExtra")}
+>
+  <button
+    type="button"
+    title="فتح بروفايل العميلة"
+    onMouseDown={(event) => event.stopPropagation()}
+    onClick={(event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const matchedClient = findClientByExactPhone(row.number || "");
+      if (matchedClient) {
+        openClientProfile(matchedClient);
+      } else {
+        alert("لم يتم العثور على العميلة في قائمة العملاء");
+      }
+    }}
+    style={{
+      display: "block",
+margin: "0 auto",
+      width: "16px",
+      minWidth: "16px",
+      height: "16px",
+      borderRadius: "999px",
+      border: "1px solid rgba(122,90,67,0.55)",
+      background: "linear-gradient(135deg, #cbbbb3, #eeeae6)",
+      color: "white",
+      cursor: "pointer",
+      fontWeight: "900",
+      fontSize: "16px",
+      lineHeight: "16px",
+      padding: 0,
+      boxShadow: "0 3px 8px rgba(75,46,31,0.22)",
+    }}
+  />
+</td>
 
                     <td
                       style={getScheduleCellStyle(index, "frame", { textAlign: "center" })}
