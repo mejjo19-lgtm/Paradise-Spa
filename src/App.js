@@ -64,6 +64,7 @@ const [additionalClientDraft, setAdditionalClientDraft] = useState({
   phone: "",
   order: "",
   service: "",
+  therapist: "",
   sendTo: "",
 });
 const [additionalClientPhoneNotice, setAdditionalClientPhoneNotice] = useState("");
@@ -1823,9 +1824,11 @@ if (error) {
     "Gift Giver",
     "Gift Done",
     "Not Sure",
-    "Therapist OFF",
+    "Joce OFF",
+    "Caren OFF",
     "Cancel",
     "Postponed",
+    "Availability",
   ];
 
   const sendToOptions = [
@@ -1840,10 +1843,18 @@ if (error) {
     "Gift Giver": "#e6b8df",
     "Gift Done": "#b7e4f2",
     "Not Sure": "#d8c5b3",
-    "Therapist OFF": "#cfcfcf",
+    "Joce OFF": "#cfcfcf",
+    "Caren OFF": "#cfcfcf",
     Cancel: "#f4a6a6",
     Postponed: "#fff1a8",
+    Availability: "#cfe8c9",
   };
+
+  const nonRevenueStatuses = ["Cancel", "Postponed", "Gift Giver"];
+  const hiddenFromDashboardStatuses = ["Cancel", "Postponed", "Gift Giver"];
+  const excludedFromClientCountStatuses = ["Cancel", "Postponed", "Gift Giver"];
+  const excludedFromProfileHistoryStatuses = ["Cancel", "Postponed", "Gift Giver"];
+  const subtractVisitStatuses = ["Cancel", "Postponed"];
 
   const clientByOptions = ["Fatima", "Tahani", "Paradise F", "Paradise T"];
   const therapistOptions = ["Jocelyn", "Caren"];
@@ -1892,6 +1903,7 @@ if (error) {
     status: "",
     sendTo: "",
     additionalClients: [],
+    addExtra: "",
     note: "",
     giftFrom: "",
     giftPhone: "",
@@ -2392,7 +2404,8 @@ while (hasMoreScheduleRows) {
     { field: "driver", label: "Driver", width: 80 },
     { field: "therapist", label: "Therapist", width: 84 },
     { field: "district", label: "District", width: 92 },
-    { field: "client", label: "Client", width: 94 },
+    { field: "client", label: "Client", width: 110 },
+    { field: "addExtra", label: "Add Extra", width: 76 },
     { field: "frame", label: "Frame", width: 52 },
     { field: "order", label: "Orders", width: 58 },
     { field: "services", label: "Services", width: 120 },
@@ -3022,6 +3035,7 @@ while (hasMoreScheduleRows) {
       phone: "",
       order: "",
       service: "",
+      therapist: "",
       sendTo: "",
     });
     setAdditionalClientPhoneNotice("");
@@ -3049,6 +3063,7 @@ while (hasMoreScheduleRows) {
         phone: editClient.phone || "",
         order: editClient.order || "",
         service: editClient.service || "",
+        therapist: editClient.therapist || "",
         sendTo: editClient.sendTo || "",
       });
       setAdditionalClientPhoneNotice("");
@@ -3070,6 +3085,100 @@ while (hasMoreScheduleRows) {
     return clients.find(
       (client) => normalizeDigits(formatSaudiPhoneForStorage(client.phone)) === comparablePhone
     ) || null;
+  };
+
+  const normalizeNameForCompare = (value) =>
+    String(value || "").trim().replace(/\s+/g, " ").toLowerCase();
+
+  const isSameNameAndPhone = (nameA, phoneA, nameB, phoneB) => {
+    const comparableNameA = normalizeNameForCompare(nameA);
+    const comparableNameB = normalizeNameForCompare(nameB);
+    const comparablePhoneA = normalizeDigits(formatSaudiPhoneForStorage(phoneA));
+    const comparablePhoneB = normalizeDigits(formatSaudiPhoneForStorage(phoneB));
+
+    return (
+      comparableNameA &&
+      comparableNameB &&
+      comparableNameA === comparableNameB &&
+      comparablePhoneA &&
+      comparablePhoneB &&
+      comparablePhoneA === comparablePhoneB
+    );
+  };
+
+  const confirmDuplicateBeforeSendTo = (targetList, clientName, clientPhone, giftDate = selectedScheduleDate) => {
+    let exists = false;
+
+    if (targetList === "عملائنا") {
+      exists = clients.some((client) =>
+        isSameNameAndPhone(client.name || client.arabic_name, client.phone, clientName, clientPhone)
+      );
+    }
+
+    if (targetList === "عملاء الإهداء") {
+      exists = giftClients.some((gift) =>
+        isSameNameAndPhone(gift.toName, gift.toPhone, clientName, clientPhone) &&
+        String(gift.giftDate || "").slice(0, 10) === String(giftDate || "").slice(0, 10)
+      );
+    }
+
+    if (targetList === "عملاء مرشحين") {
+      exists = manualReferrals.some((referral) =>
+        isSameNameAndPhone(referral.name, referral.phone, clientName, clientPhone)
+      );
+    }
+
+    if (targetList === "عملاء محتملين") {
+      exists = potentialClients.some((client) =>
+        isSameNameAndPhone(client.name, client.phone, clientName, clientPhone)
+      );
+    }
+
+    if (!exists) return true;
+
+    return window.confirm("هذا العميل موجود مسبقاً، هل ترغب بإكمال نقل البيانات؟");
+  };
+
+  const markGiftDoneFromScheduleRow = async (row) => {
+    const fromName = String(row.giftFrom || "").trim();
+    const fromPhone = formatSaudiPhoneForStorage(row.giftPhone || "");
+    const toName = String(row.client || "").trim();
+    const toPhone = formatSaudiPhoneForStorage(row.number || "");
+
+    const matchedGift = giftClients.find((gift) =>
+      isSameNameAndPhone(gift.fromName, gift.fromPhone, fromName, fromPhone) &&
+      isSameNameAndPhone(gift.toName, gift.toPhone, toName, toPhone)
+    );
+
+    if (!matchedGift) return;
+
+    await updateGiftTaken(matchedGift, true);
+  };
+
+  const subtractOneVisitForScheduleRow = async (row) => {
+    const matchedClient = findClientByExactPhone(row?.number || "");
+    if (!matchedClient) return;
+
+    const nextVisits = Math.max(0, Number(matchedClient.visits || 0) - 1);
+
+    const { data: updatedClient, error } = await supabase
+      .from("clients")
+      .update({ visits: nextVisits })
+      .eq("id", matchedClient.id)
+      .select("id,name,arabic_name,phone,address,visits,frame,blacklist")
+      .single();
+
+    if (error) {
+      console.log("Schedule status visit subtract error:", error);
+      return;
+    }
+
+    if (updatedClient) {
+      const nextClient = normalizeClientRecord(updatedClient);
+      setClients((prev) =>
+        prev.map((client) => String(client.id) === String(nextClient.id) ? nextClient : client)
+      );
+    }
   };
 
   const updateAdditionalClientDraft = (field, value) => {
@@ -3107,6 +3216,8 @@ while (hasMoreScheduleRows) {
     const giftFromPhoneValue = formatSaudiPhoneForStorage(baseRow.giftPhone || "");
 
     if (!clientName && !clientPhone && !service) return;
+
+    if (!confirmDuplicateBeforeSendTo(targetList, clientName, clientPhone)) return;
 
     if (targetList === "عملائنا") {
       const { data: insertedClient, error } = await supabase.from("clients").insert([
@@ -3172,7 +3283,13 @@ while (hasMoreScheduleRows) {
     }
 
     if (targetList === "عملاء مرشحين") {
-      const { error } = await supabase.from("referred_clients").insert([
+      const duplicateReferral = manualReferrals.some((referral) =>
+      isSameNameAndPhone(referral.name, referral.phone, referralName, referralPhone)
+    );
+
+    if (duplicateReferral && !window.confirm("هذا العميل موجود مسبقاً، هل ترغب بإكمال الإضافة؟")) return;
+
+    const { error } = await supabase.from("referred_clients").insert([
         {
           name: clientName,
           phone: clientPhone,
@@ -3191,7 +3308,13 @@ while (hasMoreScheduleRows) {
     }
 
     if (targetList === "عملاء محتملين") {
-      const { error } = await supabase.from("potential_clients").insert([
+      const duplicatePotential = potentialClients.some((client) =>
+      isSameNameAndPhone(client.name, client.phone, potentialName, potentialPhone)
+    );
+
+    if (duplicatePotential && !window.confirm("هذا العميل موجود مسبقاً، هل ترغب بإكمال الإضافة؟")) return;
+
+    const { error } = await supabase.from("potential_clients").insert([
         {
           name: clientName,
           phone: clientPhone,
@@ -3223,10 +3346,11 @@ while (hasMoreScheduleRows) {
       phone: formatSaudiPhoneForStorage(additionalClientDraft.phone || ""),
       order: String(additionalClientDraft.order || "").trim(),
       service: String(additionalClientDraft.service || "").trim(),
+      therapist: String(additionalClientDraft.therapist || "").trim(),
       sendTo: String(additionalClientDraft.sendTo || "").trim(),
     };
 
-    if (!cleanExtraClient.name && !cleanExtraClient.phone && !cleanExtraClient.order && !cleanExtraClient.service && !cleanExtraClient.sendTo) {
+    if (!cleanExtraClient.name && !cleanExtraClient.phone && !cleanExtraClient.order && !cleanExtraClient.service && !cleanExtraClient.therapist && !cleanExtraClient.sendTo) {
       return;
     }
 
@@ -3283,6 +3407,8 @@ while (hasMoreScheduleRows) {
     ) {
       return;
     }
+
+    if (!confirmDuplicateBeforeSendTo(targetList, clientName, clientPhone)) return;
 
     if (targetList === "عملائنا") {
       const { data: insertedClient, error } = await supabase.from("clients").insert([
@@ -3477,26 +3603,22 @@ while (hasMoreScheduleRows) {
       await copyScheduleRowToSelectedList(updatedRowSnapshot, value);
     }
 
+    if (field === "status" && value === "Gift Done" && originalRow.status !== "Gift Done") {
+      await markGiftDoneFromScheduleRow(updatedRowSnapshot);
+    }
+
     if (
       field === "status" &&
-      value === "Gift Giver" &&
-      originalRow.status !== "Gift Giver"
+      subtractVisitStatuses.includes(value) &&
+      !subtractVisitStatuses.includes(originalRow.status)
     ) {
-      const latestDayData = scheduleData[selectedScheduleDate] || {};
-      const latestRows = latestDayData.rows || timeSlots.map(createEmptyAppointmentRow);
-      const latestRow = latestRows[rowIndex] || originalRow || {};
-      const giftGiverRow = {
-        ...latestRow,
-        status: value,
-      };
-
-      await addScheduleGiftToGiftClients(giftGiverRow);
+      await subtractOneVisitForScheduleRow(updatedRowSnapshot);
     }
   };
 
   const getClientCountItemsFromRows = (rows) =>
     (rows || []).flatMap((row) => {
-      if (row.status === "Cancel") return [];
+      if (excludedFromClientCountStatuses.includes(row.status)) return [];
 
       const items = [];
 
@@ -3530,7 +3652,7 @@ while (hasMoreScheduleRows) {
 
     const totalIncome = rows.reduce(
       (sum, row) =>
-        row.status === "Cancel"
+        nonRevenueStatuses.includes(row.status)
           ? sum
           : sum + parseAmount(row.serviceAmount) + parseAmount(row.transportation),
       0
@@ -3538,7 +3660,7 @@ while (hasMoreScheduleRows) {
 
     const totalTransportation = rows.reduce(
       (sum, row) =>
-        row.status === "Cancel" ? sum : sum + parseAmount(row.transportation),
+        nonRevenueStatuses.includes(row.status) ? sum : sum + parseAmount(row.transportation),
       0
     );
 
@@ -3552,7 +3674,7 @@ while (hasMoreScheduleRows) {
 
     rows.forEach((row) => {
       const amount = parseAmount(row.serviceAmount) + parseAmount(row.transportation);
-      if (paymentTotals[row.paymentMethod] !== undefined && row.status !== "Cancel") {
+      if (paymentTotals[row.paymentMethod] !== undefined && !nonRevenueStatuses.includes(row.status)) {
         paymentTotals[row.paymentMethod] += amount;
       }
     });
@@ -3729,7 +3851,7 @@ while (hasMoreScheduleRows) {
     );
 
     const activeRows = rows.filter(
-      (row) => row.status !== "Cancel" && (row.client || row.number || row.services || row.serviceAmount || row.transportation)
+      (row) => !nonRevenueStatuses.includes(row.status) && (row.client || row.number || row.services || row.serviceAmount || row.transportation)
     );
 
     const income = activeRows.reduce(
@@ -4544,7 +4666,7 @@ const sendWhatsApp = async (client) => {
         const sameClient =
           normalizePhone(row.number) === clientPhone && clientPhone !== "";
 
-        if (!sameClient || row.status === "Cancel") return;
+        if (!sameClient || excludedFromProfileHistoryStatuses.includes(row.status)) return;
 
         const hasRealAppointment =
           row.therapist || row.serviceAmount || row.transportation || row.clientBy;
@@ -4561,6 +4683,22 @@ const sendWhatsApp = async (client) => {
           order: row.order || "",
           serviceTime: row.serviceTime || "",
           clientBy: row.clientBy || "",
+        });
+
+        getAdditionalClientsForRow(row).forEach((extraClient) => {
+          const sameExtraClient =
+            normalizePhone(extraClient.phone) === clientPhone && clientPhone !== "";
+
+          if (!sameExtraClient) return;
+
+          serviceHistory.push({
+            date,
+            therapist: extraClient.therapist || row.therapist || "-",
+            services: extraClient.service || row.services || "-",
+            order: extraClient.order || "",
+            serviceTime: row.serviceTime || "",
+            clientBy: row.clientBy || "",
+          });
         });
       });
     });
@@ -4631,8 +4769,7 @@ const sendWhatsApp = async (client) => {
     return getRowsForDate(date)
       .filter(
         (row) =>
-          row.status !== "Cancel" &&
-          row.status !== "Gift Giver" &&
+          !hiddenFromDashboardStatuses.includes(row.status) &&
           (row.client || row.number || row.services)
       )
       .map((row, index) => {
@@ -5256,6 +5393,17 @@ const sendWhatsApp = async (client) => {
       phoneMatchesSearch(gift.toPhone, giftSearch)
     );
   });
+
+  const isDuplicateGiftSameDate = (gift) => {
+    const giftDate = String(gift.giftDate || "").slice(0, 10);
+
+    return giftClients.some((otherGift) =>
+      String(otherGift.id) !== String(gift.id) &&
+      String(otherGift.giftDate || "").slice(0, 10) === giftDate &&
+      isSameNameAndPhone(otherGift.fromName, otherGift.fromPhone, gift.fromName, gift.fromPhone) &&
+      isSameNameAndPhone(otherGift.toName, otherGift.toPhone, gift.toName, gift.toPhone)
+    );
+  };
 
 
   const luxuryHover = (event, active = true) => {
@@ -9356,7 +9504,7 @@ if (!isLoggedIn) {
                         >
                           <strong>{extraClient.name || "عميلة بدون اسم"}</strong>
                           <span style={{ fontSize: "13px", color: "#6f6259", fontWeight: "700" }}>
-                            {extraClient.phone || "-"} • {extraClient.order || "-"} • {extraClient.service || "-"} • {extraClient.sendTo || "-"}
+                            {extraClient.phone || "-"} • {extraClient.order || "-"} • {extraClient.service || "-"} • {extraClient.therapist || "-"} • {extraClient.sendTo || "-"}
                           </span>
                           <div style={{ display: "flex", gap: "8px", justifyContent: "flex-start" }}>
                             <button
@@ -9438,6 +9586,18 @@ if (!isLoggedIn) {
                       onChange={(event) => updateAdditionalClientDraft("service", event.target.value)}
                       style={{ ...inputStyle, width: "100%", margin: 0, boxSizing: "border-box" }}
                     />
+                    <select
+                      value={additionalClientDraft.therapist}
+                      onChange={(event) => updateAdditionalClientDraft("therapist", event.target.value)}
+                      style={{ ...inputStyle, width: "100%", margin: 0, boxSizing: "border-box" }}
+                    >
+                      <option value="">اسم الإخصائية</option>
+                      {therapistOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
                     <select
                       value={additionalClientDraft.sendTo}
                       onChange={(event) => updateAdditionalClientDraft("sendTo", event.target.value)}
@@ -9705,33 +9865,69 @@ if (!isLoggedIn) {
                         />
                         <button
                           type="button"
-                          title="إضافة عميلة لنفس البيت"
+                          title="فتح بروفايل العميلة"
                           onMouseDown={(event) => event.stopPropagation()}
                           onClick={(event) => {
                             event.preventDefault();
                             event.stopPropagation();
-                            openAdditionalClientModal(index, null, event);
+                            const matchedClient = findClientByExactPhone(row.number || "");
+                            if (matchedClient) {
+                              openClientProfile(matchedClient);
+                            } else {
+                              alert("لم يتم العثور على العميلة في قائمة العملاء");
+                            }
                           }}
                           style={{
-                            width: "18px",
-                            minWidth: "18px",
-                            height: "18px",
+                            width: "22px",
+                            minWidth: "22px",
+                            height: "22px",
                             borderRadius: "999px",
                             border: "1px solid rgba(122,90,67,0.55)",
-                            background: "#7a5a43",
+                            background: "linear-gradient(135deg, #4b2e1f, #9b765c)",
                             color: "white",
                             cursor: "pointer",
-                            fontWeight: "800",
+                            fontWeight: "900",
                             fontSize: "12px",
-                            lineHeight: "16px",
+                            lineHeight: "20px",
                             padding: 0,
-                            opacity: 0.9,
-                            boxShadow: "0 1px 3px rgba(75,46,31,0.18)",
+                            boxShadow: "0 3px 8px rgba(75,46,31,0.22)",
                           }}
                         >
-                          +
+                          👤
                         </button>
                       </div>
+                    </td>
+
+                    <td
+                      style={getScheduleCellStyle(index, "addExtra", { textAlign: "center" })}
+                      {...getScheduleCellHandlers(index, "addExtra")}
+                    >
+                      <button
+                        type="button"
+                        title="إضافة عميلة لنفس البيت"
+                        onMouseDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          openAdditionalClientModal(index, null, event);
+                        }}
+                        style={{
+                          width: "28px",
+                          height: "22px",
+                          borderRadius: "999px",
+                          border: "1px solid rgba(122,90,67,0.55)",
+                          background: "linear-gradient(135deg, #7a5a43, #c9ad95)",
+                          color: "white",
+                          cursor: "pointer",
+                          fontWeight: "900",
+                          fontSize: "15px",
+                          lineHeight: "20px",
+                          padding: 0,
+                          boxShadow: "0 3px 8px rgba(75,46,31,0.18)",
+                        }}
+                      >
+                        +
+                      </button>
                     </td>
 
                     <td
@@ -9834,7 +10030,7 @@ if (!isLoggedIn) {
                         color: "#111",
                       })}
                     >
-                      {formatCurrency(parseAmount(row.serviceAmount) + parseAmount(row.transportation))}
+                      {nonRevenueStatuses.includes(row.status) ? "0" : formatCurrency(parseAmount(row.serviceAmount) + parseAmount(row.transportation))}
                     </td>
 
                     <td
@@ -11412,13 +11608,14 @@ marginRight: "auto",
             <tbody>
               {filteredGiftClients.slice(0, giftVisibleCount).map((gift) => {
                 const isEditingGift = editingGiftId === gift.id;
+                const isDuplicateGift = isDuplicateGiftSameDate(gift);
 
                 return (
                   <tr
                     key={gift.id}
                     style={{
                       borderBottom: "1px solid #eadfd5",
-                      backgroundColor: gift.giftTaken ? "#d9ebf7" : "transparent",
+                      backgroundColor: isDuplicateGift ? "#fff1a8" : gift.giftTaken ? "#d9ebf7" : "transparent",
                     }}
                   >
                     <td style={{ padding: "14px" }}>
