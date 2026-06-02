@@ -1256,28 +1256,13 @@ useEffect(() => {
 
 useEffect(() => {
   if (!isLoggedIn) return;
+  if (screen !== "incomeExpenses") return;
 
-  if (screen === "incomeExpenses") {
-    loadIncomeExpenseReportDataRange(
-      incomeExpensesFromMonth,
-      incomeExpensesToMonth
-    );
-  }
-
-  if (screen === "finance") {
-    loadIncomeExpenseReportDataRange(
-      selectedFinanceMonth,
-      selectedFinanceMonth,
-      true
-    );
-  }
-}, [
-  isLoggedIn,
-  screen,
-  incomeExpensesFromMonth,
-  incomeExpensesToMonth,
-  selectedFinanceMonth,
-]);
+  loadIncomeExpenseReportDataRange(
+    incomeExpensesFromMonth,
+    incomeExpensesToMonth
+  );
+}, [isLoggedIn, screen, incomeExpensesFromMonth, incomeExpensesToMonth]);
 
   const [editingId, setEditingId] = useState(null);
   const [editedName, setEditedName] = useState("");
@@ -1981,12 +1966,12 @@ const getMonthEndDate = (monthKey) => {
   return new Date(year, month, 0).toISOString().slice(0, 10);
 };
 
-const loadIncomeExpenseReportDataRange = async (fromMonth, toMonth, forceReload = false) => {
+const loadIncomeExpenseReportDataRange = async (fromMonth, toMonth) => {
   if (!fromMonth || !toMonth) return;
 
   const rangeKey = `${fromMonth}_${toMonth}`;
 
-  if (!forceReload && incomeExpenseLoadedRangesRef.current[rangeKey]) return;
+  if (incomeExpenseLoadedRangesRef.current[rangeKey]) return;
 
   const fromDate = getMonthStartDate(fromMonth);
   const toDate = getMonthEndDate(toMonth);
