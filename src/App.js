@@ -5010,6 +5010,16 @@ const sendWhatsApp = async (client) => {
       }
     });
   }, [isLoggedIn, todayDate]);
+  useEffect(() => {
+  if (!isLoggedIn) return;
+  if (screen !== "finance") return;
+  if (!selectedFinanceMonth) return;
+
+  loadIncomeExpenseReportDataRange(
+    selectedFinanceMonth,
+    selectedFinanceMonth
+  );
+}, [isLoggedIn, screen, selectedFinanceMonth]);
 
   const todayAppointments = getDashboardAppointments(todayDate);
   const tomorrowDate = getDateOffset(1);
