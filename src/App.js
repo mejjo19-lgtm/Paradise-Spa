@@ -4901,11 +4901,17 @@ const sendWhatsApp = async (client) => {
 
   const getDashboardAppointments = (date) => {
     return getRowsForDate(date)
-      .filter(
-        (row) =>
-          !hiddenFromDashboardStatuses.includes(row.status) &&
-          (row.client || row.number || row.services)
-      )
+      .filter((row) => {
+  const hasRealAppointment =
+    String(row.client || "").trim() ||
+    String(row.number || "").trim() ||
+    String(row.services || "").trim();
+
+  return (
+    !hiddenFromDashboardStatuses.includes(row.status) &&
+    Boolean(hasRealAppointment)
+  );
+})
       .map((row, index) => {
         const matchedClient = clients.find(
           (client) => normalizePhone(client.phone) === normalizePhone(row.number)
