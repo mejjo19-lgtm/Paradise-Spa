@@ -1257,13 +1257,28 @@ useEffect(() => {
 
 useEffect(() => {
   if (!isLoggedIn) return;
-  if (screen !== "incomeExpenses") return;
 
-  loadIncomeExpenseReportDataRange(
-    incomeExpensesFromMonth,
-    incomeExpensesToMonth
-  );
-}, [isLoggedIn, screen, incomeExpensesFromMonth, incomeExpensesToMonth]);
+
+  if (screen === "incomeExpenses") {
+    loadIncomeExpenseReportDataRange(
+      incomeExpensesFromMonth,
+      incomeExpensesToMonth
+    );
+  }
+
+  if (screen === "finance") {
+    loadIncomeExpenseReportDataRange(
+      selectedFinanceMonth,
+      selectedFinanceMonth
+    );
+  }
+}, [
+  isLoggedIn,
+  screen,
+  incomeExpensesFromMonth,
+  incomeExpensesToMonth,
+  selectedFinanceMonth,
+]);
 
   const [editingId, setEditingId] = useState(null);
   const [editedName, setEditedName] = useState("");
@@ -1601,14 +1616,16 @@ if (error) {
   const sharedReferrals = await getSharedReferralsForClient(client.id);
 
   setProfileReferrals(
-    sharedReferrals.length > 0
-      ? sharedReferrals
-      : Array.isArray(fullClient?.referrals)
-      ? fullClient.referrals
-      : []
-  );
+  sharedReferrals.length > 0
+    ? sharedReferrals
+    : Array.isArray(fullClient?.referrals)
+    ? fullClient.referrals
+    : []
+);
 
-  setScreen("clientProfile");
+await loadClientScheduleHistory(fullClient?.phone || client.phone);
+
+setScreen("clientProfile");
 };
 
   // 💾 SAVE CLIENT PROFILE
@@ -2001,13 +2018,78 @@ const stepScheduleOrder = (rowIndex, currentOrder, direction) => {
 
     applyScheduleRowsSnapshot(date, data || []);
   };
+  const mergeScheduleRowsIntoScheduleData = (dbRows) => {
+  const rowsByDate = {};
+
+  (dbRows || []).forEach((dbRow) => {
+    const date = dbRow.schedule_date;
+    const rowIndex = Number(dbRow.row_index);
+
+    if (!date || !Number.isInteger(rowIndex)) return;
+
+    if (!rowsByDate[date]) {
+      rowsByDate[date] = {
+        rows: timeSlots.map(createEmptyAppointmentRow),
+        cellStyles: {},
+      };
+    }
+
+    rowsByDate[date].rows[rowIndex] = {
+      ...rowsByDate[date].rows[rowIndex],
+      ...(dbRow.row_data || {}),
+    };
+
+    Object.assign(rowsByDate[date].cellStyles, dbRow.cell_styles || {});
+  });
+
+  setScheduleData((prev) => {
+    const next = { ...prev };
+
+    Object.entries(rowsByDate).forEach(([date, dayData]) => {
+      next[date] = {
+        ...(next[date] || {}),
+        rows: dayData.rows,
+        cellStyles: {
+          ...((next[date] || {}).cellStyles || {}),
+          ...dayData.cellStyles,
+        },
+      };
+    });
+
+    return next;
+  });
+};
+
+const loadClientScheduleHistory = async (phoneValue) => {
+  const comparablePhone = normalizePhone(formatSaudiPhoneForStorage(phoneValue));
+
+  if (!comparablePhone || comparablePhone.length < 9) return;
+
+  const { data, error } = await supabase
+    .from("schedule_rows")
+    .select("id, schedule_date, row_index, row_data, cell_styles, updated_at, updated_by")
+    .or(
+      `row_data->>number.eq.${comparablePhone},row_data->additionalClients.cs.[{"phone":"${comparablePhone}"}]`
+    )
+    .order("schedule_date", { ascending: true })
+    .order("row_index", { ascending: true });
+
+  if (error) {
+    console.log("Client schedule history load error:", error);
+    return;
+  }
+
+  mergeScheduleRowsIntoScheduleData(data || []);
+};
 const getMonthStartDate = (monthKey) => `${monthKey}-01`;
 
 const getMonthEndDate = (monthKey) => {
   const [year, month] = String(monthKey || "").split("-").map(Number);
   if (!year || !month) return `${monthKey}-31`;
 
-  return new Date(year, month, 0).toISOString().slice(0, 10);
+  const lastDay = new Date(year, month, 0).getDate();
+
+  return `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
 };
 
 const loadIncomeExpenseReportDataRange = async (fromMonth, toMonth) => {
@@ -2074,17 +2156,18 @@ while (hasMoreScheduleRows) {
     const next = { ...prev };
 
     Object.entries(rowsByDate).forEach(([date, dayData]) => {
-      next[date] = {
-        ...(next[date] || {}),
-        rows: dayData.rows,
-        cellStyles: {
-          ...((next[date] || {}).cellStyles || {}),
-          ...dayData.cellStyles,
-        },
-      };
-    });
+  next[date] = {
+    ...(next[date] || {}),
+    rows: dayData.rows,
+    cellStyles: {
+      ...((next[date] || {}).cellStyles || {}),
+      ...dayData.cellStyles,
+    },
+  };
+});
 
-    return next;
+
+return next;
   });
 
   const { data: dailyReports, error: reportsError } = await supabase
@@ -5010,16 +5093,6 @@ const sendWhatsApp = async (client) => {
       }
     });
   }, [isLoggedIn, todayDate]);
-  useEffect(() => {
-  if (!isLoggedIn) return;
-  if (screen !== "finance") return;
-  if (!selectedFinanceMonth) return;
-
-  loadIncomeExpenseReportDataRange(
-    selectedFinanceMonth,
-    selectedFinanceMonth
-  );
-}, [isLoggedIn, screen, selectedFinanceMonth]);
 
   const todayAppointments = getDashboardAppointments(todayDate);
   const tomorrowDate = getDateOffset(1);
