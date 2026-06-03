@@ -1793,7 +1793,7 @@ if (error) {
         c.name,
         c.phone,
         c.address || "",
-        c.visits,
+        getVisitLabel(c.visits),
       ]),
     ];
 
@@ -1859,6 +1859,38 @@ if (error) {
   const clientByOptions = ["Fatima", "Tahani", "Paradise F", "Paradise T"];
   const therapistOptions = ["Jocelyn", "Caren"];
   const orderOptions = ["", "1", "2", "3", "4", "Free", "5", "6", "7", "8", "9", "2 Free"];
+  const getOrderStepIndex = (orderValue) => {
+  const cleanOrder = String(orderValue || "").trim();
+
+  if (!cleanOrder) return -1;
+
+  const match = cleanOrder.match(/^\(C(\d+)\)\s*(.+)$/);
+  const cardCycle = match ? Number(match[1]) : 1;
+  const label = match ? match[2].trim() : cleanOrder;
+  const labelIndex = orderOptions.indexOf(label);
+
+  if (labelIndex <= 0) return -1;
+
+  return (cardCycle - 1) * 11 + (labelIndex - 1);
+};
+
+const getOrderFromStepIndex = (stepIndex) => {
+  if (!Number.isInteger(stepIndex) || stepIndex < 0) return "";
+
+  const cardCycle = Math.floor(stepIndex / 11) + 1;
+  const labelIndex = (stepIndex % 11) + 1;
+  const label = orderOptions[labelIndex] || "";
+
+  return cardCycle > 1 ? `(C${cardCycle}) ${label}` : label;
+};
+
+const stepScheduleOrder = (rowIndex, currentOrder, direction) => {
+  const currentIndex = getOrderStepIndex(currentOrder);
+  const nextIndex = Math.max(0, currentIndex + direction);
+  const nextOrder = getOrderFromStepIndex(nextIndex);
+
+  updateScheduleRow(rowIndex, "order", nextOrder);
+};
   const paymentOptions = ["", "Cash", "Debit", "Credit", "Paid", "Bank Transfer"];
   const serviceOptions = [
     "",
@@ -2391,11 +2423,36 @@ while (hasMoreScheduleRows) {
   };
 
   const orderToVisits = (order) => {
-    if (order === "Free") return 5;
-    if (order === "2 Free") return 11;
-    const parsed = Number(order);
-    return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
-  };
+  const cleanOrder = String(order || "").trim();
+  const match = cleanOrder.match(/^\(C(\d+)\)\s*(.+)$/);
+
+  const cardCycle = match ? Number(match[1]) : 1;
+  const label = match ? match[2].trim() : cleanOrder;
+
+  if (!Number.isFinite(cardCycle) || cardCycle < 1) return null;
+
+  let cycleValue = null;
+
+  if (label === "Free") {
+    cycleValue = 5;
+  } else if (label === "2 Free") {
+    cycleValue = 11;
+  } else {
+    const parsed = Number(label);
+
+    if (!Number.isFinite(parsed)) return null;
+
+    if (parsed >= 1 && parsed <= 4) {
+      cycleValue = parsed;
+    } else if (parsed >= 5 && parsed <= 9) {
+      cycleValue = parsed + 1;
+    }
+  }
+
+  if (!cycleValue) return null;
+
+  return (cardCycle - 1) * 11 + cycleValue;
+};
 
   const scheduleColumns = [
     { field: "status", label: "Status", width: 96 },
@@ -2422,8 +2479,8 @@ while (hasMoreScheduleRows) {
   ];
 
   const scheduleSelectableFields = scheduleColumns
-    .filter((column) => !column.readOnly)
-    .map((column) => column.field);
+  .filter((column) => !column.readOnly && column.field !== "addExtra")
+  .map((column) => column.field);
 
   const scheduleFillColors = [
     ["", "بدون لون"],
@@ -2502,12 +2559,18 @@ while (hasMoreScheduleRows) {
     );
 
     if (target) {
-      target.focus();
-      if (typeof target.select === "function") {
-        setTimeout(() => target.select(), 0);
-      }
+  target.focus();
+
+  if (
+    target.tagName !== "INPUT" ||
+    target.type !== "checkbox"
+  ) {
+    if (typeof target.select === "function") {
+      setTimeout(() => target.select(), 0);
     }
-  };
+  }
+}
+};
 
   const moveScheduleActiveCell = (rowIndex, field, shiftPressed = false) => {
     const safeRow = Math.max(0, Math.min(timeSlots.length - 1, rowIndex));
@@ -3312,10 +3375,16 @@ while (hasMoreScheduleRows) {
 
     if (targetList === "عملاء محتملين") {
       const duplicatePotential = potentialClients.some((client) =>
-      isSameNameAndPhone(client.name, client.phone, potentialName, potentialPhone)
-    );
+  normalizeDigits(formatSaudiPhoneForStorage(client.phone)) ===
+  normalizeDigits(formatSaudiPhoneForStorage(clientPhone))
+);
 
-    if (duplicatePotential && !window.confirm("هذا العميل موجود مسبقاً، هل ترغب بإكمال الإضافة؟")) return;
+if (
+  duplicatePotential &&
+  !window.confirm("هذا الرقم موجود مسبقاً في العملاء المحتملين، هل ترغب بإكمال الإضافة؟")
+) {
+  return;
+}
 
     const { error } = await supabase.from("potential_clients").insert([
         {
@@ -3637,13 +3706,24 @@ while (hasMoreScheduleRows) {
 
       return items;
     });
+const normalizeOrderLabelForStats = (orderValue) =>
+  String(orderValue || "")
+    .trim()
+    .replace(/^\(C\d+\)\s*/, "");
+  const isNewClientOrder = (orderValue) => {
+  const cleanOrder = String(orderValue || "").trim();
 
-  const isNewClientOrder = (orderValue) => String(orderValue || "").trim() === "1";
+  return cleanOrder === "1";
+};
 
   const isLoyalClientOrder = (orderValue) => {
-    const cleanOrder = String(orderValue || "").trim();
-    return !!cleanOrder && cleanOrder !== "1";
-  };
+  const cleanOrder = String(orderValue || "").trim();
+
+  if (!cleanOrder) return false;
+  if (cleanOrder === "1") return false;
+
+  return true;
+};
 
   const getAppointmentStats = () => {
     const rows = getRowsForDate(selectedScheduleDate);
@@ -3695,13 +3775,19 @@ while (hasMoreScheduleRows) {
     );
 
     const clientCountItems = getClientCountItemsFromRows(rows);
-    const newClients = clientCountItems.filter((item) => isNewClientOrder(item.order)).length;
-    const loyalClients = clientCountItems.filter((item) => isLoyalClientOrder(item.order)).length;
+const newClients = clientCountItems.filter((item) => isNewClientOrder(item.order)).length;
+const loyalClients = clientCountItems.filter((item) => isLoyalClientOrder(item.order)).length;
 
-    const giftsAdded = rows.filter((row) => row.status === "Gift Giver").length;
-    const giftsReceived = rows.filter((row) => row.status === "Gift Done").length;
-    const freeGifts = rows.filter((row) => row.order === "Free").length;
-    const twoFreeGifts = rows.filter((row) => row.order === "2 Free").length;
+
+
+const giftsAdded = rows.filter((row) => row.status === "Gift Giver").length;
+const giftsReceived = rows.filter((row) => row.status === "Gift Done").length;
+const freeGifts = rows.filter(
+  (row) => normalizeOrderLabelForStats(row.order) === "Free"
+).length;
+const twoFreeGifts = rows.filter(
+  (row) => normalizeOrderLabelForStats(row.order) === "2 Free"
+).length;
 
     const totalCommission =
       parseAmount(manual.commissionJoce) +
@@ -4426,7 +4512,54 @@ const getCardImage = (visits) => {
 
   // 🏷️ LABELS
 const getVisitLabel = (visits) => {
-  return visits;
+  const numericVisits = Number(visits || 0);
+
+  if (numericVisits <= 0) return "0";
+
+  const cycle = ((numericVisits - 1) % 11) + 1;
+  const cardCycle = Math.floor((numericVisits - 1) / 11) + 1;
+
+  let visitLabel = "0";
+
+  switch (cycle) {
+    case 1:
+      visitLabel = "1";
+      break;
+    case 2:
+      visitLabel = "2";
+      break;
+    case 3:
+      visitLabel = "3";
+      break;
+    case 4:
+      visitLabel = "4";
+      break;
+    case 5:
+      visitLabel = "Free";
+      break;
+    case 6:
+      visitLabel = "5";
+      break;
+    case 7:
+      visitLabel = "6";
+      break;
+    case 8:
+      visitLabel = "7";
+      break;
+    case 9:
+      visitLabel = "8";
+      break;
+    case 10:
+      visitLabel = "9";
+      break;
+    case 11:
+      visitLabel = "2 Free";
+      break;
+    default:
+      visitLabel = "0";
+  }
+
+  return cardCycle > 1 ? `(C${cardCycle}) ${visitLabel}` : visitLabel;
 };
 
   // 📱 CLEAN SAUDI PHONE NUMBER
@@ -4658,83 +4791,66 @@ const sendWhatsApp = async (client) => {
   };
 
   const getClientServiceSummary = (client) => {
-    const clientPhone = normalizePhone(client.phone);
-    const serviceHistory = [];
-    let totalPaid = 0;
+  const clientPhone = normalizePhone(client.phone);
+  const serviceHistory = [];
+  let totalPaid = 0;
 
-    Object.entries(scheduleData).forEach(([date, dayData]) => {
-      const rows = dayData?.rows || [];
+  Object.entries(scheduleData).forEach(([date, dayData]) => {
+    const rows = dayData?.rows || [];
 
-      rows.forEach((row) => {
-        const sameClient =
-          normalizePhone(row.number) === clientPhone && clientPhone !== "";
+    rows.forEach((row) => {
+      if (excludedFromProfileHistoryStatuses.includes(row.status)) return;
 
-        if (!sameClient || excludedFromProfileHistoryStatuses.includes(row.status)) return;
+      const hasRealAppointment =
+        row.therapist || row.serviceAmount || row.transportation || row.clientBy;
 
-        const hasRealAppointment =
-          row.therapist || row.serviceAmount || row.transportation || row.clientBy;
+      if (!hasRealAppointment) return;
 
-        if (!hasRealAppointment) return;
+      getAdditionalClientsForRow(row).forEach((extraClient) => {
+        const sameExtraClient =
+          normalizePhone(extraClient.phone) === clientPhone && clientPhone !== "";
 
-        totalPaid +=
-          parseAmount(row.serviceAmount) + parseAmount(row.transportation);
+        if (!sameExtraClient) return;
 
         serviceHistory.push({
           date,
-          therapist: row.therapist || "-",
-          services: row.services || "-",
-          order: row.order || "",
+          therapist: extraClient.therapist || row.therapist || "-",
+          services: extraClient.service || row.services || "-",
+          order: extraClient.order || "",
           serviceTime: row.serviceTime || "",
           clientBy: row.clientBy || "",
         });
-        getAdditionalClientsForRow(row).forEach((extraClient) => {
-  const sameExtraClient =
-    normalizePhone(extraClient.phone) === clientPhone && clientPhone !== "";
+      });
 
-  if (!sameExtraClient) return;
+      const sameClient =
+        normalizePhone(row.number) === clientPhone && clientPhone !== "";
 
-  serviceHistory.push({
-    date,
-    therapist: extraClient.therapist || row.therapist || "-",
-    services: extraClient.service || row.services || "-",
-    order: extraClient.order || "",
-    serviceTime: row.serviceTime || "",
-    clientBy: row.clientBy || "",
-  });
-});
+      if (!sameClient) return;
 
-        getAdditionalClientsForRow(row).forEach((extraClient) => {
-          const sameExtraClient =
-            normalizePhone(extraClient.phone) === clientPhone && clientPhone !== "";
+      totalPaid +=
+        parseAmount(row.serviceAmount) + parseAmount(row.transportation);
 
-          if (!sameExtraClient) return;
-
-          serviceHistory.push({
-            date,
-            therapist: extraClient.therapist || row.therapist || "-",
-            services: extraClient.service || row.services || "-",
-            order: extraClient.order || "",
-            serviceTime: row.serviceTime || "",
-            clientBy: row.clientBy || "",
-          });
-        });
+      serviceHistory.push({
+        date,
+        therapist: row.therapist || "-",
+        services: row.services || "-",
+        order: row.order || "",
+        serviceTime: row.serviceTime || "",
+        clientBy: row.clientBy || "",
       });
     });
+  });
 
-    serviceHistory.sort((a, b) => {
-      if (a.date === b.date) return a.serviceTime.localeCompare(b.serviceTime);
-      return a.date.localeCompare(b.date);
-    });
+  serviceHistory.sort((a, b) => {
+    if (a.date === b.date) return a.serviceTime.localeCompare(b.serviceTime);
+    return a.date.localeCompare(b.date);
+  });
 
-    return {
-      serviceHistory,
-      totalPaid,
-      lastVisitDate:
-        serviceHistory.length > 0
-          ? serviceHistory[serviceHistory.length - 1].date
-          : "",
-    };
+  return {
+    serviceHistory,
+    totalPaid,
   };
+};
 
   const selectedClientServiceSummary = selectedClient
     ? getClientServiceSummary(selectedClient)
@@ -5095,28 +5211,42 @@ const sendWhatsApp = async (client) => {
   };
 
   const addPotentialClient = async () => {
-    if (!ensureSystemWritable() || !canAddData) return;
-    if (!potentialName || !potentialPhone) return;
+  if (!ensureSystemWritable() || !canAddData) return;
+  if (!potentialName || !potentialPhone) return;
 
-    const { error } = await supabase.from("potential_clients").insert([
-      {
-        name: potentialName,
-        phone: formatSaudiPhoneForStorage(potentialPhone),
-        status: potentialStatus || "إلغاء موعد",
-      },
-    ]);
+  const cleanPotentialPhone = formatSaudiPhoneForStorage(potentialPhone);
 
-    if (error) {
-      console.log(error);
-      return;
-    }
+  const duplicatePotential = potentialClients.some((client) =>
+    normalizeDigits(formatSaudiPhoneForStorage(client.phone)) ===
+    normalizeDigits(cleanPotentialPhone)
+  );
 
-    fetchPotentialClients();
-    setPotentialName("");
-    setPotentialPhone("");
-    setPotentialStatus("إلغاء موعد");
-    setShowPotentialForm(false);
-  };
+  if (
+    duplicatePotential &&
+    !window.confirm("هذا الرقم موجود مسبقاً في العملاء المحتملين، هل ترغب بإكمال الإضافة؟")
+  ) {
+    return;
+  }
+
+  const { error } = await supabase.from("potential_clients").insert([
+    {
+      name: potentialName,
+      phone: cleanPotentialPhone,
+      status: potentialStatus || "إلغاء موعد",
+    },
+  ]);
+
+  if (error) {
+    console.log(error);
+    return;
+  }
+
+  fetchPotentialClients();
+  setPotentialName("");
+  setPotentialPhone("");
+  setPotentialStatus("إلغاء موعد");
+  setShowPotentialForm(false);
+};
 
   const filteredPotentialClients = potentialClients.filter((client) => {
     const textSearch = String(potentialSearch || "").toLowerCase().trim();
@@ -9974,19 +10104,98 @@ margin: "0 auto",
                     </td>
 
                     <td
-                      style={getScheduleCellStyle(index, "order")}
-                      {...getScheduleCellHandlers(index, "order")}
-                    >
-                      <input
-                        list="orderList"
-                        value={row.order}
-                        onChange={(e) =>
-                          updateScheduleRow(index, "order", e.target.value)
-                        }
-                        {...getScheduleEditableProps(index, "order")}
-                        style={getScheduleInputStyle(index, "order")}
-                      />
-                    </td>
+  style={getScheduleCellStyle(index, "order", { padding: "0px" })}
+  {...getScheduleCellHandlers(index, "order")}
+>
+  <div
+    style={{
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      width: "100%",
+      height: "23px",
+      overflow: "hidden",
+      gap: "2px",
+    }}
+  >
+    <input
+      value={row.order}
+      onChange={(e) => updateScheduleRow(index, "order", e.target.value)}
+      {...getScheduleEditableProps(index, "order")}
+      style={{
+        ...getScheduleInputStyle(index, "order"),
+        width: "calc(100% - 18px)",
+        height: "21px",
+        minHeight: "21px",
+        padding: "0 2px",
+        textAlign: "center",
+        border: "none",
+        background: "transparent",
+        fontWeight: "bold",
+      }}
+    />
+
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        width: "14px",
+        height: "21px",
+        flexShrink: 0,
+      }}
+    >
+      <button
+        type="button"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          stepScheduleOrder(index, row.order, 1);
+        }}
+        style={{
+          width: "14px",
+          height: "10px",
+          lineHeight: "8px",
+          padding: 0,
+          margin: 0,
+          border: "none",
+          background: "transparent",
+          cursor: "pointer",
+          fontSize: "10px",
+          fontWeight: "bold",
+          color: "#4b2e1f",
+        }}
+      >
+        ▲
+      </button>
+
+      <button
+        type="button"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          stepScheduleOrder(index, row.order, -1);
+        }}
+        style={{
+          width: "14px",
+          height: "10px",
+          lineHeight: "8px",
+          padding: 0,
+          margin: 0,
+          border: "none",
+          background: "transparent",
+          cursor: "pointer",
+          fontSize: "10px",
+          fontWeight: "bold",
+          color: "#4b2e1f",
+        }}
+      >
+        ▼
+      </button>
+    </div>
+  </div>
+</td>
 
                     <td
                       style={getScheduleCellStyle(index, "services")}
@@ -11641,9 +11850,15 @@ marginRight: "auto",
                       backgroundColor: isDuplicateGift ? "#fff1a8" : gift.giftTaken ? "#d9ebf7" : "transparent",
                     }}
                   >
-                    <td style={{ padding: "14px" }}>
-                      {String(gift.giftDate || "").slice(0, 10) || "-"}
-                    </td>
+                    <td
+  style={{
+    padding: "14px",
+    whiteSpace: "nowrap",
+    minWidth: "110px",
+  }}
+>
+  {String(gift.giftDate || "").slice(0, 10) || "-"}
+</td>
                     <td style={{ padding: "14px", fontWeight: "bold" }}>
                       {isEditingGift ? (
                         <input value={editedGiftFromName} onChange={(e) => setEditedGiftFromName(e.target.value)} style={{ ...editInputStyle, width: "105px" }} />
@@ -11886,19 +12101,17 @@ if (screen === "potentialClients") {
               }}
             />
             <input
-              list="potentialStatusOptions"
-              placeholder="إلغاء موعد أو إستفسار"
-              value={potentialStatus}
-              onFocus={(e) => e.target.showPicker?.()}
-              onClick={(e) => e.target.showPicker?.()}
-              onChange={(e) => setPotentialStatus(e.target.value)}
-              style={{
-                ...inputStyle,
-                width: "60%",
-                display: "block",
-                margin: "0 auto 12px",
-              }}
-            />
+  list="potentialStatusOptions"
+  placeholder="إلغاء موعد أو استفسار"
+  value={potentialStatus}
+  onChange={(e) => setPotentialStatus(e.target.value)}
+  style={{
+    ...inputStyle,
+    width: "60%",
+    display: "block",
+    margin: "0 auto 12px",
+  }}
+/>
 
             <button
               onClick={addPotentialClient}
@@ -12533,7 +12746,7 @@ if (screen === "availableAppointments") {
             onClick={() => sendWhatsApp(selectedClient)}
             style={{
               ...buttonStyle,
-              width: "18%",
+              width: "35%",
               margin: "0 auto 18px",
               display: "block",
               background: "linear-gradient(135deg, #1f9f54, #25D366)",
@@ -12555,7 +12768,117 @@ if (screen === "availableAppointments") {
           >
             {selectedClient.name}
           </h2>
+<button
+  onClick={() => startEditClient(selectedClient)}
+  style={{
+    background: "linear-gradient(135deg, #4b2e1f, #8b6a54)",
+    color: "#fff",
+    border: "none",
+    borderRadius: "18px",
+    padding: "12px 28px",
+    fontSize: "15px",
+    fontWeight: "700",
+    cursor: "pointer",
+    boxShadow: "0 6px 18px rgba(75,46,31,0.25)",
+    transition: "0.2s",
+    marginBottom: "16px",
+  }}
+>
+  ✏️ تعديل البيانات
+</button>
+{editingId === selectedClient.id && (
+  <div
+    style={{
+      maxWidth: "560px",
+      margin: "12px auto 22px",
+      padding: "18px",
+      borderRadius: "24px",
+      background: "linear-gradient(135deg, #fffaf7, #f3e7dc)",
+      border: "1px solid #d8c5b3",
+      boxShadow: "0 12px 30px rgba(75,46,31,0.10)",
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: "12px",
+      direction: "rtl",
+    }}
+  >
+    <input
+      value={editedName}
+      onChange={(e) => setEditedName(e.target.value)}
+      placeholder="الاسم"
+      style={{
+        padding: "12px 14px",
+        borderRadius: "16px",
+        border: "1px solid #d8c5b3",
+        background: "#fff",
+        color: "#4b2e1f",
+        fontWeight: "bold",
+        outline: "none",
+      }}
+    />
 
+    <input
+      value={editedPhone}
+      onChange={(e) => setEditedPhone(e.target.value)}
+      placeholder="رقم الجوال"
+      style={{
+        padding: "12px 14px",
+        borderRadius: "16px",
+        border: "1px solid #d8c5b3",
+        background: "#fff",
+        color: "#4b2e1f",
+        fontWeight: "bold",
+        outline: "none",
+      }}
+    />
+
+    <input
+      value={editedAddress}
+      onChange={(e) => setEditedAddress(e.target.value)}
+      placeholder="الحي"
+      style={{
+        gridColumn: "1 / -1",
+        padding: "12px 14px",
+        borderRadius: "16px",
+        border: "1px solid #d8c5b3",
+        background: "#fff",
+        color: "#4b2e1f",
+        fontWeight: "bold",
+        outline: "none",
+      }}
+    />
+
+    <button
+      onClick={() => saveEditClient(selectedClient.id)}
+      style={{
+        padding: "12px",
+        borderRadius: "16px",
+        border: "none",
+        background: "#4b2e1f",
+        color: "white",
+        fontWeight: "bold",
+        cursor: "pointer",
+      }}
+    >
+      حفظ
+    </button>
+
+    <button
+      onClick={cancelEditClient}
+      style={{
+        padding: "12px",
+        borderRadius: "16px",
+        border: "1px solid #d8c5b3",
+        background: "#f7efe7",
+        color: "#4b2e1f",
+        fontWeight: "bold",
+        cursor: "pointer",
+      }}
+    >
+      إلغاء
+    </button>
+  </div>
+)}
           <div
             style={{
               display: "flex",
@@ -12598,98 +12921,114 @@ if (screen === "availableAppointments") {
           </div>
 
           <div
+  style={{
+    width: "93%",
+    margin: "18px auto 24px",
+    display: "grid",
+    gridTemplateColumns: "repeat(4, 1fr)",
+    gap: "14px",
+  }}
+>
+  {[
+    ["رقم الجوال", selectedClient.phone],
+    ["الحي", selectedClient.address || "-"],
+    ["عدد الخدمات", getVisitLabel(selectedClient.visits)],
+    ["الحالة", profileBlacklist ? "Blacklist" : "Active"],
+  ].map(([label, value]) => (
+    <div
+      key={label}
+      style={{
+        background: "linear-gradient(135deg, #fffaf7, #f5ede5)",
+        border: "1px solid #d8c5b3",
+        borderRadius: "18px",
+        padding: "13px 12px",
+        textAlign: "center",
+        minHeight: "35px",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "center",
+      }}
+    >
+      <div
+        style={{
+          color: "#8a7a68",
+          fontSize: "16px",
+          fontWeight: "700",
+          marginBottom: "6px",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {label}
+      </div>
+
+      {label === "عدد الخدمات" ? (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            gap: "10px",
+            whiteSpace: "nowrap",
+          }}
+        >
+          <button
+            onClick={() => removeVisit(selectedClient.id)}
             style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(2, 1fr)",
-              gap: "12px",
-              marginTop: "20px",
-              marginBottom: "20px",
+              width: "24px",
+              height: "24px",
+              borderRadius: "50%",
+              border: "none",
+              backgroundColor: "#d8c5b3",
+              color: "#4b2e1f",
+              fontSize: "13px",
+              fontWeight: "bold",
+              cursor: "pointer",
+              padding: 0,
             }}
           >
-            <div
-              style={{
-                backgroundColor: "#faf7f2",
-                borderRadius: "18px",
-                padding: "16px",
-              }}
-            >
-              <div style={{ color: "#8a7a68", fontSize: "13px" }}>رقم الجوال</div>
-              <strong style={{ color: "#4b2e1f" }}>{selectedClient.phone}</strong>
-            </div>
+            -
+          </button>
 
-            <div
-              style={{
-                backgroundColor: "#faf7f2",
-                borderRadius: "18px",
-                padding: "16px",
-              }}
-            >
-              <div style={{ color: "#8a7a68", fontSize: "13px" }}>الحي</div>
-              <strong style={{ color: "#4b2e1f" }}>
-                {selectedClient.address || "-"}
-              </strong>
-            </div>
+          <strong style={{ color: "#4b2e1f", fontSize: "19px" }}>
+            {value}
+          </strong>
 
-            <div
-              style={{
-                backgroundColor: "#faf7f2",
-                borderRadius: "18px",
-                padding: "16px",
-              }}
-            >
-              <div style={{ color: "#8a7a68", fontSize: "13px" }}>عدد الخدمات</div>
-              <strong style={{ color: "#4b2e1f" }}>
-                {selectedClient.visits}
-              </strong>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "center",
-                  gap: "8px",
-                  marginTop: "10px",
-                }}
-              >
-                <button
-                  onClick={() => addVisit(selectedClient.id)}
-                  style={{
-                    ...buttonStyle,
-                    padding: "6px 10px",
-                    borderRadius: "12px",
-                    backgroundColor: "#4b2e1f",
-                    color: "white",
-                    fontSize: "12px",
-                  }}
-                >
-                  +
-                </button>
-                <button
-                  onClick={() => removeVisit(selectedClient.id)}
-                  style={{
-                    ...buttonStyle,
-                    padding: "6px 10px",
-                    borderRadius: "12px",
-                    backgroundColor: "#d8c5b3",
-                    color: "#4b2e1f",
-                    fontSize: "12px",
-                  }}
-                >
-                  -
-                </button>
-              </div>
-            </div>
+          <button
+            onClick={() => addVisit(selectedClient.id)}
+            style={{
+              width: "24px",
+              height: "24px",
+              borderRadius: "50%",
+              border: "none",
+              backgroundColor: "#4b2e1f",
+              color: "white",
+              fontSize: "13px",
+              fontWeight: "bold",
+              cursor: "pointer",
+              padding: 0,
+            }}
+          >
+            +
+          </button>
+        </div>
+      ) : (
+        <strong
+          style={{
+            color: "#4b2e1f",
+            fontSize: "19px",
+            fontWeight: "700",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {value}
+        </strong>
+      )}
+    </div>
+  ))}
 
-            <div
-              style={{
-                backgroundColor: "#faf7f2",
-                borderRadius: "18px",
-                padding: "16px",
-              }}
-            >
-              <div style={{ color: "#8a7a68", fontSize: "13px" }}>الحالة</div>
-              <strong style={{ color: "#4b2e1f" }}>
-                {profileBlacklist ? "Blacklist" : "Active"}
-              </strong>
-            </div>
+
+
+            
           </div>
 
           <div
@@ -12863,54 +13202,116 @@ if (screen === "availableAppointments") {
             )}
           </div>
 
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "10px",
-              marginBottom: "15px",
-              color: "#4b2e1f",
-              fontWeight: "bold",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={profileBlacklist}
-              onChange={(e) => setProfileBlacklist(e.target.checked)}
-              style={{
-                width: "18px",
-                height: "18px",
-              }}
-            />
-            إضافة إلى Blacklist
-          </label>
+          <div
+  style={{
+    width: "93%",
+    margin: "0 auto 18px",
+    display: "grid",
+    gridTemplateColumns: "repeat(2, 1fr)",
+    gap: "14px",
+  }}
+>
+  <label
+    style={{
+      background: profileBlacklist
+        ? "linear-gradient(135deg,#4b2e1f,#6a3f28)"
+        : "linear-gradient(135deg,#fffaf7,#f5ece3)",
+      border: "1px solid #d8c5b3",
+      borderRadius: "22px",
+      padding: "18px",
+      cursor: "pointer",
+      boxShadow: "0 10px 25px rgba(75,46,31,0.10)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+    }}
+  >
+    <div>
+      <div
+        style={{
+          fontSize: "12px",
+          color: profileBlacklist ? "#ffffffcc" : "#8a7a68",
+          marginBottom: "4px",
+        }}
+      >
+        
+      </div>
 
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "10px",
-              marginBottom: "15px",
-              color: "#4b2e1f",
-              fontWeight: "bold",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={profileFrame}
-              onChange={(e) => {
-                setProfileFrame(e.target.checked);
-                updateClientFrame(selectedClient.id, e.target.checked);
-              }}
-              style={{
-                width: "18px",
-                height: "18px",
-              }}
-            />
-            اللوحة الترحيبية / Frame
-          </label>
+      <div
+        style={{
+          fontSize: "18px",
+          fontWeight: "700",
+          color: profileBlacklist ? "white" : "#4b2e1f",
+        }}
+      >
+        Blacklist
+      </div>
+    </div>
+
+    <input
+      type="checkbox"
+      checked={profileBlacklist}
+      onChange={(e) => setProfileBlacklist(e.target.checked)}
+      style={{
+        width: "22px",
+        height: "22px",
+        cursor: "pointer",
+      }}
+    />
+  </label>
+
+  <label
+    style={{
+      background: profileFrame
+        ? "linear-gradient(135deg,#cbb7a4,#e6d8ca)"
+        : "linear-gradient(135deg,#fffaf7,#f5ece3)",
+      border: "1px solid #d8c5b3",
+      borderRadius: "22px",
+      padding: "18px",
+      cursor: "pointer",
+      boxShadow: "0 10px 25px rgba(75,46,31,0.10)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+    }}
+  >
+    <div>
+      <div
+        style={{
+          fontSize: "12px",
+          color: "#8a7a68",
+          marginBottom: "4px",
+        }}
+      >
+        
+      </div>
+
+      <div
+        style={{
+          fontSize: "18px",
+          fontWeight: "700",
+          color: "#4b2e1f",
+        }}
+      >
+        Frame
+      </div>
+    </div>
+
+    <input
+      type="checkbox"
+      checked={profileFrame}
+      onChange={(e) => {
+        setProfileFrame(e.target.checked);
+        updateClientFrame(selectedClient.id, e.target.checked);
+      }}
+      style={{
+        width: "22px",
+        height: "22px",
+        cursor: "pointer",
+      }}
+    />
+  </label>
+</div>
 
           <div
             style={{
@@ -12924,105 +13325,113 @@ if (screen === "availableAppointments") {
             }}
           >
             <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: "12px",
-                color: "#4b2e1f",
-                fontWeight: "bold",
-              }}
-            >
-              <span>العملاء المرشحين</span>
+  style={{
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: "14px",
+    color: "#4b2e1f",
+    fontWeight: "bold",
+  }}
+>
+  <button
+    onClick={addProfileReferral}
+    style={{
+      ...buttonStyle,
+      backgroundColor: "#4b2e1f",
+      color: "white",
+      padding: "8px 14px",
+      fontSize: "13px",
+      borderRadius: "16px",
+    }}
+  >
+    + إضافة رقم
+  </button>
 
-              <button
-                onClick={addProfileReferral}
-                style={{
-                  ...buttonStyle,
-                  backgroundColor: "#4b2e1f",
-                  color: "white",
-                  padding: "7px 12px",
-                  fontSize: "12px",
-                }}
-              >
-                + إضافة رقم
-              </button>
-            </div>
+  <span style={{ fontSize: "16px" }}>
+    العملاء المرشحين
+  </span>
+</div>
 
-            {profileReferrals.length === 0 && (
-              <div
-                style={{
-                  color: "#8a7a68",
-                  fontSize: "13px",
-                  marginBottom: "10px",
-                }}
-              >
-                لا توجد أرقام مرشحة حتى الآن
-              </div>
-            )}
+{profileReferrals.length === 0 && (
+  <div
+    style={{
+      color: "#8a7a68",
+      fontSize: "15px",
+      textAlign: "center",
+      padding: "14px",
+    }}
+  >
+    لا توجد أرقام مرشحة حتى الآن
+  </div>
+)}
 
-            {profileReferrals.map((referral) => (
-              <div
-                key={referral.id}
-                style={{
-                  display: "flex",
-                  gap: "8px",
-                  marginBottom: "8px",
-                  flexWrap: "wrap",
-                  justifyContent: "center",
-                }}
-              >
-                <input
-                  placeholder="اسم المرشحة"
-                  value={referral.name}
-                  onChange={(e) =>
-                    updateProfileReferral(referral.id, "name", e.target.value)
-                  }
-                  style={{
-                    flex: "1",
-                    minWidth: "130px",
-                    padding: "10px",
-                    borderRadius: "14px",
-                    border: "1px solid #d6c7b8",
-                    backgroundColor: "white",
-                    outline: "none",
-                    color: "#4b2e1f",
-                  }}
-                />
+{profileReferrals.map((referral) => (
+  <div
+    key={referral.id}
+    style={{
+      display: "grid",
+      gridTemplateColumns: canDeleteData ? "1fr 1fr auto" : "1fr 1fr",
+      gap: "10px",
+      alignItems: "center",
+      marginBottom: "10px",
+      direction: "rtl",
+    }}
+  >
+    <input
+      placeholder="اسم العميلة"
+      value={referral.name}
+      onChange={(e) =>
+        updateProfileReferral(referral.id, "name", e.target.value)
+      }
+      style={{
+        fontSize: "16px",
+        fontWeight: "600",
+        padding: "12px 14px",
+        borderRadius: "16px",
+        border: "1px solid #d6c7b8",
+        backgroundColor: "white",
+        outline: "none",
+        color: "#4b2e1f",
+      }}
+    />
 
-                <input
-                  placeholder="رقم الجوال"
-                  value={referral.phone}
-                  onChange={(e) =>
-                    updateProfileReferral(referral.id, "phone", e.target.value)
-                  }
-                  style={{
-                    flex: "1",
-                    minWidth: "130px",
-                    padding: "10px",
-                    borderRadius: "14px",
-                    border: "1px solid #d6c7b8",
-                    backgroundColor: "white",
-                    outline: "none",
-                    color: "#4b2e1f",
-                  }}
-                />
+    <input
+      placeholder="رقم الجوال"
+      value={referral.phone}
+      onChange={(e) =>
+        updateProfileReferral(referral.id, "phone", e.target.value)
+      }
+      style={{
+        fontSize: "16px",
+        fontWeight: "600",
+        padding: "12px 14px",
+        borderRadius: "16px",
+        border: "1px solid #d6c7b8",
+        backgroundColor: "white",
+        outline: "none",
+        color: "#4b2e1f",
+      }}
+    />
 
-                {canDeleteData && (
-                <button
-                  onClick={() => removeProfileReferral(referral.id)}
-                  style={{
-                    ...buttonStyle,
-                    backgroundColor: "#f3e8df",
-                    color: "#4b2e1f",
-                    padding: "9px 12px",
-                  }}
-                >
-                  حذف
-                </button>
-                )}
-              </div>
-            ))}
+    {canDeleteData && (
+      <button
+        onClick={() => removeProfileReferral(referral.id)}
+        style={{
+          ...buttonStyle,
+          backgroundColor: "#f3e8df",
+          color: "#4b2e1f",
+          padding: "11px 16px",
+          borderRadius: "16px",
+          fontSize: "13px",
+          whiteSpace: "nowrap",
+        }}
+      >
+        حذف
+      </button>
+    )}
+  </div>
+))}
           </div>
 
           <textarea
@@ -13061,7 +13470,9 @@ if (screen === "availableAppointments") {
               style={{
                 ...buttonStyle,
                 flex: "1",
-                minWidth: "160px",
+                
+                maxWidth: "400px",
+width: "100%",
                 backgroundColor: "#4b2e1f",
                 color: "white",
                 padding: "14px",
@@ -13283,7 +13694,7 @@ if (screen === "availableAppointments") {
                         </td>
 
                         <td style={{ padding: "12px", fontWeight: "bold" }}>
-                          {c.visits}
+                          {getVisitLabel(c.visits)}
                         </td>
 
                         <td style={{ padding: "12px" }}>
@@ -13351,7 +13762,7 @@ if (screen === "availableAppointments") {
                           {c.address || "-"}
                         </td>
                         <td style={{ padding: "14px", fontWeight: "bold" }}>
-                          {c.visits}
+                          {getVisitLabel(c.visits)}
                         </td>
                         <td style={{ padding: "14px" }}>
                           {c.frame ? "🖼️ نعم" : "-"}
@@ -13672,7 +14083,7 @@ if (screen === "availableAppointments") {
                   <strong>{c.name || "-"}</strong>
                   <span>{c.phone || "-"}</span>
                   <span>{c.address || "-"}</span>
-                  <strong>{c.visits || 0}</strong>
+                  <strong>{getVisitLabel(c.visits)}</strong>
                   <button
                     type="button"
                     onClick={() =>
