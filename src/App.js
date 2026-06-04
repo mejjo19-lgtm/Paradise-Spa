@@ -1623,9 +1623,9 @@ if (error) {
     : []
 );
 
-await loadClientScheduleHistory(fullClient?.phone || client.phone);
-
 setScreen("clientProfile");
+
+loadClientScheduleHistory(fullClient?.phone || client.phone);
 };
 
   // 💾 SAVE CLIENT PROFILE
@@ -13243,8 +13243,9 @@ if (screen === "availableAppointments") {
                       <div
                         style={{
                           padding: "12px 10px",
-                          color: "#8a7a68",
-                          fontSize: "13px",
+                          color: "#4b2e1f",
+                          fontWeight: "bold",
+                          fontSize: "15px",
                           whiteSpace: "nowrap",
                           borderRight: "1px solid #eadfd5",
                         }}
