@@ -58,6 +58,9 @@ const isSharedDataInputFocused = () => {
 };
 const [scheduleSelection, setScheduleSelection] = useState(null);
 const [scheduleActiveCell, setScheduleActiveCell] = useState(null);
+const [scheduleCopiedRow, setScheduleCopiedRow] = useState(null);
+const [scheduleUndoStack, setScheduleUndoStack] = useState([]);
+const [scheduleRedoStack, setScheduleRedoStack] = useState([]);
 const [additionalClientModal, setAdditionalClientModal] = useState(null);
 const [additionalClientDraft, setAdditionalClientDraft] = useState({
   name: "",
@@ -2538,7 +2541,8 @@ return next;
 };
 
   const scheduleColumns = [
-    { field: "status", label: "Status", width: 96 },
+  { field: "rowAction", label: "Actions", width: 54, readOnly: true },
+  { field: "status", label: "Status", width: 96 },
     { field: "clientBy", label: "Client By", width: 92 },
     { field: "serviceTime", label: "Service Time", width: 88 },
     { field: "driver", label: "Driver", width: 80 },
@@ -3695,7 +3699,86 @@ if (visitsValue === null) {
       fetchPotentialClients();
     }
   };
+const cloneScheduleRowWithoutTime = (row) => {
+  const clonedRow = JSON.parse(JSON.stringify(row || {}));
+  delete clonedRow.serviceTime;
+  return clonedRow;
+};
 
+const handleScheduleRowAction = (rowIndex, action) => {
+  if (!action) return;
+  if (!ensureSystemWritable() || !canEditData) return;
+
+  const currentDayData = scheduleData[selectedScheduleDate] || {};
+  const currentRows = currentDayData.rows || timeSlots.map(createEmptyAppointmentRow);
+  const currentRow = currentRows[rowIndex] || createEmptyAppointmentRow(timeSlots[rowIndex] || "");
+  const currentCellStyles = currentDayData.cellStyles || {};
+
+  if (action === "copy") {
+    setScheduleCopiedRow(cloneScheduleRowWithoutTime(currentRow));
+    alert("تم النسخ");
+    return;
+  }
+
+  if (action === "paste") {
+    if (!scheduleCopiedRow) {
+      alert("لا يوجد صف منسوخ");
+      return;
+    }
+
+    const pastedRow = {
+      ...createEmptyAppointmentRow(currentRow.serviceTime || timeSlots[rowIndex] || ""),
+      ...scheduleCopiedRow,
+      serviceTime: currentRow.serviceTime || timeSlots[rowIndex] || "",
+    };
+
+    scheduleLastEditRef.current = Date.now();
+
+    setScheduleData((prev) => {
+      const dayData = prev[selectedScheduleDate] || {};
+      const rowsForDate = dayData.rows || timeSlots.map(createEmptyAppointmentRow);
+      const rows = rowsForDate.map((row, index) =>
+        index === rowIndex ? pastedRow : row
+      );
+
+      return {
+        ...prev,
+        [selectedScheduleDate]: {
+          ...dayData,
+          rows,
+        },
+      };
+    });
+
+    queueScheduleRowSave(selectedScheduleDate, rowIndex, pastedRow, currentCellStyles);
+    return;
+  }
+
+  if (action === "clear") {
+    const emptyRow = createEmptyAppointmentRow(currentRow.serviceTime || timeSlots[rowIndex] || "");
+
+    scheduleLastEditRef.current = Date.now();
+
+    setScheduleData((prev) => {
+      const dayData = prev[selectedScheduleDate] || {};
+      const rowsForDate = dayData.rows || timeSlots.map(createEmptyAppointmentRow);
+      const rows = rowsForDate.map((row, index) =>
+        index === rowIndex ? emptyRow : row
+      );
+
+      return {
+        ...prev,
+        [selectedScheduleDate]: {
+          ...dayData,
+          rows,
+        },
+      };
+    });
+
+    queueScheduleRowSave(selectedScheduleDate, rowIndex, emptyRow, currentCellStyles);
+    return;
+  }
+};
   const updateScheduleRow = async (rowIndex, field, value) => {
     if (!ensureSystemWritable() || !canEditData) return;
     scheduleLastEditRef.current = Date.now();
@@ -9995,6 +10078,24 @@ transform: "translate(-50%, -50%)",
                     key={`${selectedScheduleDate}-${index}`}
                     style={getScheduleRowStyle(row, index)}
                   >
+                    <td style={getScheduleCellStyle(index, "rowAction")}>
+  <select
+    value=""
+    onChange={(e) => handleScheduleRowAction(index, e.target.value)}
+    style={{
+      ...scheduleInputStyle,
+      width: "100%",
+      fontSize: "12px",
+      fontWeight: "bold",
+      cursor: "pointer",
+    }}
+  >
+    <option value="">⋯</option>
+<option value="copy">Copy</option>
+<option value="paste">Paste</option>
+<option value="clear">Clear</option>
+  </select>
+</td>
                     <td
                       style={getScheduleCellStyle(index, "status")}
                       {...getScheduleCellHandlers(index, "status")}
