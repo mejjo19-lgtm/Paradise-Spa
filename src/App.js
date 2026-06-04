@@ -1203,7 +1203,7 @@ useEffect(() => {
   return () => {
     supabase.removeChannel(dailyReportsChannel);
   };
-}, [isLoggedIn, selectedScheduleDate]);
+}, [isLoggedIn, selectedScheduleDate, screen]);
 
   // 💾 SAVE SCHEDULE SETTINGS
   useEffect(() => {
@@ -2325,6 +2325,7 @@ return next;
 
   useEffect(() => {
     if (!isLoggedIn || !selectedScheduleDate) return undefined;
+if (screen !== "appointments") return undefined;
 
     loadScheduleRowsForDate(selectedScheduleDate);
 
@@ -2352,7 +2353,7 @@ return next;
     return () => {
       supabase.removeChannel(scheduleRowsChannel);
     };
-  }, [isLoggedIn, selectedScheduleDate]);
+  }, [isLoggedIn, selectedScheduleDate, screen]);
 
   const financeDefaultMonthlySettings = {
     monthlyTarget: "30000",
@@ -3369,13 +3370,19 @@ return next;
     if (!confirmDuplicateBeforeSendTo(targetList, clientName, clientPhone)) return;
 
     if (targetList === "عملائنا") {
+      const visitsValue = orderToVisits(extraClient.order);
+
+if (visitsValue === null) {
+  alert("اختاري رقم الخدمة للعميلة الإضافية أولاً قبل إرسالها إلى عملائنا");
+  return;
+}
       const { data: insertedClient, error } = await supabase.from("clients").insert([
         {
           name: clientName,
           arabic_name: clientName,
           phone: clientPhone,
           address: district,
-          visits: 0,
+          visits: visitsValue,
           frame: false,
           blacklist: false,
           notes: "",
@@ -3566,13 +3573,19 @@ if (
     if (!confirmDuplicateBeforeSendTo(targetList, clientName, clientPhone)) return;
 
     if (targetList === "عملائنا") {
+      const visitsValue = orderToVisits(row.order);
+
+if (visitsValue === null) {
+  alert("اختاري رقم الخدمة أولاً قبل إرسال العميلة إلى عملائنا");
+  return;
+}
       const { data: insertedClient, error } = await supabase.from("clients").insert([
         {
           name: clientName,
           arabic_name: clientName,
           phone: clientPhone,
           address: district,
-          visits: 0,
+          visits: visitsValue,
           frame: Boolean(row.frame),
           blacklist: false,
           notes: "",
