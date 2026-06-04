@@ -1203,7 +1203,7 @@ useEffect(() => {
   return () => {
     supabase.removeChannel(dailyReportsChannel);
   };
-}, [isLoggedIn, selectedScheduleDate, screen]);
+}, [isLoggedIn, selectedScheduleDate]);
 
   // 💾 SAVE SCHEDULE SETTINGS
   useEffect(() => {
@@ -2079,7 +2079,7 @@ const loadClientScheduleHistory = async (phoneValue) => {
     return;
   }
 
-  mergeScheduleRowsIntoScheduleData(data || []);
+  mergeScheduleRowsIntoScheduleData((data || []).filter((row) => row.schedule_date !== selectedScheduleDate));
 };
 const getMonthStartDate = (monthKey) => `${monthKey}-01`;
 
@@ -2324,10 +2324,9 @@ return next;
   };
 
   useEffect(() => {
-    if (!isLoggedIn || !selectedScheduleDate) return undefined;
-if (screen !== "appointments") return undefined;
+  if (!isLoggedIn || !selectedScheduleDate) return undefined;
 
-    loadScheduleRowsForDate(selectedScheduleDate);
+  loadScheduleRowsForDate(selectedScheduleDate);
 
     const scheduleRowsChannel = supabase
       .channel("schedule-rows-sync")
@@ -2353,7 +2352,7 @@ if (screen !== "appointments") return undefined;
     return () => {
       supabase.removeChannel(scheduleRowsChannel);
     };
-  }, [isLoggedIn, selectedScheduleDate, screen]);
+  }, [isLoggedIn, selectedScheduleDate]);
 
   const financeDefaultMonthlySettings = {
     monthlyTarget: "30000",
