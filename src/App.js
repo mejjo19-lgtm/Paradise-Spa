@@ -3716,7 +3716,7 @@ const handleScheduleRowAction = (rowIndex, action) => {
 
   if (action === "copy") {
     setScheduleCopiedRow(cloneScheduleRowWithoutTime(currentRow));
-    alert("تم النسخ");
+    
     return;
   }
 
