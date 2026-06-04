@@ -3716,7 +3716,7 @@ const handleScheduleRowAction = (rowIndex, action) => {
 
   if (action === "copy") {
     setScheduleCopiedRow(cloneScheduleRowWithoutTime(currentRow));
-    
+
     return;
   }
 
@@ -12491,13 +12491,22 @@ if (screen === "potentialClients") {
 
 
   const formatAvailableDateForPoster = (dateString) => {
-    const date = new Date(`${dateString}T12:00:00`);
-    const dayName = date.toLocaleDateString("ar-SA", { weekday: "long" });
-    const dayNumber = date.toLocaleDateString("ar-SA", { day: "numeric" });
-    const monthName = date.toLocaleDateString("ar-SA", { month: "long" });
+  const date = new Date(`${dateString}T12:00:00`);
 
-    return `${dayName} ${dayNumber} ${monthName}`;
-  };
+  const dayName = date.toLocaleDateString("ar-EG-u-ca-gregory", {
+    weekday: "long",
+  });
+
+  const dayNumber = date.toLocaleDateString("en-US-u-ca-gregory", {
+    day: "numeric",
+  });
+
+  const monthName = date.toLocaleDateString("ar-EG-u-ca-gregory", {
+    month: "long",
+  });
+
+  return `${dayName} ${dayNumber} ${monthName}`;
+};
 
   const toggleAvailableAppointmentStatus = (time) => {
     setAvailableAppointmentStatus((prev) => ({
@@ -12729,6 +12738,7 @@ if (screen === "potentialClients") {
                 top: "8.6%",
                 left: "12%",
                 color: "#5b3b2c",
+                transform: "translateX(18px)",
                 fontSize: "17px",
                 fontWeight: "800",
                 direction: "rtl",
