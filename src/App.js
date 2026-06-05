@@ -29,6 +29,12 @@ import { supabase, supabaseKey, supabaseUrl } from "./supabase";
 
 function App() {
   const [screen, setScreen] = useState("welcome");
+  const previousScreenRef = useRef("clients");
+
+const goToScreen = (nextScreen) => {
+  previousScreenRef.current = screen;
+  setScreen(nextScreen);
+};
   const [selectedClientId, setSelectedClientId] = useState(null);
   const [selectedLoyaltyClientId, setSelectedLoyaltyClientId] = useState(null);
 const [username, setUsername] = useState("");
@@ -436,7 +442,7 @@ async function fetchClientsWithSupabaseClient() {
     const to = from + pageSize - 1;
     const { data, error } = await supabase
       .from("clients")
-      .select("id,name,arabic_name,phone,address,visits,frame,blacklist")
+      .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes")
       .order("id", { ascending: false })
       .range(from, to);
 
@@ -461,7 +467,7 @@ async function fetchClientsWithRestApi() {
 
   while (hasMore) {
     const response = await fetch(
-      `${supabaseUrl}/rest/v1/clients?select=id,name,arabic_name,phone,address,visits,frame,blacklist&order=id.desc&limit=${pageSize}&offset=${offset}`,
+      `${supabaseUrl}/rest/v1/clients?select=id,name,arabic_name,phone,address,visits,frame,blacklist,notes&order=id.desc&limit=${pageSize}&offset=${offset}`,
       {
         headers: {
           apikey: supabaseKey,
@@ -1380,7 +1386,7 @@ useEffect(() => {
     total_paid: 0,
     service_history: [],
   },
-]).select("id,name,arabic_name,phone,address,visits,frame,blacklist").single();
+]).select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes").single();
 
 if (error) {
   console.error("ADD CLIENT ERROR:", error);
@@ -1432,7 +1438,7 @@ const { data: updatedClient, error } = await supabase
     address: editedAddress,
   })
   .eq("id", id)
-  .select("id,name,arabic_name,phone,address,visits,frame,blacklist")
+  .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes")
   .single();
 
 if (error) {
@@ -1626,7 +1632,7 @@ if (error) {
     : []
 );
 
-setScreen("clientProfile");
+goToScreen("clientProfile");
 
 loadClientScheduleHistory(fullClient?.phone || client.phone);
 };
@@ -1734,7 +1740,7 @@ loadClientScheduleHistory(fullClient?.phone || client.phone);
     .from("clients")
     .update({ visits: newVisits })
     .eq("id", id)
-    .select("id,name,arabic_name,phone,address,visits,frame,blacklist")
+    .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes")
     .single();
 
   if (error) {
@@ -1758,7 +1764,7 @@ loadClientScheduleHistory(fullClient?.phone || client.phone);
     .from("clients")
     .update({ visits: newVisits })
     .eq("id", id)
-    .select("id,name,arabic_name,phone,address,visits,frame,blacklist")
+    .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes")
     .single();
 
   if (error) {
@@ -1784,7 +1790,7 @@ loadClientScheduleHistory(fullClient?.phone || client.phone);
       .from("clients")
       .update({ frame: frameValue })
       .eq("id", id)
-      .select("id,name,arabic_name,phone,address,visits,frame,blacklist")
+      .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes")
       .single();
 
     if (error) {
@@ -2507,7 +2513,14 @@ return next;
         normalizePhone(client.phone) === normalizePhone(formatSaudiPhoneForStorage(phoneNumber))
     );
   };
+const getScheduleClientBadges = (row) => {
+  const client = findClientByExactPhone(row?.number || "");
 
+  return {
+    notes: String(client?.notes || "").trim(),
+    blacklist: Boolean(client?.blacklist),
+  };
+};
   const orderToVisits = (order) => {
   const cleanOrder = String(order || "").trim();
   const match = cleanOrder.match(/^\(C(\d+)\)\s*(.+)$/);
@@ -3318,7 +3331,7 @@ return next;
       .from("clients")
       .update({ visits: nextVisits })
       .eq("id", matchedClient.id)
-      .select("id,name,arabic_name,phone,address,visits,frame,blacklist")
+      .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes")
       .single();
 
     if (error) {
@@ -3392,7 +3405,7 @@ if (visitsValue === null) {
           total_paid: 0,
           service_history: [],
         },
-      ]).select("id,name,arabic_name,phone,address,visits,frame,blacklist").single();
+      ]).select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes").single();
 
       if (error) {
         console.log("Additional client Send To clients copy error:", error);
@@ -3595,7 +3608,7 @@ if (visitsValue === null) {
           total_paid: 0,
           service_history: [],
         },
-      ]).select("id,name,arabic_name,phone,address,visits,frame,blacklist").single();
+      ]).select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes").single();
 
       if (error) {
         console.log("Send To clients copy error:", error);
@@ -3835,7 +3848,7 @@ const handleScheduleRowAction = (rowIndex, action) => {
           .from("clients")
           .update({ visits: visitsValue })
           .eq("id", matchedClientForOrder.id)
-          .select("id,name,arabic_name,phone,address,visits,frame,blacklist")
+          .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes")
           .single();
 
         if (error) {
@@ -10195,7 +10208,7 @@ transform: "translate(-50%, -50%)",
   <div
     style={{
       display: "grid",
-      gridTemplateColumns: "18px 1fr",
+      gridTemplateColumns: "18px 1fr auto auto",
       alignItems: "center",
       gap: "4px",
       width: "100%",
@@ -10244,6 +10257,23 @@ transform: "translate(-50%, -50%)",
     minWidth: 0,
   })}
 />
+{getScheduleClientBadges(row).notes && (
+  <span
+    title={getScheduleClientBadges(row).notes}
+    style={{ fontSize: "12px", lineHeight: 1, cursor: "help" }}
+  >
+    📝
+  </span>
+)}
+
+{getScheduleClientBadges(row).blacklist && (
+  <span
+    title="Black List"
+    style={{ fontSize: "12px", lineHeight: 1, cursor: "help" }}
+  >
+    ⛔
+  </span>
+)}
 </div>
 </td>
 
@@ -12886,7 +12916,7 @@ if (screen === "availableAppointments") {
           }}
         >
           <button
-            onClick={() => setScreen("clients")}
+            onClick={() => setScreen(previousScreenRef.current || "clients")}
             style={{
               position: "absolute",
               top: "18px",
