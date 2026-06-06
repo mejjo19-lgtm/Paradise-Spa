@@ -725,7 +725,7 @@ function fetchSharedClientLists() {
   const [showPotentialForm, setShowPotentialForm] = useState(false);
   const [potentialName, setPotentialName] = useState("");
   const [potentialPhone, setPotentialPhone] = useState("");
-  const [potentialStatus, setPotentialStatus] = useState("إلغاء موعد");
+  const [potentialStatus, setPotentialStatus] = useState("");
 
   const [giftClients, setGiftClients] = useState([]);
   const [giftSearch, setGiftSearch] = useState("");
@@ -4389,266 +4389,578 @@ const twoFreeGifts = rows.filter(
   };
 
   const exportFinanceMonthToExcel = (monthKey) => {
-    const stats = getFinanceMonthStats(monthKey);
-    const monthDates = getFinanceMonthDates(monthKey);
-    const monthLabel = getFinanceMonthLabel(monthKey);
-    const daysCount = Math.max(1, monthDates.length || 1);
-    const escapeXml = (value) =>
-      String(value ?? "")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;");
-    const safeSheetName = (name) => escapeXml(String(name || "Sheet").slice(0, 31));
-    const isNumericCell = (value) =>
-      typeof value === "number" ||
-      (String(value ?? "").trim() !== "" && /^-?\d+(\.\d+)?$/.test(String(value).replace(/,/g, "")));
-    const excelNumber = (value) => String(value ?? "").replace(/,/g, "");
-    const cell = (value, styleId = "Body", mergeAcross = 0) => {
-      const type = isNumericCell(value) && !["Title", "Section", "Header", "DashboardTitle"].includes(styleId)
-        ? "Number"
-        : "String";
-      const cellAttrs = [styleId ? `ss:StyleID="${styleId}"` : ""];
-      if (mergeAcross) cellAttrs.push(`ss:MergeAcross="${mergeAcross}"`);
-      return `<Cell ${cellAttrs.filter(Boolean).join(" ")}><Data ss:Type="${type}">${escapeXml(type === "Number" ? excelNumber(value) : value)}</Data></Cell>`;
-    };
-    const emptyCells = (count) => Array.from({ length: Math.max(0, count) }, () => cell("", "Blank"));
-    const formulaCell = (formula, fallbackValue = 0, styleId = "Value", mergeAcross = 0) => {
-      const cellAttrs = [styleId ? `ss:StyleID="${styleId}"` : "", `ss:Formula="${escapeXml(formula)}"`];
-      if (mergeAcross) cellAttrs.push(`ss:MergeAcross="${mergeAcross}"`);
-      return `<Cell ${cellAttrs.filter(Boolean).join(" ")}><Data ss:Type="Number">${excelNumber(Number(fallbackValue || 0).toFixed(2))}</Data></Cell>`;
-    };
-    const rowXml = (cells, height = "") => `<Row${height ? ` ss:Height="${height}"` : ""}>${cells.join("")}</Row>`;
-    const row = (values, styleId = "Body", height = "") => rowXml(values.map((value) => cell(value, styleId)), height);
-    const metricRow = (label, value, styleId = "Body") =>
-      rowXml([
-        cell(label, styleId === "Total" ? "Total" : "Label"),
-        value && value.formula ? formulaCell(value.formula, value.fallback, value.styleId || "Value") : cell(value, styleId),
-      ]);
-    const blankRow = () => rowXml([cell("", "Blank")]);
-    const formulaValue = (formula, fallback, styleId = "Value") => ({ formula, fallback, styleId });
-    const daySheetName = (dateString) => {
-      const date = new Date(`${dateString}T12:00:00`);
-      const dayName = date.toLocaleDateString("en-US", { weekday: "short" }).replace("Tue", "Tus");
-      const monthName = date.toLocaleDateString("en-US", { month: "short" });
-      return `${dayName} ${monthName} ${date.getDate()} ${date.getFullYear()}`;
-    };
-    const sheetReference = (sheetName, rowNumber, columnNumber = 2) => `'${sheetName}'!R${rowNumber}C${columnNumber}`;
-    const sumDailyFormula = (rowNumber, columnNumber = 10) => {
-      const refs = monthDates.map((date) => sheetReference(daySheetName(date), rowNumber, columnNumber));
-      return refs.length ? `=SUM(${refs.join(",")})` : "=0";
-    };
-    const monthlySettings = stats.monthlySettings || getFinanceMonthSettings(monthKey);
-    const dailyColumns = [
-      { field: "clientBy", label: "Client By", width: 92 },
-      { field: "serviceTime", label: "Service Time", width: 88 },
-      { field: "driver", label: "Driver", width: 80 },
-      { field: "therapist", label: "Therapist", width: 84 },
-      { field: "district", label: "District", width: 92 },
-      { field: "client", label: "Client", width: 112 },
-      { field: "frame", label: "Frame", width: 54 },
-      { field: "order", label: "Orders", width: 64 },
-      { field: "services", label: "Services", width: 155 },
-      { field: "number", label: "Number", width: 104 },
-      { field: "transportation", label: "Transportation", width: 94 },
-      { field: "serviceAmount", label: "Service Amount", width: 94 },
-      { field: "paymentMethod", label: "Payment Methomd", width: 112 },
-    ];
-    const dailyColumnIndexByField = dailyColumns.reduce((result, column, index) => {
-      result[column.field] = index + 1;
-      return result;
-    }, {});
-    const worksheet = (name, rows, columns, freezeRow = 1) => `
-      <Worksheet ss:Name="${safeSheetName(name)}">
-        <Table>
-          ${columns.map((width) => `<Column ss:Width="${width}"/>`).join("")}
-          ${rows.join("")}
-        </Table>
-        <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
-          <FreezePanes/>
-          <FrozenNoSplit/>
-          <SplitHorizontal>${freezeRow}</SplitHorizontal>
-          <TopRowBottomPane>${freezeRow}</TopRowBottomPane>
-          <ActivePane>2</ActivePane>
-        </WorksheetOptions>
-      </Worksheet>
-    `;
-    const scheduleStartRow = 2;
-    const scheduleEndRow = scheduleStartRow + timeSlots.length - 1;
-    const r = (rowNumber, colNumber) => `R${rowNumber}C${colNumber}`;
-    const range = (colNumber) => `${r(scheduleStartRow, colNumber)}:${r(scheduleEndRow, colNumber)}`;
-    const statusCol = dailyColumnIndexByField.status;
-    const orderCol = dailyColumnIndexByField.order;
-    const servicesCol = dailyColumnIndexByField.services;
-    const transportationCol = dailyColumnIndexByField.transportation;
-    const serviceAmountCol = dailyColumnIndexByField.serviceAmount;
-    const paymentCol = dailyColumnIndexByField.paymentMethod;
-    const activeCriteria = statusCol ? `${range(statusCol)},"<>Cancel"` : `${range(serviceAmountCol)},">=0"`;
-    const totalAmountFormula = `${range(serviceAmountCol)}+${range(transportationCol)}`;
-    const dayFormula = {
-      payment: (method) => `=SUMIFS(${range(serviceAmountCol)},${range(paymentCol)},"${method}")+SUMIFS(${range(transportationCol)},${range(paymentCol)},"${method}")`,
-      serviceCount: (keyword) => `=COUNTIF(${range(servicesCol)},"*${keyword}*")`,
-    };
-    const makeScheduleCell = (scheduleRow, column) => {
-      if (column.field === "frame") return cell(scheduleRow.frame ? "TRUE" : "", "Body");
-      return cell(scheduleRow[column.field] || "", "Body");
-    };
-    const dashboardRows = [];
-    const dashRow = (cells) => rowXml(cells);
-    const dashboardFormulaMetric = (label, formula, fallback, labelStyle = "DashboardLabel", valueStyle = "DashboardValue") => [
-      cell(label, labelStyle),
-      formulaCell(formula, fallback, valueStyle),
-    ];
-    dashboardRows.push(rowXml(emptyCells(8)));
-    dashboardRows.push(dashRow([cell("", "Blank"), cell(`${monthLabel.split(" ")[0]} Income & Expenses`, "DashboardTitle", 3), cell("", "Blank"), cell("", "Blank"), cell(`${monthLabel.split(" ")[0]} Operating Expenses`, "DashboardTitle", 1)]));
-    dashboardRows.push(dashRow([cell("", "Blank"), ...dashboardFormulaMetric("Total Income", "=SUM(R12C3:R42C3)", stats.totalIncome), cell("", "Blank"), cell("", "Blank"), ...dashboardFormulaMetric("Gas Station", sumDailyFormula(51), stats.operatingExpenses["Gas Station"])]));
-    dashboardRows.push(dashRow([cell("", "Blank"), ...dashboardFormulaMetric("Total Expenses", "=SUM(R12C4:R42C4)", stats.totalExpenses), cell("", "Blank"), cell("", "Blank"), ...dashboardFormulaMetric("Commision", sumDailyFormula(62), stats.operatingExpenses.Commission)]));
-    dashboardRows.push(dashRow([cell("", "Blank"), ...dashboardFormulaMetric("Total Net Profit", "=R3C3-R4C3", stats.totalNetProfit), cell("", "Blank"), cell("", "Blank"), ...dashboardFormulaMetric("Purchase", sumDailyFormula(53), stats.operatingExpenses.Purchase)]));
-    dashboardRows.push(dashRow([cell("", "Blank"), ...dashboardFormulaMetric("AVG Daily Income", `=IF(${daysCount}>0,R3C3/${daysCount},0)`, stats.averageDailyIncome), cell("", "Blank"), cell("", "Blank"), ...dashboardFormulaMetric("House Rent", `=${parseAmount(monthlySettings.houseRent)}`, stats.operatingExpenses["House Rent"])]));
-    dashboardRows.push(dashRow([cell("", "Blank"), ...dashboardFormulaMetric("AVG Daily Expenses", `=IF(${daysCount}>0,R4C3/${daysCount},0)`, stats.averageDailyExpenses), cell("", "Blank"), cell("", "Blank"), ...dashboardFormulaMetric("Car Rent", `=${parseAmount(monthlySettings.carRent)}`, stats.operatingExpenses["Car Rent"])]));
-    dashboardRows.push(dashRow([cell("", "Blank"), ...dashboardFormulaMetric("AVG Daily Net Income", `=IF(${daysCount}>0,R5C3/${daysCount},0)`, stats.averageDailyNetIncome), cell("", "Blank"), cell("", "Blank"), ...dashboardFormulaMetric("Uber", sumDailyFormula(52), stats.operatingExpenses.Uber)]));
-    dashboardRows.push(dashRow([cell("", "Blank"), ...dashboardFormulaMetric("Last Update", `=${stats.lastUpdate || 0}`, stats.lastUpdate), cell("", "Blank"), cell("", "Blank"), ...dashboardFormulaMetric("Lundry", "=0", 0)]));
-    dashboardRows.push(dashRow([cell("", "Blank"), cell("", "Blank"), cell("", "Blank"), cell("", "Blank"), cell("", "Blank"), cell("", "Blank"), ...dashboardFormulaMetric("Food", "=0", 0)]));
-    dashboardRows.push(dashRow([cell("", "Blank"), cell(`${monthLabel.split(" ")[0]} Collection`, "DashboardTitle", 3), cell("", "Blank"), cell("", "Blank"), ...dashboardFormulaMetric("Government Fees", `=${parseAmount(monthlySettings.governmentFees)}`, stats.operatingExpenses["Government Fees"])]));
-    dashboardRows.push(dashRow([cell("", "Blank"), cell("Date", "Header"), cell("Income", "Header"), cell("Expenses", "Header"), cell("Net Profit", "Header"), cell("", "Blank"), ...dashboardFormulaMetric("Salary", `=${parseAmount(monthlySettings.staffSalary)}`, stats.operatingExpenses.Salary)]));
-    monthDates.forEach((date, index) => {
-      const dayStats = getFinanceDayStats(date, monthlySettings);
-      const rowNumber = 12 + index;
-      dashboardRows.push(dashRow([
-        cell("", "Blank"),
-        cell(new Date(`${date}T12:00:00`).getDate(), "Body"),
-        formulaCell(`=${sheetReference(daySheetName(date), 50, 10)}`, dayStats.income),
-        formulaCell(`=${sheetReference(daySheetName(date), 55, 10)}`, dayStats.expenses),
-        formulaCell(`=R${rowNumber}C3-R${rowNumber}C4`, dayStats.netProfit),
-        cell("", "Blank"),
-        ...(index === 0 ? dashboardFormulaMetric("Total", "=SUM(R3C8:R12C8)", stats.totalExpenses, "Total", "Total") : [cell("", "Blank"), cell("", "Blank")]),
-      ]));
-    });
-    dashboardRows.push(dashRow([
-      cell("", "Blank"),
-      cell("Total", "Total"),
-      formulaCell(`=SUM(R12C3:R${11 + monthDates.length}C3)`, stats.totalIncome, "Total"),
-      formulaCell(`=SUM(R12C4:R${11 + monthDates.length}C4)`, stats.totalExpenses, "Total"),
-      formulaCell(`=SUM(R12C5:R${11 + monthDates.length}C5)`, stats.totalNetProfit, "Total"),
-      cell("", "Blank"),
-      cell("EOM Expected", "DashboardTitle"),
-      cell("", "DashboardValue"),
-    ]));
-    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), ...dashboardFormulaMetric("Income", "=R3C3", stats.totalIncome)]));
-    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), ...dashboardFormulaMetric("Expenses", "=R4C3", stats.totalExpenses)]));
-    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), ...dashboardFormulaMetric("Net Profit", "=R5C3", stats.totalNetProfit)]));
-    dashboardRows.push(blankRow());
-    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), cell("Target by service", "DashboardTitle", 1)]));
-    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), dashboardFormulaMetric(`${monthLabel.split(" ")[0]} Target`, `=${stats.monthlyTarget}`, stats.monthlyTarget)[0], dashboardFormulaMetric(`${monthLabel.split(" ")[0]} Target`, `=${stats.monthlyTarget}`, stats.monthlyTarget)[1]]));
-    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), ...dashboardFormulaMetric("AVG Service Price", "=IF(R31C8>0,R3C3/R31C8,0)", stats.averageServicePrice)]));
-    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), ...dashboardFormulaMetric("Target by service", "=IF(R48C8>0,R47C8/R48C8,0)", stats.targetByService)]));
-    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), ...dashboardFormulaMetric("Remaining Services To Achieve Target", "=MAX(0,R49C8-R31C8)", stats.remainingServicesToTarget)]));
-    dashboardRows.push(blankRow());
-    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), cell("Total Services", "DashboardTitle", 1)]));
-    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), ...dashboardFormulaMetric("Massage", sumDailyFormula(38), stats.servicesTotals.Massage)]));
-    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), ...dashboardFormulaMetric("Mani & Pedi", sumDailyFormula(39), stats.servicesTotals["Mani & Pedi"])]));
-    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), ...dashboardFormulaMetric("Moroccan Bath", sumDailyFormula(40), stats.servicesTotals["Moroccan Bath"])]));
-    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), ...dashboardFormulaMetric("Package", sumDailyFormula(41), stats.servicesTotals.Package)]));
-    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), ...dashboardFormulaMetric("Total Services", "=SUM(R52C8:R55C8)", stats.totalServices, "Total", "Total")]));
-    dashboardRows.push(blankRow());
-    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), cell("Total Commision", "DashboardTitle", 1)]));
-    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), ...dashboardFormulaMetric("Joce", sumDailyFormula(60), stats.commissionJoce)]));
-    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), ...dashboardFormulaMetric("Caren", sumDailyFormula(61), stats.commissionCaren)]));
-    dashboardRows.push(dashRow([cell("", "Blank"), ...emptyCells(5), ...dashboardFormulaMetric("Total Commision", "=SUM(R59C8:R60C8)", stats.operatingExpenses.Commission, "Total", "Total")]));
+  const monthDates = getFinanceMonthDates(monthKey);
+  const monthLabel = getFinanceMonthLabel(monthKey);
+  const monthlySettings = getFinanceMonthSettings(monthKey);
+  const stats = getFinanceMonthStats(monthKey);
+  const daysCount = Math.max(1, monthDates.length || 1);
 
-    const scheduleSheets = monthDates.map((date) => {
-      const sheetName = daySheetName(date);
-      const rowsForDate = getRowsForDate(date);
-      const dayStats = getFinanceDayStats(date, monthlySettings);
-      const sheetRows = [
-        row(dailyColumns.map((column) => column.label), "Header"),
-        ...timeSlots.map((_, index) => {
-          const scheduleRow = rowsForDate[index] || createEmptyAppointmentRow(timeSlots[index] || "");
-          return rowXml(dailyColumns.map((column) => makeScheduleCell(scheduleRow, column)));
-        }),
-        blankRow(),
-        rowXml([...emptyCells(8), cell("Payment Methomd", "Section"), cell("", "Section"), ...emptyCells(3)]),
-        rowXml([...emptyCells(4), cell("Availability", "Section"), cell("", "Section"), ...emptyCells(2), cell("Cash", "Label"), formulaCell(dayFormula.payment("Cash"), dayStats.paymentTotals.Cash), ...emptyCells(3)]),
-        rowXml([...emptyCells(2), cell("Gift Giver", "StatusGiftGiver"), cell("", "Blank"), cell("Joce", "Body"), cell("", "Body"), ...emptyCells(2), cell("Debit", "Label"), formulaCell(dayFormula.payment("Debit"), dayStats.paymentTotals.Debit), ...emptyCells(3)]),
-        rowXml([...emptyCells(2), cell("Gift Done", "StatusGiftDone"), cell("", "Blank"), cell("Caren", "Body"), cell("", "Body"), ...emptyCells(2), cell("Credit", "Label"), formulaCell(dayFormula.payment("Credit"), dayStats.paymentTotals.Credit), ...emptyCells(3)]),
-        rowXml([...emptyCells(2), cell("Not Sure", "StatusNotSure"), cell("", "Blank"), ...emptyCells(4), cell("Tabby", "Label"), formulaCell(dayFormula.payment("Tabby"), dayStats.paymentTotals.Tabby), ...emptyCells(3)]),
-        rowXml([...emptyCells(2), cell("Therapist OFF", "StatusOff"), cell("", "Blank"), ...emptyCells(4), cell("Tamara", "Label"), formulaCell(dayFormula.payment("Tamara"), dayStats.paymentTotals.Tamara), ...emptyCells(3)]),
-        rowXml([...emptyCells(2), cell("Cancel", "StatusCancel"), cell("", "Blank"), cell("Avg Services Price", "Label"), formulaCell("=IF(R42C10>0,R35C10/R42C10,0)", dayStats.totalServices ? dayStats.income / dayStats.totalServices : 0), ...emptyCells(2), cell("Bank Transfer", "Label"), formulaCell(dayFormula.payment("Bank Transfer"), dayStats.paymentTotals["Bank Transfer"]), ...emptyCells(3)]),
-        rowXml([...emptyCells(2), cell("Postboned", "StatusPostponed"), cell("", "Blank"), ...emptyCells(4), cell("Paid", "Label"), formulaCell(dayFormula.payment("Paid"), dayStats.paymentTotals.Paid), ...emptyCells(3)]),
-        rowXml([...emptyCells(8), cell("Total", "Total"), formulaCell("=SUM(R[-7]C:R[-1]C)", dayStats.income, "Total"), ...emptyCells(3)]),
-        blankRow(),
-        rowXml([...emptyCells(4), cell("Gift Card", "Section"), cell("", "Section"), ...emptyCells(2), cell("Services", "Section"), cell("", "Section"), ...emptyCells(3)]),
-        rowXml([...emptyCells(4), cell("Gifts Added", "Label"), cell(dayStats.giftsAdded, "Value"), ...emptyCells(2), cell("Massage", "Label"), formulaCell(dayFormula.serviceCount("Massage"), dayStats.servicesTotals.Massage), ...emptyCells(3)]),
-        rowXml([...emptyCells(4), cell("Gifts Received", "Label"), cell(dayStats.giftsReceived, "Value"), ...emptyCells(2), cell("Mani & Pedi", "Label"), formulaCell(dayFormula.serviceCount("Mani/Pedi"), dayStats.servicesTotals["Mani & Pedi"]), ...emptyCells(3)]),
-        rowXml([...emptyCells(8), cell("Moroccan Bath", "Label"), formulaCell(dayFormula.serviceCount("Moroccan"), dayStats.servicesTotals["Moroccan Bath"]), ...emptyCells(3)]),
-        rowXml([...emptyCells(4), cell("Loyalty Card Gifts", "Section"), cell("", "Section"), ...emptyCells(2), cell("Package", "Label"), formulaCell(dayFormula.serviceCount("Package"), dayStats.servicesTotals.Package), ...emptyCells(3)]),
-        rowXml([...emptyCells(4), cell("1 Service", "Label"), formulaCell(`=COUNTIF(${range(orderCol)},"Free")`, dayStats.freeGifts), ...emptyCells(2), cell("Total Services", "Total"), formulaCell("=SUM(R[-4]C:R[-1]C)", dayStats.totalServices, "Total"), ...emptyCells(3)]),
-        rowXml([...emptyCells(4), cell("2 Service", "Label"), formulaCell(`=COUNTIF(${range(orderCol)},"2 Free")`, dayStats.twoFreeGifts), ...emptyCells(7)]),
-        blankRow(),
-        rowXml([...emptyCells(4), cell("Clients Turned away ", "Label"), cell(dayStats.clientsTurnedAway, "Value"), ...emptyCells(2), cell("Clients", "Section"), cell("", "Section"), ...emptyCells(3)]),
-        rowXml([...emptyCells(8), cell("New Clients", "Label"), formulaCell(`=COUNTIF(${range(orderCol)},"1")`, dayStats.newClients), ...emptyCells(3)]),
-        rowXml([...emptyCells(8), cell("Loyal Clients", "Label"), formulaCell(`=COUNTIFS(${range(orderCol)},"<>",${range(orderCol)},"<>1")`, dayStats.loyalClients), ...emptyCells(3)]),
-        blankRow(),
-        rowXml([...emptyCells(8), cell("Daily Collection", "Section"), cell("", "Section"), ...emptyCells(3)]),
-        rowXml([...emptyCells(8), cell("Total Income", "Label"), formulaCell("=R35C10", dayStats.income, "Total"), ...emptyCells(3)]),
-        rowXml([...emptyCells(8), cell("Naft", "Label"), cell(dayStats.naft, "Value"), ...emptyCells(3)]),
-        rowXml([...emptyCells(8), cell("Uber", "Label"), cell(dayStats.uber, "Value"), ...emptyCells(3)]),
-        rowXml([...emptyCells(8), cell("Purchase", "Label"), cell(dayStats.purchase, "Value"), ...emptyCells(3)]),
-        rowXml([...emptyCells(8), cell("Commission", "Label"), formulaCell("=R60C10+R61C10", dayStats.commission), ...emptyCells(3)]),
-        rowXml([...emptyCells(8), cell("Daily Cost", "Total"), formulaCell(`=SUM(R[-4]C:R[-1]C)+(('Dashboard'!R6C8+'Dashboard'!R7C8+'Dashboard'!R10C8+'Dashboard'!R12C8)/${daysCount})`, dayStats.expenses, "Total"), ...emptyCells(3)]),
-        rowXml([...emptyCells(8), cell("Net Profit", "Total"), formulaCell("=R[-6]C-R[-1]C", dayStats.netProfit, "Total"), ...emptyCells(3)]),
-        rowXml([...emptyCells(8), cell("Total Transportation", "Label"), formulaCell(`=SUM(${range(transportationCol)})`, dayStats.transportation), ...emptyCells(3)]),
-        blankRow(),
-        rowXml([...emptyCells(8), cell("Commission", "Section"), cell("", "Section"), ...emptyCells(3)]),
-        rowXml([...emptyCells(8), cell("Joce", "Label"), cell(dayStats.commissionJoce, "Value"), ...emptyCells(3)]),
-        rowXml([...emptyCells(8), cell("Caren", "Label"), cell(dayStats.commissionCaren, "Value"), ...emptyCells(3)]),
-        rowXml([...emptyCells(8), cell("Total Commission", "Total"), formulaCell("=SUM(R[-2]C:R[-1]C)", dayStats.commission, "Total"), ...emptyCells(3)]),
-      ];
+  const escapeXml = (value) =>
+    String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&apos;");
 
-      return worksheet(sheetName, sheetRows, dailyColumns.map((column) => column.width), 1);
-    });
-
-    const workbook = `<?xml version="1.0"?>
-      <?mso-application progid="Excel.Sheet"?>
-      <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
-        xmlns:o="urn:schemas-microsoft-com:office:office"
-        xmlns:x="urn:schemas-microsoft-com:office:excel"
-        xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
-        xmlns:html="http://www.w3.org/TR/REC-html40">
-        <Styles>
-          <Style ss:ID="DashboardTitle"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="12" ss:Bold="1" ss:Color="#3a2418"/><Interior ss:Color="#d8c5b3" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
-          <Style ss:ID="Title"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="16" ss:Bold="1" ss:Color="#3a2418"/><Interior ss:Color="#cbb7a4" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="2"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
-          <Style ss:ID="Section"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="11" ss:Bold="1" ss:Color="#3a2418"/><Interior ss:Color="#d8c5b3" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
-          <Style ss:ID="Header"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="10" ss:Bold="1"/><Interior ss:Color="#d8c5b3" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
-          <Style ss:ID="Body"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="Arial" ss:Size="10"/><Interior ss:Color="#ffffff" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
-          <Style ss:ID="Label"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="10" ss:Bold="1" ss:Color="#4b2e1f"/><Interior ss:Color="#ffffff" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
-          <Style ss:ID="DashboardLabel"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="10" ss:Bold="1" ss:Color="#4b2e1f"/><Interior ss:Color="#ffffff" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
-          <Style ss:ID="Value"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="10" ss:Bold="1" ss:Color="#4b2e1f"/><Interior ss:Color="#ffffff" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
-          <Style ss:ID="DashboardValue"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="10" ss:Bold="1" ss:Color="#4b2e1f"/><Interior ss:Color="#ffffff" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
-          <Style ss:ID="Total"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="10" ss:Bold="1" ss:Color="#3a2418"/><Interior ss:Color="#f2a879" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
-          <Style ss:ID="Blank"><Interior ss:Color="#ffffff" ss:Pattern="Solid"/></Style>
-          <Style ss:ID="StatusGiftGiver"><Interior ss:Color="#e6b8df" ss:Pattern="Solid"/><Font ss:FontName="Arial" ss:Size="10"/></Style>
-          <Style ss:ID="StatusGiftDone"><Interior ss:Color="#b7e4f2" ss:Pattern="Solid"/><Font ss:FontName="Arial" ss:Size="10"/></Style>
-          <Style ss:ID="StatusNotSure"><Interior ss:Color="#d8c5b3" ss:Pattern="Solid"/><Font ss:FontName="Arial" ss:Size="10"/></Style>
-          <Style ss:ID="StatusOff"><Interior ss:Color="#cfcfcf" ss:Pattern="Solid"/><Font ss:FontName="Arial" ss:Size="10"/></Style>
-          <Style ss:ID="StatusCancel"><Interior ss:Color="#f4a6a6" ss:Pattern="Solid"/><Font ss:FontName="Arial" ss:Size="10"/></Style>
-          <Style ss:ID="StatusPostponed"><Interior ss:Color="#fff1a8" ss:Pattern="Solid"/><Font ss:FontName="Arial" ss:Size="10"/></Style>
-        </Styles>
-        ${worksheet("Dashboard", dashboardRows, [34, 95, 85, 85, 85, 34, 165, 95], 1)}
-        ${scheduleSheets.join("")}
-      </Workbook>`;
-
-    const blob = new Blob([workbook], {
-      type: "application/vnd.ms-excel;charset=utf-8;",
-    });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `Paradise-${monthLabel.replace(/\s+/g, "-")}-Reports.xls`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  const cleanNumber = (value) => {
+    const number = Number(parseAmount(value));
+    return Number.isFinite(number) ? Number(number.toFixed(2)) : 0;
   };
+
+  const safeSheetName = (name) =>
+    String(name || "Sheet")
+      .replace(/[\\/*?:[\]]/g, " ")
+      .slice(0, 31);
+
+  const fullDateLabel = (date) =>
+    new Date(`${date}T12:00:00`).toLocaleDateString("en-US", {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+
+  const shortDateLabel = (date) =>
+    new Date(`${date}T12:00:00`).toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
+
+  const getValueStyle = (value) =>
+    cleanNumber(value) < 0 ? "BadNumber" : "GoodNumber";
+
+  const cell = (value = "", style = "Text", type = "String", mergeAcross = 0) => {
+    const isNumber = type === "Number";
+    const merge = mergeAcross ? ` ss:MergeAcross="${mergeAcross}"` : "";
+
+    return `<Cell ss:StyleID="${style}"${merge}><Data ss:Type="${
+      isNumber ? "Number" : "String"
+    }">${isNumber ? cleanNumber(value) : escapeXml(value)}</Data></Cell>`;
+  };
+
+  const textCell = (value = "", style = "Text", mergeAcross = 0) =>
+    cell(value, style, "String", mergeAcross);
+
+  const numberCell = (value = 0, style = "Number") =>
+    cell(value, style, "Number");
+
+  const emptyCell = () =>
+    `<Cell ss:StyleID="Blank"><Data ss:Type="String"></Data></Cell>`;
+
+  const emptyCells = (count) =>
+    Array.from({ length: count }, () => emptyCell());
+
+  const row = (cells, height = "") =>
+    `<Row${height ? ` ss:Height="${height}"` : ""}>${cells.join("")}</Row>`;
+
+  const blankRow = (height = 10, columnsCount = 4) =>
+    row(emptyCells(columnsCount), height);
+
+  const sectionTitle = (title, mergeAcross = 3) =>
+    row([textCell(title, "SectionTitle", mergeAcross)], 28);
+
+  const labelValueRow = (leftLabel, leftValue, rightLabel = "", rightValue = "", leftStyle = "Number", rightStyle = "Number") =>
+    row(
+      [
+        textCell(leftLabel, "Label"),
+        numberCell(leftValue, leftStyle),
+        rightLabel ? textCell(rightLabel, "Label") : emptyCell(),
+        rightLabel ? numberCell(rightValue, rightStyle) : emptyCell(),
+      ],
+      24
+    );
+
+  const tableHeaderRow = (headers) =>
+    row(headers.map((header) => textCell(header, "Header")), 24);
+
+  const totalOperatingExpenses = Object.values(stats.operatingExpenses || {}).reduce(
+    (total, value) => total + cleanNumber(value),
+    0
+  );
+
+  const totalClients =
+    cleanNumber(stats.newClients) + cleanNumber(stats.loyalClients);
+
+  const totalCommission =
+    cleanNumber(stats.totalCommission) ||
+    cleanNumber(stats.commissionJoce) + cleanNumber(stats.commissionCaren);
+
+  const totalTransportation =
+    stats.totalTransportation !== undefined
+      ? stats.totalTransportation
+      : stats.transportation || 0;
+
+  const dashboardWidths = [185, 130, 185, 130];
+
+  const dayStatsList = monthDates.map((date) => {
+    const dayStats = getFinanceDayStats(date, monthlySettings);
+
+    return {
+      date,
+      day: date.slice(8, 10),
+      stats: dayStats,
+    };
+  });
+
+  const dashboardRows = [
+    row([textCell(`Paradise Spa - ${monthLabel} Report`, "Title", 3)], 38),
+    blankRow(10),
+
+    sectionTitle(`${monthLabel} Summary`),
+    labelValueRow("Total Income", stats.totalIncome, "Total Expenses", stats.totalExpenses, "GoodNumber", "BadNumber"),
+    labelValueRow("Total Net Profit", stats.totalNetProfit, "AVG Daily Income", stats.averageDailyIncome, getValueStyle(stats.totalNetProfit)),
+    labelValueRow("AVG Daily Expenses", stats.averageDailyExpenses, "AVG Daily Net Income", stats.averageDailyNetIncome, "Number", getValueStyle(stats.averageDailyNetIncome)),
+    labelValueRow("Last Update", stats.lastUpdate, "", ""),
+    blankRow(),
+
+    sectionTitle("Operating Expenses"),
+    labelValueRow("Gas Station", stats.operatingExpenses?.["Gas Station"], "Commission", stats.operatingExpenses?.Commission),
+    labelValueRow("Purchase", stats.operatingExpenses?.Purchase, "House Rent", stats.operatingExpenses?.["House Rent"]),
+    labelValueRow("Car Rent", stats.operatingExpenses?.["Car Rent"], "Uber", stats.operatingExpenses?.Uber),
+    labelValueRow("Laundry", stats.operatingExpenses?.Laundry, "Food", stats.operatingExpenses?.Food),
+    labelValueRow("Government Fees", stats.operatingExpenses?.["Government Fees"], "Salary", stats.operatingExpenses?.Salary),
+    labelValueRow("Total Expenses", totalOperatingExpenses, "", "", "TotalValue"),
+    blankRow(),
+
+    sectionTitle("Payment Method"),
+    labelValueRow("Cash", stats.paymentTotals?.Cash, "Debit", stats.paymentTotals?.Debit),
+    labelValueRow("Credit", stats.paymentTotals?.Credit, "Tabby", stats.paymentTotals?.Tabby),
+    labelValueRow("Tamara", stats.paymentTotals?.Tamara, "Bank Transfer", stats.paymentTotals?.["Bank Transfer"]),
+    labelValueRow("Paid", stats.paymentTotals?.Paid, "Payment Total", stats.paymentTotal, "Number", "TotalValue"),
+    blankRow(),
+
+    sectionTitle("Clients & Gifts"),
+    labelValueRow("New Clients", stats.newClients, "Loyal Clients", stats.loyalClients),
+    labelValueRow("Total Clients", totalClients, "Gifts Added", stats.giftsAdded, "TotalValue"),
+    labelValueRow("Gifts Received", stats.giftsReceived, "1 Service Gift", stats.freeGifts),
+    labelValueRow("2 Service Gift", stats.twoFreeGifts, "", ""),
+    blankRow(),
+
+    sectionTitle("Target & Services"),
+    labelValueRow("Monthly Target", monthlySettings.monthlyTarget, "Target By Service", stats.targetByService, "DarkNumber"),
+    labelValueRow("Remaining Services", stats.remainingServicesToTarget, "AVG Service Price", stats.averageServicePrice),
+    labelValueRow("Total Services", stats.totalServices, "Massage", stats.servicesTotals?.Massage, "TotalValue"),
+    labelValueRow("Mani & Pedi", stats.servicesTotals?.["Mani & Pedi"], "Moroccan Bath", stats.servicesTotals?.["Moroccan Bath"]),
+    labelValueRow("Package", stats.servicesTotals?.Package, "", ""),
+    blankRow(),
+
+    sectionTitle("Commission / Transportation / Lost Revenue"),
+    labelValueRow("Joce", stats.commissionJoce, "Caren", stats.commissionCaren),
+    labelValueRow("Total Commission", totalCommission, "Transportation", totalTransportation, "TotalValue"),
+    labelValueRow("Clients Turned Away", stats.clientsTurnedAway, "Lost Revenue", stats.lostRevenue),
+    labelValueRow("Potential Revenue", stats.potentialRevenue, "", "", "TotalValue"),
+    blankRow(),
+
+    sectionTitle(`${monthLabel} Daily Collection`),
+    tableHeaderRow(["Date", "Income", "Expenses", "Net Profit"]),
+
+    ...dayStatsList.map((day) =>
+      row(
+        [
+          textCell(day.day, "TableText"),
+          numberCell(day.stats.income),
+          numberCell(day.stats.expenses),
+          numberCell(day.stats.netProfit, getValueStyle(day.stats.netProfit)),
+        ],
+        22
+      )
+    ),
+
+    row(
+      [
+        textCell("Total", "TotalLabel"),
+        numberCell(stats.totalIncome, "TotalValue"),
+        numberCell(stats.totalExpenses, "TotalValue"),
+        numberCell(stats.totalNetProfit, "TotalValue"),
+      ],
+      25
+    ),
+  ];
+
+  const scheduleColumns = [
+    { key: "clientBy", label: "Client By", width: 95 },
+    { key: "serviceTime", label: "Service Time", width: 95 },
+    { key: "driver", label: "Driver", width: 80 },
+    { key: "therapist", label: "Therapist", width: 90 },
+    { key: "district", label: "District", width: 105 },
+    { key: "client", label: "Client", width: 145 },
+    { key: "frame", label: "Frame", width: 60 },
+    { key: "order", label: "Order", width: 75 },
+    { key: "services", label: "Services", width: 220 },
+    { key: "number", label: "Number", width: 115 },
+    { key: "transportation", label: "Transportation", width: 105 },
+    { key: "serviceAmount", label: "Service Amount", width: 115 },
+    { key: "paymentMethod", label: "Payment Method", width: 120 },
+    { key: "cashReceivedBy", label: "Cash Received By", width: 125 },
+    { key: "status", label: "Status", width: 105 },
+    { key: "sendTo", label: "Send To", width: 110 },
+    { key: "note", label: "Note", width: 200 },
+  ];
+
+  const getScheduleValue = (appointment, key) => {
+    if (key === "frame") return appointment.frame ? "Yes" : "";
+    return appointment[key] || "";
+  };
+
+  const createDailyReportRows = (date) => {
+    const dayStats = getFinanceDayStats(date, monthlySettings);
+    const manual = getManualForDate(date);
+    const dayAverageServicePrice =
+      dayStats.totalServices ? dayStats.income / dayStats.totalServices : 0;
+    const dayLostRevenue = dayStats.clientsTurnedAway * stats.averageServicePrice;
+    const dayPotentialRevenue = dayStats.income + dayLostRevenue;
+
+    return [
+      row([textCell(fullDateLabel(date), "Title", scheduleColumns.length - 1)], 38),
+      blankRow(8, scheduleColumns.length),
+
+      row([textCell("Daily Report", "SectionTitle", scheduleColumns.length - 1)], 28),
+
+      row(
+        [
+          textCell("Total Income", "Label"),
+          numberCell(dayStats.income, "GoodNumber"),
+          textCell("Total Expenses", "Label"),
+          numberCell(dayStats.expenses, "BadNumber"),
+          textCell("Net Profit", "Label"),
+          numberCell(dayStats.netProfit, getValueStyle(dayStats.netProfit)),
+          textCell("Transportation", "Label"),
+          numberCell(dayStats.transportation),
+          ...emptyCells(9),
+        ],
+        24
+      ),
+
+      row(
+        [
+          textCell("Cash", "Label"),
+          numberCell(dayStats.paymentTotals?.Cash),
+          textCell("Bank Transfer", "Label"),
+          numberCell(dayStats.paymentTotals?.["Bank Transfer"]),
+          textCell("Debit", "Label"),
+          numberCell(dayStats.paymentTotals?.Debit),
+          textCell("Credit", "Label"),
+          numberCell(dayStats.paymentTotals?.Credit),
+          ...emptyCells(9),
+        ],
+        24
+      ),
+
+      row(
+        [
+          textCell("New Clients", "Label"),
+          numberCell(dayStats.newClients),
+          textCell("Loyal Clients", "Label"),
+          numberCell(dayStats.loyalClients),
+          textCell("Total Services", "Label"),
+          numberCell(dayStats.totalServices),
+          textCell("AVG Service Price", "Label"),
+          numberCell(dayAverageServicePrice),
+          ...emptyCells(9),
+        ],
+        24
+      ),
+
+      row(
+        [
+          textCell("Massage", "Label"),
+          numberCell(dayStats.servicesTotals?.Massage),
+          textCell("Mani & Pedi", "Label"),
+          numberCell(dayStats.servicesTotals?.["Mani & Pedi"]),
+          textCell("Moroccan Bath", "Label"),
+          numberCell(dayStats.servicesTotals?.["Moroccan Bath"]),
+          textCell("Package", "Label"),
+          numberCell(dayStats.servicesTotals?.Package),
+          ...emptyCells(9),
+        ],
+        24
+      ),
+
+      row(
+        [
+          textCell("Gas Station", "Label"),
+          numberCell(dayStats.naft),
+          textCell("Uber", "Label"),
+          numberCell(dayStats.uber),
+          textCell("Purchase", "Label"),
+          numberCell(dayStats.purchase),
+          textCell("Variable Cost", "Label"),
+          numberCell(dayStats.variableExpenses),
+          ...emptyCells(9),
+        ],
+        24
+      ),
+
+      row(
+        [
+          textCell("Joce Commission", "Label"),
+          numberCell(dayStats.commissionJoce),
+          textCell("Caren Commission", "Label"),
+          numberCell(dayStats.commissionCaren),
+          textCell("Total Commission", "Label"),
+          numberCell(dayStats.commission),
+          textCell("Daily Fixed Cost", "Label"),
+          numberCell(dayStats.fixedDailyExpenses),
+          ...emptyCells(9),
+        ],
+        24
+      ),
+
+      row(
+        [
+          textCell("Clients Turned Away", "Label"),
+          numberCell(dayStats.clientsTurnedAway),
+          textCell("Lost Revenue", "Label"),
+          numberCell(dayLostRevenue),
+          textCell("Potential Revenue", "TotalLabel"),
+          numberCell(dayPotentialRevenue, "TotalValue"),
+          textCell("Manual Notes", "Label"),
+          textCell(manual.notes || "", "Text"),
+          ...emptyCells(9),
+        ],
+        24
+      ),
+
+      blankRow(12, scheduleColumns.length),
+      row([textCell("Daily Schedule", "SectionTitle", scheduleColumns.length - 1)], 28),
+      row(scheduleColumns.map((column) => textCell(column.label, "Header")), 24),
+    ];
+  };
+
+  const createDailySheetRows = (date) => {
+    const rows = getRowsForDate(date);
+
+    return [
+      ...createDailyReportRows(date),
+
+      ...rows.map((appointment) =>
+        row(
+          scheduleColumns.map((column) => {
+            const value = getScheduleValue(appointment, column.key);
+
+            if (["transportation", "serviceAmount"].includes(column.key)) {
+              return numberCell(value);
+            }
+
+            return textCell(value, "TableText");
+          }),
+          22
+        )
+      ),
+    ];
+  };
+
+  const worksheet = (name, rows, widths, freezeRows = 1) => `
+    <Worksheet ss:Name="${escapeXml(safeSheetName(name))}">
+      <Table>
+        ${widths.map((width) => `<Column ss:Width="${width}"/>`).join("")}
+        ${rows.join("")}
+      </Table>
+      <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+        <FreezePanes/>
+        <FrozenNoSplit/>
+        <SplitHorizontal>${freezeRows}</SplitHorizontal>
+        <TopRowBottomPane>${freezeRows}</TopRowBottomPane>
+        <ActivePane>2</ActivePane>
+        <ProtectObjects>False</ProtectObjects>
+        <ProtectScenarios>False</ProtectScenarios>
+      </WorksheetOptions>
+    </Worksheet>
+  `;
+
+  const dailyWorksheets = monthDates
+    .map((date) =>
+      worksheet(
+        shortDateLabel(date),
+        createDailySheetRows(date),
+        scheduleColumns.map((column) => column.width),
+        2
+      )
+    )
+    .join("");
+
+  const workbook = `<?xml version="1.0"?>
+    <?mso-application progid="Excel.Sheet"?>
+    <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+      xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:x="urn:schemas-microsoft-com:office:excel"
+      xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+      xmlns:html="http://www.w3.org/TR/REC-html40">
+
+      <Styles>
+        <Style ss:ID="Default" ss:Name="Normal">
+          <Alignment ss:Vertical="Center"/>
+          <Font ss:FontName="Aptos Narrow" ss:Size="11"/>
+        </Style>
+
+        <Style ss:ID="Blank">
+          <Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/>
+        </Style>
+
+        <Style ss:ID="Title">
+          <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+          <Font ss:FontName="Aptos Narrow" ss:Size="18" ss:Bold="1" ss:Color="#FFFFFF"/>
+          <Interior ss:Color="#3B2418" ss:Pattern="Solid"/>
+        </Style>
+
+        <Style ss:ID="SectionTitle">
+          <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+          <Font ss:FontName="Aptos Narrow" ss:Size="12" ss:Bold="1" ss:Color="#3B2418"/>
+          <Interior ss:Color="#E8D3C2" ss:Pattern="Solid"/>
+          <Borders>
+            <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#6B4B3A"/>
+            <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#6B4B3A"/>
+            <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#6B4B3A"/>
+            <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#6B4B3A"/>
+          </Borders>
+        </Style>
+
+        <Style ss:ID="Header">
+          <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+          <Font ss:FontName="Aptos Narrow" ss:Size="10" ss:Bold="1" ss:Color="#2B1B12"/>
+          <Interior ss:Color="#D8C0AA" ss:Pattern="Solid"/>
+          <Borders>
+            <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#6B4B3A"/>
+            <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#6B4B3A"/>
+            <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#6B4B3A"/>
+            <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#6B4B3A"/>
+          </Borders>
+        </Style>
+
+        <Style ss:ID="Label">
+          <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+          <Font ss:FontName="Aptos Narrow" ss:Size="10" ss:Bold="1" ss:Color="#2B1B12"/>
+          <Interior ss:Color="#F7E9DD" ss:Pattern="Solid"/>
+          <Borders>
+            <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BCA799"/>
+            <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BCA799"/>
+            <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BCA799"/>
+            <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BCA799"/>
+          </Borders>
+        </Style>
+
+        <Style ss:ID="Text">
+          <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+          <Font ss:FontName="Aptos Narrow" ss:Size="10" ss:Color="#2B1B12"/>
+          <Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/>
+          <Borders>
+            <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D7C8BD"/>
+            <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D7C8BD"/>
+            <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D7C8BD"/>
+            <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D7C8BD"/>
+          </Borders>
+        </Style>
+
+        <Style ss:ID="TableText">
+          <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+          <Font ss:FontName="Aptos Narrow" ss:Size="10" ss:Color="#2B1B12"/>
+          <Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/>
+          <Borders>
+            <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D7C8BD"/>
+            <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D7C8BD"/>
+            <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D7C8BD"/>
+            <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D7C8BD"/>
+          </Borders>
+        </Style>
+
+        <Style ss:ID="Number">
+          <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+          <Font ss:FontName="Aptos Narrow" ss:Size="10" ss:Bold="1" ss:Color="#2B1B12"/>
+          <Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/>
+          <NumberFormat ss:Format="#,##0.00"/>
+          <Borders>
+            <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D7C8BD"/>
+            <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D7C8BD"/>
+            <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D7C8BD"/>
+            <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D7C8BD"/>
+          </Borders>
+        </Style>
+
+        <Style ss:ID="GoodNumber">
+          <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+          <Font ss:FontName="Aptos Narrow" ss:Size="10" ss:Bold="1" ss:Color="#1F5A2E"/>
+          <Interior ss:Color="#E8F2E8" ss:Pattern="Solid"/>
+          <NumberFormat ss:Format="#,##0.00"/>
+          <Borders>
+            <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D7C8BD"/>
+            <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D7C8BD"/>
+            <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D7C8BD"/>
+            <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D7C8BD"/>
+          </Borders>
+        </Style>
+
+        <Style ss:ID="BadNumber">
+          <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+          <Font ss:FontName="Aptos Narrow" ss:Size="10" ss:Bold="1" ss:Color="#8B1E1E"/>
+          <Interior ss:Color="#F6E3DF" ss:Pattern="Solid"/>
+          <NumberFormat ss:Format="#,##0.00"/>
+          <Borders>
+            <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D7C8BD"/>
+            <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D7C8BD"/>
+            <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D7C8BD"/>
+            <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D7C8BD"/>
+          </Borders>
+        </Style>
+
+        <Style ss:ID="DarkNumber">
+          <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+          <Font ss:FontName="Aptos Narrow" ss:Size="11" ss:Bold="1" ss:Color="#FFFFFF"/>
+          <Interior ss:Color="#2B1B12" ss:Pattern="Solid"/>
+          <NumberFormat ss:Format="#,##0.00"/>
+          <Borders>
+            <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#2B1B12"/>
+            <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#2B1B12"/>
+            <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#2B1B12"/>
+            <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#2B1B12"/>
+          </Borders>
+        </Style>
+
+        <Style ss:ID="TotalLabel">
+          <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+          <Font ss:FontName="Aptos Narrow" ss:Size="10" ss:Bold="1" ss:Color="#FFFFFF"/>
+          <Interior ss:Color="#5A3726" ss:Pattern="Solid"/>
+          <Borders>
+            <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#3B2418"/>
+            <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#3B2418"/>
+            <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#3B2418"/>
+            <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#3B2418"/>
+          </Borders>
+        </Style>
+
+        <Style ss:ID="TotalValue">
+          <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+          <Font ss:FontName="Aptos Narrow" ss:Size="10" ss:Bold="1" ss:Color="#FFFFFF"/>
+          <Interior ss:Color="#5A3726" ss:Pattern="Solid"/>
+          <NumberFormat ss:Format="#,##0.00"/>
+          <Borders>
+            <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#3B2418"/>
+            <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#3B2418"/>
+            <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#3B2418"/>
+            <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#3B2418"/>
+          </Borders>
+        </Style>
+      </Styles>
+
+      ${worksheet("Dashboard", dashboardRows, dashboardWidths, 2)}
+      ${dailyWorksheets}
+    </Workbook>
+  `;
+
+  const blob = new Blob([workbook], {
+    type: "application/vnd.ms-excel;charset=utf-8;",
+  });
+
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `Paradise-${monthLabel.replace(/\s+/g, "-")}-Collection.xls`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+};
 
 
   const appointmentStats = getAppointmentStats();
