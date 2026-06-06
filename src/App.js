@@ -556,7 +556,7 @@ async function fetchPotentialClients() {
       id: client.id,
       name: client.name || "",
       phone: client.phone || "",
-      status: client.status || "إلغاء موعد",
+      status: client.status || "",
       createdAt: client.created_at || "",
     }))
   );
@@ -5741,7 +5741,7 @@ const sendWhatsApp = async (client) => {
     {
       name: potentialName,
       phone: cleanPotentialPhone,
-      status: potentialStatus || "إلغاء موعد",
+      status: potentialStatus,
     },
   ]);
 
@@ -5753,7 +5753,7 @@ const sendWhatsApp = async (client) => {
   fetchPotentialClients();
   setPotentialName("");
   setPotentialPhone("");
-  setPotentialStatus("إلغاء موعد");
+  setPotentialStatus("");
   setShowPotentialForm(false);
 };
 
