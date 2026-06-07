@@ -9316,7 +9316,7 @@ const settingsFieldGridStyle = {
               boxShadow: "0 24px 60px rgba(46,31,23,0.20)",
               backdropFilter: "blur(14px)",
               direction: "rtl",
-              overflowY: "auto",
+              overflow: "hidden",
             }}
           >
             <img
