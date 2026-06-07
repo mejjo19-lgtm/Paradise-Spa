@@ -9331,30 +9331,11 @@ const settingsFieldGridStyle = {
   }}
 />
 <div className="paradise-global-sidebar-buttons">
-  <button
-  onClick={() => setScreen("dashboard")}
-  onMouseEnter={(e) => luxuryHover(e, true)}
-  onMouseLeave={(e) => luxuryHover(e, false)}
-  style={{
-    ...buttonStyle,
-    width: "100%",
-    marginBottom: "9px",
-    textAlign: "right",
-    background:
-      screen === "dashboard"
-        ? "linear-gradient(135deg, #3a2418, #7a5a43)"
-        : "rgba(255,255,255,0.68)",
-    color: screen === "dashboard" ? "white" : "#4b2e1f",
-    border: "1px solid rgba(214,199,184,0.75)",
-    borderRadius: "18px",
-    transition: "0.25s ease",
-    boxShadow: "0 12px 30px rgba(75,46,31,0.10)",
-    fontSize: "13px",
-  }}
->
-  المواعيد
-</button>
-            {dashboardServices.filter(([key]) => canViewMenu(key)).map(([key, label]) => (
+  
+            {[
+  ["dashboard", "المواعيد"],
+  ...dashboardServices.filter(([key]) => canViewMenu(key)),
+].map(([key, label]) => (
               <button
                 key={key}
                 onClick={() => setScreen(key)}
