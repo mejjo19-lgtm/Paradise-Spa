@@ -3865,7 +3865,18 @@ const handleScheduleRowAction = (rowIndex, action) => {
     if (field === "sendTo" && value) {
       await copyScheduleRowToSelectedList(updatedRowSnapshot, value);
     }
+if (field === "frame") {
+  const matchedClientForFrame = findClientByExactPhone(
+    updatedRowSnapshot?.number || ""
+  );
 
+  if (matchedClientForFrame) {
+    await updateClientFrame(
+      matchedClientForFrame.id,
+      Boolean(value)
+    );
+  }
+}
     if (field === "status" && value === "Gift Done" && originalRow.status !== "Gift Done") {
       await markGiftDoneFromScheduleRow(updatedRowSnapshot);
     }
