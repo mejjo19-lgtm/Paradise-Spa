@@ -1949,6 +1949,8 @@ const stepScheduleOrder = (rowIndex, currentOrder, direction) => {
     "Massage Relaxing 60 Mins",
     "Massage Hot Stone 60 Mins",
     "Mani/Pedi",
+    "Massage Therapeutic 60 Mins",
+    "Massage Lymphatic Massage 60 Mins",
     "Massage Relaxing 60 Mins + Mani/Pedi",
     "Massage Hot Stone 60 Mins + Mani/Pedi",
   ];
@@ -5433,13 +5435,20 @@ const sendWhatsApp = async (client) => {
       .replace(/[۰-۹]/g, (digit) => "۰۱۲۳۴۵۶۷۸۹".indexOf(digit));
 
   const formatAppointmentMessageDate = (dateString) => {
-    const date = new Date(`${dateString}T12:00:00`);
-    const weekday = date.toLocaleDateString("ar-SA", { weekday: "long" });
-    const month = date.toLocaleDateString("en-US", { month: "long" });
-    const day = date.getDate();
+  const date = new Date(`${dateString}T12:00:00`);
 
-    return formatEnglishDigits(`${weekday} ${day} ${month}`);
-  };
+  const weekday = date.toLocaleDateString("ar-SA", {
+    weekday: "long",
+  });
+
+  const month = date.toLocaleDateString("ar-SA", {
+    month: "long",
+  });
+
+  const day = formatEnglishDigits(date.getDate());
+
+  return `${weekday} ${day} ${month}`;
+};
 
   const formatNumericDate = (dateString) => {
     const date = new Date(`${dateString}T12:00:00`);
@@ -5497,10 +5506,114 @@ const sendWhatsApp = async (client) => {
     }
 
     const appointmentDate = formatAppointmentMessageDate(date);
+const appointmentWeekday = formatEnglishDigits(
+  new Date(`${date}T12:00:00`).toLocaleDateString("ar-SA", {
+    weekday: "long",
+  })
+);
+const appointmentFullDate = formatEnglishDigits(
+  new Date(`${date}T12:00:00`).toLocaleDateString("en-GB")
+);
     const totalPrice = getAppointmentTotalPrice(appointment);
     const servicePriceText = totalPrice > 0 ? `${formatEnglishDigits(totalPrice)} ريال` : "-";
     const appointmentServiceTime = formatEnglishDigits(appointment.serviceTime || "-");
+    const appointmentServiceTimeText = appointmentServiceTime
+  .replace(" - ", " إلى ")
+  .replace("-", " إلى ");
+const appointmentServicesText = (() => {
+  const translateService = (service) => {
+    const cleanService = String(service || "").trim();
 
+    const translatedService = {
+      "Massage Relaxing 60 Mins": "مساج استرخائي 60 دقيقة",
+  "Massage Relaxing 90 Mins": "مساج استرخائي 90 دقيقة",
+
+  "Massage Hot Stone 60 Mins": "مساج أحجار ساخنة 60 دقيقة",
+  "Massage Hot Stone 90 Mins": "مساج أحجار ساخنة 90 دقيقة",
+
+  "Therapeutic Massage 60 Mins": "مساج علاجي 60 دقيقة",
+  "Therapeutic Massage 90 Mins": "مساج علاجي 90 دقيقة",
+
+  "Sports Massage 60 Mins": "مساج رياضي 60 دقيقة",
+  "Sports Massage 90 Mins": "مساج رياضي 90 دقيقة",
+
+  "Thai Massage 60 Mins": "مساج تايلندي 60 دقيقة",
+  "Thai Massage 90 Mins": "مساج تايلندي 90 دقيقة",
+
+  "Lymphatic Massage 60 Mins": "مساج لمفاوي 60 دقيقة",
+  "Lymphatic Massage 90 Mins": "مساج لمفاوي 90 دقيقة",
+
+  "Wood Therapy Massage 60 Mins": "مساج أخشاب 60 دقيقة",
+  "Wood Therapy Massage 90 Mins": "مساج أخشاب 90 دقيقة",
+
+  "Mani/Pedi": "كلاسيك بديكير ومنيكير",
+  "Pedicure/Manicure": "كلاسيك بديكير ومنيكير",
+
+  "Massage Relaxing 60 Mins + Mani/Pedi":
+    "مساج استرخائي 60 دقيقة + كلاسيك بديكير ومنيكير",
+
+  "Massage Relaxing 90 Mins + Mani/Pedi":
+    "مساج استرخائي 90 دقيقة + كلاسيك بديكير ومنيكير",
+
+  "Massage Hot Stone 60 Mins + Mani/Pedi":
+    "مساج أحجار ساخنة 60 دقيقة + كلاسيك بديكير ومنيكير",
+
+  "Massage Hot Stone 90 Mins + Mani/Pedi":
+    "مساج أحجار ساخنة 90 دقيقة + كلاسيك بديكير ومنيكير",
+
+  "Therapeutic Massage 60 Mins + Mani/Pedi":
+    "مساج علاجي 60 دقيقة + كلاسيك بديكير ومنيكير",
+
+  "Therapeutic Massage 90 Mins + Mani/Pedi":
+    "مساج علاجي 90 دقيقة + كلاسيك بديكير ومنيكير",
+
+  "Sports Massage 60 Mins + Mani/Pedi":
+    "مساج رياضي 60 دقيقة + كلاسيك بديكير ومنيكير",
+
+  "Sports Massage 90 Mins + Mani/Pedi":
+    "مساج رياضي 90 دقيقة + كلاسيك بديكير ومنيكير",
+
+  "Thai Massage 60 Mins + Mani/Pedi":
+    "مساج تايلندي 60 دقيقة + كلاسيك بديكير ومنيكير",
+
+  "Thai Massage 90 Mins + Mani/Pedi":
+    "مساج تايلندي 90 دقيقة + كلاسيك بديكير ومنيكير",
+
+  "Lymphatic Massage 60 Mins + Mani/Pedi":
+    "مساج لمفاوي 60 دقيقة + كلاسيك بديكير ومنيكير",
+
+  "Lymphatic Massage 90 Mins + Mani/Pedi":
+    "مساج لمفاوي 90 دقيقة + كلاسيك بديكير ومنيكير",
+
+  "Wood Therapy Massage 60 Mins + Mani/Pedi":
+    "مساج أخشاب 60 دقيقة + كلاسيك بديكير ومنيكير",
+
+  "Wood Therapy Massage 90 Mins + Mani/Pedi":
+    "مساج أخشاب 90 دقيقة + كلاسيك بديكير ومنيكير",
+    }[cleanService] || cleanService;
+
+    return formatEnglishDigits(translatedService);
+  };
+
+  const allServices = [
+    appointment.services,
+    ...(appointment.additionalClients || []).map(
+      (client) => client.service || client.services || ""
+    ),
+  ]
+    .filter(Boolean)
+    .map(translateService);
+
+  const counts = {};
+
+  allServices.forEach((service) => {
+    counts[service] = (counts[service] || 0) + 1;
+  });
+
+  return Object.entries(counts)
+    .map(([service, count]) => `${count} ${service}`)
+    .join("\n");
+})();
     const message =
       messageType === "reminder"
         ? [
@@ -5512,11 +5625,11 @@ const sendWhatsApp = async (client) => {
             "",
             `الموقع: ${formatEnglishDigits(appointment.displayAddress || appointment.district || "-")}`,
             "",
-            `الخدمة: ${formatEnglishDigits(appointment.services || "-")}`,
+            `الخدمة:\n${appointmentServicesText || "-"}`,
             "",
             `سعر الخدمة: ${servicePriceText} شامله رسوم التوصيل`,
             "",
-            `موعد الخدمة : ${appointmentDate} مابين الساعة ${appointmentServiceTime}`,
+            `موعد الخدمة : يوم ${appointmentWeekday} الموافق ${appointmentFullDate} الساعة ${appointmentServiceTimeText} م`,
             "",
             "الدفع بيكون بعد الخدمة كاش او تحويل",
             "",
@@ -5537,16 +5650,49 @@ const sendWhatsApp = async (client) => {
 
     const cleanPhone = cleanSaudiPhone(staffPhone);
     const appointmentDate = formatAppointmentDate(date);
+    const appointmentStartTime =
+  String(appointment.serviceTime || "-").split("-")[0].trim() || "-";
     const appointmentTime = appointment.serviceTime || "-";
-    const leavingTime = addMinutesToDisplayTime(appointmentTime, 75);
+    const totalStaffServices =
+  1 + (appointment.additionalClients || []).filter(
+    (client) => client.service || client.services
+  ).length;
+
+const leavingMinutes =
+  totalStaffServices <= 1 ? 90 : 90 + (totalStaffServices - 1) * 75;
+
+const leavingTime = addMinutesToDisplayTime(
+  appointmentStartTime,
+  leavingMinutes
+);
+    const staffServicesText = (() => {
+  const allServices = [
+    appointment.services,
+    ...(appointment.additionalClients || []).map(
+      (client) => client.service || client.services || ""
+    ),
+  ]
+    .filter(Boolean)
+    .map((service) => String(service).trim());
+
+  const counts = {};
+
+  allServices.forEach((service) => {
+    counts[service] = (counts[service] || 0) + 1;
+  });
+
+  return Object.entries(counts)
+    .map(([service, count]) => `${count} ${service}`)
+    .join("\n");
+})();
 
     const message = [
       appointmentDate,
       `Staff’s Name: ${staffName}`,
-      `Appointment time: ${appointmentTime}`,
+      `Appointment time: ${appointmentStartTime}`,
       "",
       "Service:",
-      appointment.services || "-",
+      staffServicesText || "-",
       "",
       "Payment: will transfer",
       `Clients Name : ${appointment.displayName || appointment.client || "-"}`,
