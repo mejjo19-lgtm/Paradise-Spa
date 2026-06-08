@@ -1946,9 +1946,12 @@ const stepScheduleOrder = (rowIndex, currentOrder, direction) => {
   const paymentOptions = ["", "Cash", "Debit", "Credit", "Paid", "Bank Transfer"];
   const serviceOptions = [
     "",
+    
+    "Mani/Pedi",
+    "Mani/Pedi With Color",
+    "Mani/Pedi With Color Hand Only",
     "Massage Relaxing 60 Mins",
     "Massage Hot Stone 60 Mins",
-    "Mani/Pedi",
     "Massage Therapeutic 60 Mins",
     "Massage Lymphatic Massage 60 Mins",
     "Massage Relaxing 60 Mins + Mani/Pedi",
