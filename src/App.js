@@ -383,6 +383,7 @@ const normalizeClientRecord = (client) => ({
   frame: Boolean(client.frame),
   blacklist: Boolean(client.blacklist),
   notes: client.notes || "",
+  last_activity_at: client.last_activity_at || "",
   referrals: Array.isArray(client.referrals) ? client.referrals : [],
 });
 
@@ -442,7 +443,7 @@ async function fetchClientsWithSupabaseClient() {
     const to = from + pageSize - 1;
     const { data, error } = await supabase
       .from("clients")
-      .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes")
+      .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_activity_at")
       .order("id", { ascending: false })
       .range(from, to);
 
@@ -467,7 +468,7 @@ async function fetchClientsWithRestApi() {
 
   while (hasMore) {
     const response = await fetch(
-      `${supabaseUrl}/rest/v1/clients?select=id,name,arabic_name,phone,address,visits,frame,blacklist,notes&order=id.desc&limit=${pageSize}&offset=${offset}`,
+      `${supabaseUrl}/rest/v1/clients?select=id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_activity_at&order=id.desc&limit=${pageSize}&offset=${offset}`,
       {
         headers: {
           apikey: supabaseKey,
@@ -696,6 +697,7 @@ function fetchSharedClientLists() {
   const [address, setAddress] = useState("");
   const [search, setSearch] = useState("");
   const [clientsSearch, setClientsSearch] = useState("");
+  const [clientsSortMode, setClientsSortMode] = useState("default");
   const [loyaltyVisitsFilter, setLoyaltyVisitsFilter] = useState("");
   const [referralsSearch, setReferralsSearch] = useState("");
   const [referralsCustomerFilter, setReferralsCustomerFilter] = useState("all");
@@ -1386,7 +1388,7 @@ useEffect(() => {
     total_paid: 0,
     service_history: [],
   },
-]).select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes").single();
+]).select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_activity_at").single();
 
 if (error) {
   console.error("ADD CLIENT ERROR:", error);
@@ -1438,7 +1440,7 @@ const { data: updatedClient, error } = await supabase
     address: editedAddress,
   })
   .eq("id", id)
-  .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes")
+  .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_activity_at")
   .single();
 
 if (error) {
@@ -1740,12 +1742,13 @@ loadClientScheduleHistory(fullClient?.phone || client.phone);
     .from("clients")
     .update({ visits: newVisits })
     .eq("id", id)
-    .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes")
+    .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_activity_at")
     .single();
 
   if (error) {
     console.log(error);
   } else if (updatedClient) {
+    await updateClientLastActivity(id);
     const nextClient = normalizeClientRecord(updatedClient);
     setClients((prev) =>
       prev.map((clientItem) => String(clientItem.id) === String(nextClient.id) ? nextClient : clientItem)
@@ -1764,19 +1767,41 @@ loadClientScheduleHistory(fullClient?.phone || client.phone);
     .from("clients")
     .update({ visits: newVisits })
     .eq("id", id)
-    .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes")
+    .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_activity_at")
     .single();
 
   if (error) {
     console.log(error);
   } else if (updatedClient) {
+    await updateClientLastActivity(id);
     const nextClient = normalizeClientRecord(updatedClient);
     setClients((prev) =>
       prev.map((clientItem) => String(clientItem.id) === String(nextClient.id) ? nextClient : clientItem)
     );
   }
 };
+const updateClientLastActivity = async (id) => {
+  if (!id) return;
 
+  const activityTime = new Date().toISOString();
+
+  setClients((prev) =>
+    prev.map((client) =>
+      String(client.id) === String(id)
+        ? { ...client, last_activity_at: activityTime }
+        : client
+    )
+  );
+
+  const { error } = await supabase
+    .from("clients")
+    .update({ last_activity_at: activityTime })
+    .eq("id", id);
+
+  if (error) {
+    console.log("Client last activity update error:", error);
+  }
+};
   // 🖼️ UPDATE CLIENT FRAME
   const updateClientFrame = async (id, frameValue) => {
     if (!ensureSystemWritable() || !canEditData) return;
@@ -1790,7 +1815,7 @@ loadClientScheduleHistory(fullClient?.phone || client.phone);
       .from("clients")
       .update({ frame: frameValue })
       .eq("id", id)
-      .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes")
+      .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_activity_at")
       .single();
 
     if (error) {
@@ -1804,6 +1829,7 @@ loadClientScheduleHistory(fullClient?.phone || client.phone);
     }
 
     if (updatedClient) {
+      await updateClientLastActivity(id);
       const nextClient = normalizeClientRecord(updatedClient);
       setClients((prev) =>
         prev.map((client) => String(client.id) === String(nextClient.id) ? nextClient : client)
@@ -3331,7 +3357,7 @@ const getScheduleClientBadges = (row) => {
       .from("clients")
       .update({ visits: nextVisits })
       .eq("id", matchedClient.id)
-      .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes")
+      .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_activity_at")
       .single();
 
     if (error) {
@@ -3405,7 +3431,7 @@ if (visitsValue === null) {
           total_paid: 0,
           service_history: [],
         },
-      ]).select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes").single();
+      ]).select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_activity_at").single();
 
       if (error) {
         console.log("Additional client Send To clients copy error:", error);
@@ -3608,7 +3634,7 @@ if (visitsValue === null) {
           total_paid: 0,
           service_history: [],
         },
-      ]).select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes").single();
+      ]).select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_activity_at").single();
 
       if (error) {
         console.log("Send To clients copy error:", error);
@@ -3846,9 +3872,12 @@ const handleScheduleRowAction = (rowIndex, action) => {
       if (matchedClientForOrder && visitsValue !== null) {
         const { data: updatedClient, error } = await supabase
           .from("clients")
-          .update({ visits: visitsValue })
+          .update({
+  visits: visitsValue,
+  last_activity_at: new Date().toISOString(),
+})
           .eq("id", matchedClientForOrder.id)
-          .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes")
+          .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_activity_at")
           .single();
 
         if (error) {
@@ -5225,9 +5254,22 @@ const sendWhatsApp = async (client) => {
 });
 
   // 🔍 CLIENTS TABLE SEARCH
-  const filteredClientsTable = clients.filter((c) =>
-    clientMatchesSearch(c, clientsSearch)
-  );
+  const filteredClientsTable = clients
+  .filter((c) => clientMatchesSearch(c, clientsSearch))
+  .sort((a, b) => {
+    if (clientsSortMode === "lastActivity") {
+      return (
+        new Date(b.last_activity_at || 0).getTime() -
+        new Date(a.last_activity_at || 0).getTime()
+      );
+    }
+
+    if (clientsSortMode === "topVisits") {
+      return Number(b.visits || 0) - Number(a.visits || 0);
+    }
+
+    return Number(b.id || 0) - Number(a.id || 0);
+  });
 
   const selectedClient = clients.find((c) => c.id === selectedClientId);
 
@@ -14166,7 +14208,28 @@ width: "100%",
                 fontSize: "15px",
               }}
             />
-
+<select
+  value={clientsSortMode}
+  onChange={(e) => {
+    setClientsSortMode(e.target.value);
+    setClientsVisibleCount(15);
+  }}
+  style={{
+    minWidth: "180px",
+    padding: "14px",
+    borderRadius: "16px",
+    border: "1px solid #d6c7b8",
+    backgroundColor: "#faf7f2",
+    color: "#4b2e1f",
+    outline: "none",
+    fontSize: "15px",
+    fontWeight: "bold",
+  }}
+>
+  <option value="default">الترتيب الأساسي</option>
+  <option value="lastActivity">آخر نشاط</option>
+  <option value="topVisits">أعلى الخدمات</option>
+</select>
             
           </div>
 
