@@ -7675,24 +7675,24 @@ const welcomeBoardNameStyle = {
           }
 
           .welcome-board-print-card {
-            font-synthesis: none;
-            width: calc(3.7in * 0.5);
-            height: calc(5.1in * 0.5);
-            position: relative;
-            overflow: visible;
-            flex: 0 0 calc(3.7in * 0.5);
-            background: #ead8c9;
-            break-inside: avoid;
-            page-break-inside: avoid;
-          }
+  font-synthesis: none;
+  width: calc(3.7in * 0.38);
+  height: calc(5.1in * 0.38);
+  position: relative;
+  overflow: hidden;
+  flex: 0 0 calc(3.7in * 0.38);
+  background: #ead8c9;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
 
-          .welcome-board-print-card > div {
-            width: 3.7in !important;
-            height: 5.1in !important;
-            box-shadow: none !important;
-            transform: scale(0.5);
-            transform-origin: top left;
-          }
+.welcome-board-print-card > div {
+  width: 3.7in !important;
+  height: 5.1in !important;
+  box-shadow: none !important;
+  transform: scale(0.38);
+  transform-origin: top left;
+}
 
           .welcome-board-print-card img {
             width: 100% !important;
@@ -7759,27 +7759,15 @@ const welcomeBoardNameStyle = {
           margin: "0 auto",
         }}
       >
-        <button
-          onClick={() => setScreen("dashboard")}
-          style={{
-            ...buttonStyle,
-            backgroundColor: "#fffaf3",
-            color: "#4b2e1f",
-            border: "1px solid #d6c7b8",
-            marginBottom: "18px",
-          }}
-        >
-          Back
-        </button>
+        
 
         <div
           style={{
-            background: "rgba(255,255,255,0.74)",
-            border: "1px solid rgba(255,255,255,0.75)",
-            borderRadius: "34px",
-            boxShadow: "0 26px 68px rgba(75,46,31,0.16)",
-            padding: "26px",
-            backdropFilter: "blur(12px)",
+            background: "transparent",
+border: "none",
+borderRadius: "0px",
+boxShadow: "none",
+backdropFilter: "none",
           }}
         >
           <div
@@ -7791,10 +7779,7 @@ const welcomeBoardNameStyle = {
             <img
               src={logo}
               alt="logo"
-              style={{
-                width: "115px",
-                marginBottom: "10px",
-              }}
+              style={{ width: "100px", marginBottom: "14px" }}
             />
 
             <h2
@@ -7821,16 +7806,22 @@ const welcomeBoardNameStyle = {
 
           <div
             style={{
-              display: "grid",
-              gridTemplateColumns: "260px 1fr 420px",
-              gap: "22px",
-              alignItems: "start",
-            }}
+  display: "grid",
+  gridTemplateColumns: "minmax(560px, 1fr) 330px",
+  gridTemplateAreas: `
+    "guest designs"
+    "guest preview"
+  `,
+  gap: "22px",
+  alignItems: "start",
+  direction: "ltr",
+}}
           >
             <div
               style={{
                 background: "linear-gradient(145deg, #fffaf3, #f1e4d8)",
                 border: "1px solid #d8c5b3",
+                gridArea: "designs",
                 borderRadius: "26px",
                 padding: "16px",
                 boxShadow: "inset 0 1px 0 rgba(255,255,255,0.75)",
@@ -7888,6 +7879,7 @@ const welcomeBoardNameStyle = {
                 background: "linear-gradient(145deg, #fffaf3, #f6eee6)",
                 border: "1px solid #d8c5b3",
                 borderRadius: "30px",
+                gridArea: "guest",
                 padding: "20px",
                 textAlign: "center",
                 boxShadow: "0 18px 42px rgba(75,46,31,0.10)",
@@ -8178,6 +8170,7 @@ const welcomeBoardNameStyle = {
               style={{
                 background: "linear-gradient(145deg, #fffaf3, #f1e4d8)",
                 border: "1px solid #d8c5b3",
+                gridArea: "preview",
                 borderRadius: "30px",
                 padding: "18px",
                 boxShadow: "0 18px 42px rgba(75,46,31,0.10)",
@@ -8194,22 +8187,24 @@ const welcomeBoardNameStyle = {
               </h3>
 
               <div
-                id="welcome-print-area"
-                style={{
-                  width: "100%",
-                  aspectRatio: "297 / 210",
-                  background: "white",
-                  borderRadius: "18px",
-                  border: "1px dashed #d8c5b3",
-                  padding: "14px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "1cm",
-                  overflow: "hidden",
-                  boxSizing: "border-box",
-                }}
-              >
+  id="welcome-print-area"
+  style={{
+    width: "100%",
+    maxWidth: "360px",
+    margin: "0 auto",
+    aspectRatio: "297 / 210",
+    background: "#fffaf6",
+    borderRadius: "20px",
+    border: "1px dashed #d8c5b3",
+    padding: "10px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "8px",
+    overflow: "hidden",
+    boxSizing: "border-box",
+  }}
+>
                 {savedWelcomeBoards.length === 0 ? (
                   <div
                     style={{
@@ -8235,19 +8230,22 @@ const welcomeBoardNameStyle = {
                         className="no-print"
                         onClick={() => removeSavedWelcomeBoard(board.id)}
                         style={{
-                          position: "absolute",
-                          top: "-10px",
-                          left: "-10px",
-                          border: "none",
-                          background: "#9f3b32",
-                          color: "white",
-                          borderRadius: "50%",
-                          width: "28px",
-                          height: "28px",
-                          cursor: "pointer",
-                          fontWeight: "bold",
-                          boxShadow: "0 8px 18px rgba(159,59,50,0.25)",
-                        }}
+  position: "absolute",
+  top: "4px",
+  left: "4px",
+  border: "none",
+  background: "#9f3b32",
+  color: "white",
+  borderRadius: "50%",
+  width: "20px",
+  height: "20px",
+  fontSize: "11px",
+  lineHeight: "20px",
+  padding: "0",
+  cursor: "pointer",
+  fontWeight: "bold",
+  boxShadow: "0 4px 10px rgba(159,59,50,0.20)",
+}}
                       >
                         ×
                       </button>
@@ -10077,7 +10075,7 @@ if (!isLoggedIn) {
             marginBottom: "32px",
           }}
         >
-          <img src={logo} alt="logo" style={{ width: "105px", marginBottom: "12px" }} />
+          <img src={logo} alt="logo" style={{ width: "100px", marginBottom: "14px" }} />
           <h2 style={{ margin: 25, fontSize: "28px", color: "#4b2e1f" }}>المواعيد</h2>
         </div>
 
@@ -10164,10 +10162,7 @@ if (!isLoggedIn) {
             <img
               src={logo}
               alt="logo"
-              style={{
-                width: "105px",
-                marginBottom: "10px",
-              }}
+              style={{ width: "100px", marginBottom: "14px" }}
             />
 
             <h2
@@ -12076,7 +12071,9 @@ if (screen === "finance") {
       </div>
     );
   }
-
+if (screen === "printFrame") {
+  return withGreeting(renderWelcomeBoardsPage());
+}
   if (screen === "settings") {
     return withGreeting(renderSettingsScreen());
   }
@@ -13155,20 +13152,11 @@ if (screen === "potentialClients") {
           textAlign: "center",
         }}
       >
-        <button
-          onClick={() => setScreen("dashboard")}
-          style={{
-            ...buttonStyle,
-            backgroundColor: "#faf7f2",
-            color: "#4b2e1f",
-            border: "1px solid #d6c7b8",
-            padding: "9px 18px",
-            borderRadius: "16px",
-            marginBottom: "18px",
-          }}
-        >
-          Back
-        </button>
+        <img
+            src={logo}
+            alt="logo"
+            style={{ width: "100px", marginBottom: "14px" }}
+          />
 
         <h2 style={{ margin: "0 0 8px", fontSize: "30px", color: "#4b2e1f" }}>
           المواعيد المتاحة
@@ -13409,9 +13397,7 @@ if (screen === "availableAppointments") {
     return renderAvailableAppointmentsPage();
   }
 
-  if (screen === "printFrame") {
-    return renderWelcomeBoardsPage();
-  }
+  
 
   if (screen === "clientProfile" && selectedClient) {
     return withGreeting(
@@ -14313,10 +14299,7 @@ width: "100%",
           <img
             src={logo}
             alt="logo"
-            style={{
-              width: "100px",
-              marginBottom: "15px",
-            }}
+            style={{ width: "100px", marginBottom: "14px" }}
           />
 
           <h2
@@ -14651,10 +14634,7 @@ width: "100%",
           <img
             src={logo}
             alt="logo"
-            style={{
-              width: "95px",
-              display: "block",
-            }}
+            style={{ width: "100px", marginBottom: "14px" }}
           />
         </div>
 
