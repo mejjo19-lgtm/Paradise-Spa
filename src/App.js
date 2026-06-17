@@ -2,6 +2,7 @@
 /* eslint-disable no-use-before-define */
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import html2canvas from "html2canvas";
 import logo from "./logo.png";
 
@@ -68,6 +69,10 @@ const [scheduleCopiedRow, setScheduleCopiedRow] = useState(null);
 const [scheduleUndoStack, setScheduleUndoStack] = useState([]);
 const [scheduleRedoStack, setScheduleRedoStack] = useState([]);
 const [additionalClientModal, setAdditionalClientModal] = useState(null);
+
+// نافذة اختيار العميلة عند وجود رقم جوال مكرر
+const [duplicateClientModal, setDuplicateClientModal] = useState(null);
+const [duplicateClientSearch, setDuplicateClientSearch] = useState("");
 
 // نافذة ربط موعد Gift Done بسجل الهدية الصحيح
 const [giftDoneLinkModal, setGiftDoneLinkModal] = useState(null);
@@ -183,9 +188,50 @@ const [savedWelcomeBoards, setSavedWelcomeBoards] = useState([]);
   const [clients, setClients] = useState([]);
   const [clientsVisibleCount, setClientsVisibleCount] = useState(15);
   const [loyaltyVisibleCount, setLoyaltyVisibleCount] = useState(15);
-const [giftVisibleCount, setGiftVisibleCount] = useState(15);
+  const [giftVisibleCount, setGiftVisibleCount] = useState(15);
   const [referralsVisibleCount, setReferralsVisibleCount] = useState(15);
   const [potentialVisibleCount, setPotentialVisibleCount] = useState(15);
+
+  // صفحة العملاء المنقطعين
+  const [
+    inactiveClientsVisibleCount,
+    setInactiveClientsVisibleCount,
+  ] = useState(15);
+
+  const [
+    inactiveClientsSearch,
+    setInactiveClientsSearch,
+  ] = useState("");
+
+  const [
+    inactiveClientsTab,
+    setInactiveClientsTab,
+  ] = useState("confirmed");
+
+  const [
+    inactiveClientsDays,
+    setInactiveClientsDays,
+  ] = useState("60");
+
+  const [
+    inactiveFutureClientIds,
+    setInactiveFutureClientIds,
+  ] = useState([]);
+
+  const [
+    inactiveFutureAppointmentsLoading,
+    setInactiveFutureAppointmentsLoading,
+  ] = useState(false);
+
+  const [
+    inactiveServiceHistoryByClientId,
+    setInactiveServiceHistoryByClientId,
+  ] = useState({});
+
+  const [
+    inactiveServiceHistoryLoading,
+    setInactiveServiceHistoryLoading,
+  ] = useState(false);
 
   const getDisplayNameFromEmail = (email) => {
     const userKey = String(email || "").split("@")[0].toLowerCase();
@@ -356,7 +402,21 @@ useEffect(() => {
 }, [authReady, isLoggedIn]);
 
 useEffect(() => {
-  window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  window.scrollTo({
+    top: 0,
+    left: 0,
+    behavior: "instant",
+  });
+}, [screen]);
+
+useEffect(() => {
+  if (screen !== "inactiveClients") {
+    return;
+  }
+
+  setInactiveClientsTab("confirmed");
+  setInactiveClientsSearch("");
+  setInactiveClientsVisibleCount(15);
 }, [screen]);
 
 useEffect(() => {
@@ -388,8 +448,12 @@ const normalizeClientRecord = (client) => ({
   frame: Boolean(client.frame),
   blacklist: Boolean(client.blacklist),
   notes: client.notes || "",
+  last_order_at: client.last_order_at || "",
   last_activity_at: client.last_activity_at || "",
-  referrals: Array.isArray(client.referrals) ? client.referrals : [],
+  last_contacted_at: client.last_contacted_at || "",
+  referrals: Array.isArray(client.referrals)
+    ? client.referrals
+    : [],
 });
 
 const CLIENTS_CACHE_KEY = "paradise-clients-cache";
@@ -448,7 +512,9 @@ async function fetchClientsWithSupabaseClient() {
     const to = from + pageSize - 1;
     const { data, error } = await supabase
       .from("clients")
-      .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_activity_at")
+      .select(
+        "id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at"
+      )
       .order("id", { ascending: false })
       .range(from, to);
 
@@ -473,7 +539,7 @@ async function fetchClientsWithRestApi() {
 
   while (hasMore) {
     const response = await fetch(
-      `${supabaseUrl}/rest/v1/clients?select=id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_activity_at&order=id.desc&limit=${pageSize}&offset=${offset}`,
+      `${supabaseUrl}/rest/v1/clients?select=id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at&order=id.desc&limit=${pageSize}&offset=${offset}`,
       {
         headers: {
           apikey: supabaseKey,
@@ -802,22 +868,54 @@ function fetchSharedClientLists() {
   });
 
   const [selectedFinanceMonth, setSelectedFinanceMonth] = useState("2026-05");
+
   const getDefaultIncomeExpensesFromMonth = () => {
-  const now = new Date();
-  now.setMonth(now.getMonth() - 2);
+    const now = new Date();
+    now.setMonth(now.getMonth() - 2);
 
-  return now.toISOString().slice(0, 7);
-};
+    return now.toISOString().slice(0, 7);
+  };
 
-const [incomeExpensesFromMonth, setIncomeExpensesFromMonth] = useState(
-  getDefaultIncomeExpensesFromMonth()
-);
-  const [incomeExpensesToMonth, setIncomeExpensesToMonth] = useState(() => getCurrentLocalDate().slice(0, 7));
+  const [incomeExpensesFromMonth, setIncomeExpensesFromMonth] = useState(
+    getDefaultIncomeExpensesFromMonth()
+  );
+
+  const [incomeExpensesToMonth, setIncomeExpensesToMonth] = useState(
+    () => getCurrentLocalDate().slice(0, 7)
+  );
+
   const [incomeExpensesEditMode, setIncomeExpensesEditMode] = useState(false);
+
   const [financeMonthlySettings, setFinanceMonthlySettings] = useState(() => {
-    const savedSettings = localStorage.getItem("paradise-finance-monthly-settings");
+    const savedSettings = localStorage.getItem(
+      "paradise-finance-monthly-settings"
+    );
+
     return savedSettings ? JSON.parse(savedSettings) : {};
   });
+
+  // صفحة الفواتير
+  const [invoices, setInvoices] = useState([]);
+
+  const [invoicesLoading, setInvoicesLoading] = useState(false);
+
+  const [invoicesError, setInvoicesError] = useState("");
+
+  const [invoicesSearch, setInvoicesSearch] = useState("");
+
+  const [invoicesFromDate, setInvoicesFromDate] = useState(
+    () => `${getCurrentLocalDate().slice(0, 7)}-01`
+  );
+
+  const [invoicesToDate, setInvoicesToDate] = useState(
+    () => getCurrentLocalDate()
+  );
+
+  const [invoicesVisibleCount, setInvoicesVisibleCount] = useState(20);
+
+  const [selectedInvoice, setSelectedInvoice] = useState(null);
+
+  const [invoicesPdfBusy, setInvoicesPdfBusy] = useState(false);
 
   const [sharedDataLoaded, setSharedDataLoaded] = useState(false);
 
@@ -896,83 +994,210 @@ const [incomeExpensesFromMonth, setIncomeExpensesFromMonth] = useState(
   const saveSharedData = async (dataKey, dataValue) => {
     if (!sharedDataKeys.includes(dataKey)) return;
 
-    saveSharedDataLocalBackup(dataKey, dataValue, "before-save-local");
+    saveSharedDataLocalBackup(
+      dataKey,
+      dataValue,
+      "before-save-local"
+    );
 
-    const metaKey = getSharedDataMetaKey(dataKey);
-    const backupKey = getSharedDataBackupKey(dataKey);
+    const metaKey =
+      getSharedDataMetaKey(dataKey);
 
-    const { data: existingRows, error: loadError } = await supabase
+    const backupKey =
+      getSharedDataBackupKey(dataKey);
+
+    const {
+      data: existingRows,
+      error: loadError,
+    } = await supabase
       .from("app_data")
       .select("data_key, data")
-      .in("data_key", [dataKey, metaKey]);
+      .in(
+        "data_key",
+        [dataKey, metaKey]
+      );
 
     if (loadError) {
-      console.log("Shared data pre-save check error:", loadError);
+      console.log(
+        "Shared data pre-save check error:",
+        loadError
+      );
+
       return;
     }
 
-    const existingDataRow = existingRows?.find((row) => row.data_key === dataKey);
-    const existingMetaRow = existingRows?.find((row) => row.data_key === metaKey);
-    const remoteMeta = existingMetaRow?.data || {};
-    const knownMeta = sharedDataMetaRef.current[dataKey] || {};
-    const remoteUpdatedAt = Number(remoteMeta.updatedAt || 0);
-    const knownUpdatedAt = Number(knownMeta.updatedAt || 0);
-    const remoteDeviceId = remoteMeta.deviceId || "";
+    const existingDataRow =
+      existingRows?.find(
+        (row) =>
+          row.data_key === dataKey
+      );
+
+    const existingMetaRow =
+      existingRows?.find(
+        (row) =>
+          row.data_key === metaKey
+      );
+
+    const remoteData =
+      existingDataRow?.data;
+
+    const remoteMeta =
+      existingMetaRow?.data || {};
+
+    const knownMeta =
+      sharedDataMetaRef.current[
+        dataKey
+      ] || {};
+
+    const remoteUpdatedAt =
+      Number(
+        remoteMeta.updatedAt || 0
+      );
+
+    const knownUpdatedAt =
+      Number(
+        knownMeta.updatedAt || 0
+      );
+
+    const remoteDeviceId =
+      remoteMeta.deviceId || "";
+
+    const localLastEditAt =
+      Number(
+        getSharedDataLastEditTime(
+          dataKey
+        ) || 0
+      );
+
+    const remoteDataMatchesLocal =
+      JSON.stringify(
+        remoteData ?? null
+      ) ===
+      JSON.stringify(
+        dataValue ?? null
+      );
+
+    if (remoteDataMatchesLocal) {
+      sharedDataMetaRef.current[
+        dataKey
+      ] = remoteMeta;
+
+      return;
+    }
+
+    const remoteDataIsNewer =
+      remoteUpdatedAt >
+      knownUpdatedAt;
+
+    const remoteCameFromAnotherDevice =
+      Boolean(remoteDeviceId) &&
+      remoteDeviceId !==
+        sharedDataDeviceIdRef.current;
+
+    const localEditIsNotNewer =
+      localLastEditAt <=
+      remoteUpdatedAt;
 
     if (
-      remoteUpdatedAt > knownUpdatedAt &&
-      remoteDeviceId &&
-      remoteDeviceId !== sharedDataDeviceIdRef.current
+      remoteDataIsNewer &&
+      remoteCameFromAnotherDevice &&
+      localEditIsNotNewer
     ) {
-      saveSharedDataLocalBackup(dataKey, dataValue, "blocked-stale-overwrite");
+      sharedDataMetaRef.current[
+        dataKey
+      ] = remoteMeta;
+
+      saveSharedDataLocalBackup(
+        dataKey,
+        dataValue,
+        "blocked-stale-overwrite"
+      );
+
       console.log(
         `Blocked stale ${dataKey} save to protect newer Supabase data. Refresh/load the latest data before saving again.`
       );
+
       return;
     }
-
-
 
     const nextMeta = {
       dataKey,
-      updatedAt: Date.now(),
-      updatedAtIso: new Date().toISOString(),
-      deviceId: sharedDataDeviceIdRef.current,
-      lastLocalEditAt: getSharedDataLastEditTime(dataKey),
+
+      updatedAt:
+        Date.now(),
+
+      updatedAtIso:
+        new Date().toISOString(),
+
+      deviceId:
+        sharedDataDeviceIdRef.current,
+
+      lastLocalEditAt:
+        localLastEditAt,
     };
 
-    const { error } = await supabase
-      .from("app_data")
-      .upsert(
-        {
-          data_key: dataKey,
-          data: dataValue,
-        },
-        { onConflict: "data_key" }
-      );
+    const { error } =
+      await supabase
+        .from("app_data")
+        .upsert(
+          {
+            data_key:
+              dataKey,
+
+            data:
+              dataValue,
+          },
+          {
+            onConflict:
+              "data_key",
+          }
+        );
 
     if (error) {
-      console.log("Shared data save error:", error);
+      console.log(
+        "Shared data save error:",
+        error
+      );
+
       return;
     }
 
-    const { error: metaError } = await supabase
+    const {
+      error: metaError,
+    } = await supabase
       .from("app_data")
       .upsert(
         {
-          data_key: metaKey,
-          data: nextMeta,
+          data_key:
+            metaKey,
+
+          data:
+            nextMeta,
         },
-        { onConflict: "data_key" }
+        {
+          onConflict:
+            "data_key",
+        }
       );
 
     if (metaError) {
-      console.log("Shared data meta save error:", metaError);
+      console.log(
+        "Shared data meta save error:",
+        metaError
+      );
+
       return;
     }
 
-    sharedDataMetaRef.current[dataKey] = nextMeta;
-    saveSharedDataLocalBackup(dataKey, dataValue, "after-save-success");
+    sharedDataMetaRef.current[
+      dataKey
+    ] = nextMeta;
+
+    saveSharedDataLocalBackup(
+      dataKey,
+      dataValue,
+      "after-save-success"
+    );
   };
 
   const loadSharedData = async () => {
@@ -1300,6 +1525,428 @@ useEffect(() => {
   selectedFinanceMonth,
 ]);
 
+
+const normalizeInvoiceRecord = (invoice) => ({
+  id: invoice.id,
+
+  invoiceNumber: Number(
+    invoice.invoice_number || 0
+  ),
+
+  invoiceCode:
+    invoice.invoice_code || "",
+
+  documentType:
+    invoice.document_type || "invoice",
+
+  status:
+    invoice.status || "issued",
+
+  sourceServiceKey:
+    invoice.source_service_key || "",
+
+  scheduleRowId:
+    invoice.schedule_row_id || "",
+
+  scheduleDate:
+    invoice.schedule_date || "",
+
+  scheduleRowIndex: Number(
+    invoice.schedule_row_index || 0
+  ),
+
+  householdRole:
+    invoice.household_role || "primary",
+
+  householdClientKey:
+    invoice.household_client_key || "",
+
+  clientId:
+    invoice.client_id || "",
+
+  clientName:
+    invoice.client_name || "",
+
+  clientPhone:
+    invoice.client_phone || "",
+
+  serviceName:
+    invoice.service_name || "",
+
+  serviceTime:
+    invoice.service_time || "",
+
+  paymentMethod:
+    invoice.payment_method || "",
+
+  serviceAmountIncludingVat: Number(
+    invoice.service_amount_including_vat || 0
+  ),
+
+  transportationAmountIncludingVat: Number(
+    invoice.transportation_amount_including_vat || 0
+  ),
+
+  totalIncludingVat: Number(
+    invoice.total_including_vat || 0
+  ),
+
+  subtotalExcludingVat: Number(
+    invoice.subtotal_excluding_vat || 0
+  ),
+
+  vatRate: Number(
+    invoice.vat_rate || 15
+  ),
+
+  vatAmount: Number(
+    invoice.vat_amount || 0
+  ),
+
+  issuedAt:
+    invoice.issued_at || "",
+
+  originalInvoiceId:
+    invoice.original_invoice_id || "",
+
+  createdAt:
+    invoice.created_at || "",
+
+  updatedAt:
+    invoice.updated_at || "",
+});
+
+
+const isInvoiceInsideDateRange = (
+  invoice,
+  fromDate,
+  toDate
+) => {
+  const invoiceDate =
+    String(
+      invoice?.scheduleDate || ""
+    ).slice(0, 10);
+
+  if (!invoiceDate) return false;
+
+  if (
+    fromDate &&
+    invoiceDate < fromDate
+  ) {
+    return false;
+  }
+
+  if (
+    toDate &&
+    invoiceDate > toDate
+  ) {
+    return false;
+  }
+
+  return true;
+};
+
+
+const mergeInvoicesById = (
+  currentInvoices,
+  nextInvoices
+) => {
+  const invoiceMap = new Map();
+
+  [
+    ...(currentInvoices || []),
+    ...(nextInvoices || []),
+  ].forEach((invoice) => {
+    if (!invoice?.id) return;
+
+    invoiceMap.set(
+      String(invoice.id),
+      invoice
+    );
+  });
+
+  return Array.from(
+    invoiceMap.values()
+  ).sort(
+    (firstInvoice, secondInvoice) =>
+      Number(
+        secondInvoice.invoiceNumber || 0
+      ) -
+      Number(
+        firstInvoice.invoiceNumber || 0
+      )
+  );
+};
+
+
+useEffect(() => {
+  if (
+    !isLoggedIn ||
+    screen !== "invoices"
+  ) {
+    return undefined;
+  }
+
+  let effectActive = true;
+
+  const loadInvoicesForSelectedRange =
+    async () => {
+      setInvoicesLoading(true);
+      setInvoicesError("");
+
+      try {
+        const pageSize = 1000;
+        let fromIndex = 0;
+        let hasMore = true;
+        let loadedInvoices = [];
+
+        while (
+          hasMore &&
+          effectActive
+        ) {
+          const toIndex =
+            fromIndex +
+            pageSize -
+            1;
+
+          const {
+            data,
+            error,
+          } = await supabase
+            .from("invoices")
+            .select(
+              [
+                "id",
+                "invoice_number",
+                "invoice_code",
+                "document_type",
+                "status",
+                "source_service_key",
+                "schedule_row_id",
+                "schedule_date",
+                "schedule_row_index",
+                "household_role",
+                "household_client_key",
+                "client_id",
+                "client_name",
+                "client_phone",
+                "service_name",
+                "service_time",
+                "payment_method",
+                "service_amount_including_vat",
+                "transportation_amount_including_vat",
+                "total_including_vat",
+                "subtotal_excluding_vat",
+                "vat_rate",
+                "vat_amount",
+                "issued_at",
+                "original_invoice_id",
+                "created_at",
+                "updated_at",
+              ].join(",")
+            )
+            .gte(
+              "schedule_date",
+              invoicesFromDate
+            )
+            .lte(
+              "schedule_date",
+              invoicesToDate
+            )
+            .order(
+              "invoice_number",
+              {
+                ascending: false,
+              }
+            )
+            .range(
+              fromIndex,
+              toIndex
+            );
+
+          if (error) {
+            throw error;
+          }
+
+          const normalizedPage =
+            (data || []).map(
+              normalizeInvoiceRecord
+            );
+
+          loadedInvoices = [
+            ...loadedInvoices,
+            ...normalizedPage,
+          ];
+
+          hasMore =
+            normalizedPage.length ===
+            pageSize;
+
+          fromIndex += pageSize;
+        }
+
+        if (!effectActive) return;
+
+        setInvoices((previousInvoices) => {
+          const currentRangeInvoices =
+            previousInvoices.filter(
+              (invoice) =>
+                isInvoiceInsideDateRange(
+                  invoice,
+                  invoicesFromDate,
+                  invoicesToDate
+                )
+            );
+
+          return mergeInvoicesById(
+            currentRangeInvoices,
+            loadedInvoices
+          );
+        });
+
+        setInvoicesVisibleCount(20);
+      } catch (error) {
+        console.error(
+          "Invoices load error:",
+          error
+        );
+
+        if (effectActive) {
+          setInvoicesError(
+            "تعذر تحميل الفواتير. تأكد من الاتصال وحاول مرة أخرى."
+          );
+        }
+      } finally {
+        if (effectActive) {
+          setInvoicesLoading(false);
+        }
+      }
+    };
+
+  const invoicesChannel =
+    supabase
+      .channel(
+        "invoices-page-sync"
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "invoices",
+        },
+        (payload) => {
+          if (
+            payload.eventType ===
+            "DELETE"
+          ) {
+            const removedInvoiceId =
+              payload.old?.id;
+
+            if (!removedInvoiceId) {
+              return;
+            }
+
+            setInvoices(
+              (previousInvoices) =>
+                previousInvoices.filter(
+                  (invoice) =>
+                    String(invoice.id) !==
+                    String(
+                      removedInvoiceId
+                    )
+                )
+            );
+
+            return;
+          }
+
+          if (!payload.new) return;
+
+          const nextInvoice =
+            normalizeInvoiceRecord(
+              payload.new
+            );
+
+          setInvoices(
+            (previousInvoices) => {
+              const withoutChangedInvoice =
+                previousInvoices.filter(
+                  (invoice) =>
+                    String(invoice.id) !==
+                    String(
+                      nextInvoice.id
+                    )
+                );
+
+              if (
+                !isInvoiceInsideDateRange(
+                  nextInvoice,
+                  invoicesFromDate,
+                  invoicesToDate
+                )
+              ) {
+                return withoutChangedInvoice;
+              }
+
+              return mergeInvoicesById(
+                withoutChangedInvoice,
+                [nextInvoice]
+              );
+            }
+          );
+
+          setSelectedInvoice(
+            (currentInvoice) =>
+              String(
+                currentInvoice?.id || ""
+              ) ===
+              String(
+                nextInvoice.id
+              )
+                ? nextInvoice
+                : currentInvoice
+          );
+        }
+      )
+      .subscribe(
+        (status) => {
+          if (
+            status ===
+            "CHANNEL_ERROR"
+          ) {
+            console.error(
+              "Invoices realtime channel error"
+            );
+          }
+
+          if (
+            status ===
+            "TIMED_OUT"
+          ) {
+            console.error(
+              "Invoices realtime channel timed out"
+            );
+          }
+        }
+      );
+
+  loadInvoicesForSelectedRange();
+
+  return () => {
+    effectActive = false;
+
+    supabase.removeChannel(
+      invoicesChannel
+    );
+  };
+}, [
+  isLoggedIn,
+  screen,
+  invoicesFromDate,
+  invoicesToDate,
+]);
+
   const [editingId, setEditingId] = useState(null);
   const [editedName, setEditedName] = useState("");
   const [editedPhone, setEditedPhone] = useState("");
@@ -1397,7 +2044,7 @@ useEffect(() => {
     total_paid: 0,
     service_history: [],
   },
-]).select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_activity_at").single();
+]).select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at").single();
 
 if (error) {
   console.error("ADD CLIENT ERROR:", error);
@@ -1449,7 +2096,7 @@ const { data: updatedClient, error } = await supabase
     address: editedAddress,
   })
   .eq("id", id)
-  .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_activity_at")
+  .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at")
   .single();
 
 if (error) {
@@ -1751,7 +2398,7 @@ loadClientScheduleHistory(fullClient?.phone || client.phone);
     .from("clients")
     .update({ visits: newVisits })
     .eq("id", id)
-    .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_activity_at")
+    .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at")
     .single();
 
   if (error) {
@@ -1776,7 +2423,7 @@ loadClientScheduleHistory(fullClient?.phone || client.phone);
     .from("clients")
     .update({ visits: newVisits })
     .eq("id", id)
-    .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_activity_at")
+    .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at")
     .single();
 
   if (error) {
@@ -1824,7 +2471,7 @@ const updateClientLastActivity = async (id) => {
       .from("clients")
       .update({ frame: frameValue })
       .eq("id", id)
-      .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_activity_at")
+      .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at")
       .single();
 
     if (error) {
@@ -1882,6 +2529,7 @@ const updateClientLastActivity = async (id) => {
   // 📅 SCHEDULE OPTIONS
   const appointmentStatuses = [
     "",
+    "تمت الخدمة",
     "Gift Giver",
     "Gift Done",
     "Not Sure",
@@ -1901,6 +2549,7 @@ const updateClientLastActivity = async (id) => {
   ];
 
   const statusColors = {
+    "تمت الخدمة": "#bfe3c8",
     "Gift Giver": "#e6b8df",
     "Gift Done": "#b7e4f2",
     "Not Sure": "#d8c5b3",
@@ -1989,6 +2638,10 @@ const stepScheduleOrder = (rowIndex, currentOrder, direction) => {
     driver: "",
     therapist: "",
     district: "",
+
+    // رقم سجل العميلة الحقيقي لمنع الخلط عند تكرار رقم الجوال
+    clientId: "",
+
     client: "",
     frame: false,
     order: "",
@@ -2553,18 +3206,502 @@ return next;
     return String(phoneNumber || "").replace(/\D/g, "");
   };
 
-  const findClientByExactPhone = (phoneNumber) => {
-    const normalizedPhone = normalizePhone(phoneNumber);
-
-    if (normalizedPhone.length < 9) return null;
-
-    return clients.find(
-      (client) =>
-        normalizePhone(client.phone) === normalizedPhone ||
-        normalizePhone(formatSaudiPhoneForStorage(client.phone)) === normalizedPhone ||
-        normalizePhone(client.phone) === normalizePhone(formatSaudiPhoneForStorage(phoneNumber))
+  const findClientsByExactPhone = (phoneNumber) => {
+    const normalizedPhone = normalizePhone(
+      formatSaudiPhoneForStorage(phoneNumber)
     );
+
+    if (normalizedPhone.length < 9) return [];
+
+    return clients.filter((client) => {
+      const normalizedClientPhone = normalizePhone(
+        formatSaudiPhoneForStorage(client.phone)
+      );
+
+      return normalizedClientPhone === normalizedPhone;
+    });
   };
+
+  const findClientByExactPhone = (phoneNumber) => {
+    const matchedClients =
+      findClientsByExactPhone(phoneNumber);
+
+    return matchedClients[0] || null;
+  };
+
+  const loadInactiveFutureAppointments = async () => {
+    if (!isLoggedIn) return;
+
+    setInactiveFutureAppointmentsLoading(true);
+
+    try {
+      const todayKey =
+        getCurrentLocalDate();
+
+      const pageSize = 1000;
+      let allFutureRows = [];
+      let from = 0;
+      let hasMore = true;
+
+      while (hasMore) {
+        const to =
+          from + pageSize - 1;
+
+        const {
+          data,
+          error,
+        } = await supabase
+          .from("schedule_rows")
+          .select(
+            "schedule_date,row_data"
+          )
+          .gte(
+            "schedule_date",
+            todayKey
+          )
+          .order(
+            "schedule_date",
+            { ascending: true }
+          )
+          .range(from, to);
+
+        if (error) {
+          throw error;
+        }
+
+        const pageRows =
+          data || [];
+
+        allFutureRows = [
+          ...allFutureRows,
+          ...pageRows,
+        ];
+
+        hasMore =
+          pageRows.length === pageSize;
+
+        from += pageSize;
+      }
+
+      const futureClientIds =
+        new Set();
+
+      const excludedStatuses = [
+        "Cancel",
+        "Postponed",
+        "Gift Giver",
+      ];
+
+      const addMatchedClient = (
+        clientId,
+        phoneNumber
+      ) => {
+        if (clientId) {
+          futureClientIds.add(
+            String(clientId)
+          );
+
+          return;
+        }
+
+        const matchedClients =
+          findClientsByExactPhone(
+            phoneNumber || ""
+          );
+
+        if (matchedClients.length === 1) {
+          futureClientIds.add(
+            String(
+              matchedClients[0].id
+            )
+          );
+        }
+      };
+
+      allFutureRows.forEach(
+        (scheduleRow) => {
+          const row =
+            scheduleRow.row_data || {};
+
+          const primaryStatus =
+            row.status || "";
+
+          if (
+            !excludedStatuses.includes(
+              primaryStatus
+            )
+          ) {
+            addMatchedClient(
+              row.clientId,
+              row.number
+            );
+          }
+
+          const additionalClients =
+            Array.isArray(
+              row.additionalClients
+            )
+              ? row.additionalClients
+              : [];
+
+          additionalClients.forEach(
+            (extraClient) => {
+              const extraStatus =
+                extraClient.status ||
+                primaryStatus;
+
+              if (
+                excludedStatuses.includes(
+                  extraStatus
+                )
+              ) {
+                return;
+              }
+
+              addMatchedClient(
+                extraClient.clientId,
+                extraClient.phone
+              );
+            }
+          );
+        }
+      );
+
+      setInactiveFutureClientIds(
+        Array.from(futureClientIds)
+      );
+    } catch (error) {
+      console.log(
+        "Inactive clients future appointments load error:",
+        error
+      );
+
+      setInactiveFutureClientIds([]);
+    } finally {
+      setInactiveFutureAppointmentsLoading(
+        false
+      );
+    }
+  };
+
+  const loadInactiveServiceHistory =
+    async () => {
+      if (!isLoggedIn) return;
+
+      setInactiveServiceHistoryLoading(
+        true
+      );
+
+      try {
+        const todayKey =
+          getCurrentLocalDate();
+
+        const pageSize = 1000;
+        let allHistoryRows = [];
+        let from = 0;
+        let hasMore = true;
+
+        while (hasMore) {
+          const to =
+            from + pageSize - 1;
+
+          const {
+            data,
+            error,
+          } = await supabase
+            .from("schedule_rows")
+            .select(
+              "schedule_date,row_data"
+            )
+            .lte(
+              "schedule_date",
+              todayKey
+            )
+            .order(
+              "schedule_date",
+              { ascending: true }
+            )
+            .range(from, to);
+
+          if (error) {
+            throw error;
+          }
+
+          const pageRows =
+            data || [];
+
+          allHistoryRows = [
+            ...allHistoryRows,
+            ...pageRows,
+          ];
+
+          hasMore =
+            pageRows.length === pageSize;
+
+          from += pageSize;
+        }
+
+        const historyByClientId = {};
+
+        const resolveHistoryClientId = (
+          clientId,
+          phoneNumber
+        ) => {
+          if (clientId) {
+            return String(clientId);
+          }
+
+          const matchedClients =
+            findClientsByExactPhone(
+              phoneNumber || ""
+            );
+
+          if (
+            matchedClients.length === 1
+          ) {
+            return String(
+              matchedClients[0].id
+            );
+          }
+
+          return "";
+        };
+
+        const registerServiceHistory = (
+          clientId,
+          phoneNumber,
+          serviceDate
+        ) => {
+          const resolvedClientId =
+            resolveHistoryClientId(
+              clientId,
+              phoneNumber
+            );
+
+          if (
+            !resolvedClientId ||
+            !serviceDate
+          ) {
+            return;
+          }
+
+          const currentHistory =
+            historyByClientId[
+              resolvedClientId
+            ];
+
+          if (!currentHistory) {
+            historyByClientId[
+              resolvedClientId
+            ] = {
+              lastOrderAt:
+                serviceDate,
+              serviceCount: 1,
+            };
+
+            return;
+          }
+
+          historyByClientId[
+            resolvedClientId
+          ] = {
+            lastOrderAt:
+              serviceDate >
+              currentHistory.lastOrderAt
+                ? serviceDate
+                : currentHistory.lastOrderAt,
+            serviceCount:
+              Number(
+                currentHistory.serviceCount ||
+                  0
+              ) + 1,
+          };
+        };
+
+        allHistoryRows.forEach(
+          (scheduleRow) => {
+            const row =
+              scheduleRow.row_data || {};
+
+            const serviceDate =
+              scheduleRow.schedule_date;
+
+            const primaryStatus =
+              row.status || "";
+
+            const primaryHasService =
+              Boolean(
+                String(
+                  row.services ||
+                    row.service ||
+                    ""
+                ).trim() ||
+                  String(
+                    row.order || ""
+                  ).trim() ||
+                  String(
+                    row.therapist || ""
+                  ).trim() ||
+                  String(
+                    row.serviceAmount || ""
+                  ).trim()
+              );
+
+            if (
+              primaryHasService &&
+              !excludedFromProfileHistoryStatuses.includes(
+                primaryStatus
+              )
+            ) {
+              registerServiceHistory(
+                row.clientId,
+                row.number,
+                serviceDate
+              );
+            }
+
+            const additionalClients =
+              Array.isArray(
+                row.additionalClients
+              )
+                ? row.additionalClients
+                : [];
+
+            additionalClients.forEach(
+              (extraClient) => {
+                const extraStatus =
+                  extraClient.status ||
+                  primaryStatus;
+
+                const extraHasService =
+                  Boolean(
+                    String(
+                      extraClient.service ||
+                        extraClient.services ||
+                        ""
+                    ).trim() ||
+                      String(
+                        extraClient.order ||
+                          ""
+                      ).trim() ||
+                      String(
+                        extraClient.therapist ||
+                          ""
+                      ).trim() ||
+                      String(
+                        extraClient.serviceAmount ||
+                          ""
+                      ).trim()
+                  );
+
+                if (
+                  !extraHasService ||
+                  excludedFromProfileHistoryStatuses.includes(
+                    extraStatus
+                  )
+                ) {
+                  return;
+                }
+
+                registerServiceHistory(
+                  extraClient.clientId,
+                  extraClient.phone,
+                  serviceDate
+                );
+              }
+            );
+          }
+        );
+
+        setInactiveServiceHistoryByClientId(
+          historyByClientId
+        );
+      } catch (error) {
+        console.log(
+          "Inactive clients service history load error:",
+          error
+        );
+
+        setInactiveServiceHistoryByClientId(
+          {}
+        );
+      } finally {
+        setInactiveServiceHistoryLoading(
+          false
+        );
+      }
+    };
+
+  useEffect(() => {
+    if (
+      !isLoggedIn ||
+      screen !== "inactiveClients"
+    ) {
+      return undefined;
+    }
+
+    let futureAppointmentsRefreshTimer =
+      null;
+
+    const refreshFutureAppointments =
+      () => {
+        if (
+          futureAppointmentsRefreshTimer
+        ) {
+          clearTimeout(
+            futureAppointmentsRefreshTimer
+          );
+        }
+
+        futureAppointmentsRefreshTimer =
+          setTimeout(() => {
+            loadInactiveFutureAppointments();
+          }, 1500);
+      };
+
+    // يتم الفحص الكامل مرة واحدة فقط
+    // عند فتح الصفحة، وليس بعد كل تعديل.
+    loadInactiveFutureAppointments();
+    loadInactiveServiceHistory();
+
+    const inactiveClientsChannel =
+      supabase
+        .channel(
+          "inactive-clients-schedule-sync"
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "schedule_rows",
+          },
+          () => {
+            // تحديث خفيف للمواعيد القادمة فقط.
+            // آخر طلب يتحدث من قناة clients-sync
+            // الموجودة أصلًا في النظام.
+            refreshFutureAppointments();
+          }
+        )
+        .subscribe();
+
+    return () => {
+      if (
+        futureAppointmentsRefreshTimer
+      ) {
+        clearTimeout(
+          futureAppointmentsRefreshTimer
+        );
+      }
+
+      supabase.removeChannel(
+        inactiveClientsChannel
+      );
+    };
+  }, [
+    isLoggedIn,
+    screen,
+  ]);
 const getScheduleClientBadges = (row) => {
   const client = findClientByExactPhone(row?.number || "");
 
@@ -2981,20 +4118,81 @@ const getScheduleClientBadges = (row) => {
     };
   };
 
-  const getScheduleEditableProps = (rowIndex, field) => ({
-    "data-schedule-cell": `${rowIndex}-${field}`,
-    onFocus: () => {
-      scheduleLastEditRef.current = Date.now();
+  const getScheduleEditableProps = (rowIndex, field) => {
+    const currentDayData =
+      scheduleData[selectedScheduleDate] || {};
 
-      if (scheduleSelectingRef.current) {
-        setScheduleActiveCell({ row: rowIndex, field });
-        return;
-      }
+    const currentRows =
+      currentDayData.rows ||
+      timeSlots.map(
+        createEmptyAppointmentRow
+      );
 
-      moveScheduleActiveCell(rowIndex, field);
-    },
-    onKeyDown: (event) => handleScheduleCellKeyDown(event, rowIndex, field),
-  });
+    const currentRow =
+      currentRows[rowIndex] ||
+      createEmptyAppointmentRow(
+        timeSlots[rowIndex] || ""
+      );
+
+    const invoiceLockedFields = [
+      "serviceTime",
+      "client",
+      "number",
+      "services",
+      "transportation",
+      "serviceAmount",
+      "paymentMethod",
+    ];
+
+    const fieldLockedByInvoice =
+      Boolean(
+        currentRow.invoiceLinks?.primary
+      ) &&
+      invoiceLockedFields.includes(
+        field
+      );
+
+    return {
+      "data-schedule-cell":
+        `${rowIndex}-${field}`,
+
+      disabled:
+        fieldLockedByInvoice,
+
+      title:
+        fieldLockedByInvoice
+          ? "هذا الحقل مقفل لأن الفاتورة النهائية صدرت."
+          : undefined,
+
+      onFocus: () => {
+        scheduleLastEditRef.current =
+          Date.now();
+
+        if (
+          scheduleSelectingRef.current
+        ) {
+          setScheduleActiveCell({
+            row: rowIndex,
+            field,
+          });
+
+          return;
+        }
+
+        moveScheduleActiveCell(
+          rowIndex,
+          field
+        );
+      },
+
+      onKeyDown: (event) =>
+        handleScheduleCellKeyDown(
+          event,
+          rowIndex,
+          field
+        ),
+    };
+  };
 
   const getScheduleCellHandlers = (rowIndex, field) => ({
     onMouseDown: (event) => {
@@ -3114,42 +4312,163 @@ const getScheduleClientBadges = (row) => {
     scheduleResizeRef.current = null;
   };
 
-  const clearSelectedScheduleCells = () => {
-    const bounds = getScheduleSelectionBounds();
+    const clearSelectedScheduleCells = () => {
+    const bounds =
+      getScheduleSelectionBounds();
+
     if (!bounds) return;
 
-    scheduleLastEditRef.current = Date.now();
+    const currentDayData =
+      scheduleData[
+        selectedScheduleDate
+      ] || {};
+
+    const currentRows =
+      currentDayData.rows ||
+      timeSlots.map(
+        createEmptyAppointmentRow
+      );
+
+    const invoiceLockedFields = [
+      "status",
+      "serviceTime",
+      "client",
+      "number",
+      "services",
+      "transportation",
+      "serviceAmount",
+      "paymentMethod",
+    ];
+
+    const selectedFields =
+      scheduleSelectableFields.filter(
+        (field, fieldIndex) =>
+          fieldIndex >=
+            bounds.minField &&
+          fieldIndex <=
+            bounds.maxField
+      );
+
+    const selectionContainsLockedInvoiceCell =
+      currentRows.some(
+        (row, rowIndex) => {
+          if (
+            rowIndex <
+              bounds.minRow ||
+            rowIndex >
+              bounds.maxRow
+          ) {
+            return false;
+          }
+
+          const primaryInvoiceIssued =
+            Boolean(
+              row?.invoiceLinks
+                ?.primary
+            );
+
+          if (
+            !primaryInvoiceIssued
+          ) {
+            return false;
+          }
+
+          return selectedFields.some(
+            (field) =>
+              invoiceLockedFields.includes(
+                field
+              )
+          );
+        }
+      );
+
+    if (
+      selectionContainsLockedInvoiceCell
+    ) {
+      alert(
+        "لا يمكن مسح الخلايا المحددة لأن التحديد يشمل بيانات خدمة صدرت لها فاتورة نهائية."
+      );
+
+      return;
+    }
+
+    scheduleLastEditRef.current =
+      Date.now();
 
     const changedRowIndexes = [];
+
     let nextRowsSnapshot = [];
+
     let nextStylesSnapshot = {};
 
     setScheduleData((prev) => {
-      const currentDayData = prev[selectedScheduleDate] || {};
-      const currentRows = currentDayData.rows || timeSlots.map(createEmptyAppointmentRow);
+      const latestDayData =
+        prev[
+          selectedScheduleDate
+        ] || {};
 
-      const rows = currentRows.map((row, rowIndex) => {
-        if (rowIndex < bounds.minRow || rowIndex > bounds.maxRow) return row;
+      const latestRows =
+        latestDayData.rows ||
+        timeSlots.map(
+          createEmptyAppointmentRow
+        );
 
-        changedRowIndexes.push(rowIndex);
-        const updatedRow = { ...row };
+      const rows =
+        latestRows.map(
+          (row, rowIndex) => {
+            if (
+              rowIndex <
+                bounds.minRow ||
+              rowIndex >
+                bounds.maxRow
+            ) {
+              return row;
+            }
 
-        scheduleSelectableFields.forEach((field, fieldIndex) => {
-          if (fieldIndex < bounds.minField || fieldIndex > bounds.maxField) return;
+            changedRowIndexes.push(
+              rowIndex
+            );
 
-          updatedRow[field] = field === "frame" ? false : "";
-        });
+            const updatedRow = {
+              ...row,
+            };
 
-        return updatedRow;
-      });
+            scheduleSelectableFields.forEach(
+              (
+                field,
+                fieldIndex
+              ) => {
+                if (
+                  fieldIndex <
+                    bounds.minField ||
+                  fieldIndex >
+                    bounds.maxField
+                ) {
+                  return;
+                }
+
+                updatedRow[field] =
+                  field === "frame"
+                    ? false
+                    : "";
+              }
+            );
+
+            return updatedRow;
+          }
+        );
 
       nextRowsSnapshot = rows;
-      nextStylesSnapshot = currentDayData.cellStyles || {};
+
+      nextStylesSnapshot =
+        latestDayData
+          .cellStyles || {};
 
       return {
         ...prev,
+
         [selectedScheduleDate]: {
-          ...currentDayData,
+          ...latestDayData,
           rows,
         },
       };
@@ -3222,35 +4541,88 @@ const getScheduleClientBadges = (row) => {
 
     let rowToSave = null;
     let stylesToSave = {};
+    let duplicateMatches = [];
+    let shouldOpenDuplicateModal = false;
 
     setScheduleData((prev) => {
-      const currentDayData = prev[selectedScheduleDate] || {};
-      const currentRows = currentDayData.rows || timeSlots.map(createEmptyAppointmentRow);
-      const rowToCheck = currentRows[rowIndex] || {};
-      const numberToCheck = phoneValue ?? rowToCheck.number ?? "";
-      const formattedNumber = formatSaudiPhoneForStorage(numberToCheck);
-      const matchedClient = findClientByExactPhone(formattedNumber || numberToCheck);
+      const currentDayData =
+        prev[selectedScheduleDate] || {};
 
-      const rows = currentRows.map((row, index) => {
-        if (index !== rowIndex) return row;
+      const currentRows =
+        currentDayData.rows ||
+        timeSlots.map(createEmptyAppointmentRow);
 
-        rowToSave = {
-          ...row,
-          number: formattedNumber,
-          ...(matchedClient
-            ? {
-                client: matchedClient.name,
-                district: matchedClient.address || "",
-                frame: Boolean(matchedClient.frame),
-                order: String(getVisitLabel(matchedClient.visits)),
-              }
-            : {}),
-        };
+      const rowToCheck =
+        currentRows[rowIndex] || {};
 
-        return rowToSave;
-      });
+      const numberToCheck =
+        phoneValue ??
+        rowToCheck.number ??
+        "";
 
-      stylesToSave = currentDayData.cellStyles || {};
+      const formattedNumber =
+        formatSaudiPhoneForStorage(numberToCheck);
+
+      const matchedClients =
+        findClientsByExactPhone(
+          formattedNumber || numberToCheck
+        );
+
+      const previouslyLinkedClient =
+        matchedClients.find(
+          (client) =>
+            String(client.id) ===
+            String(rowToCheck.clientId || "")
+        ) || null;
+
+      const matchedClient =
+        previouslyLinkedClient ||
+        (matchedClients.length === 1
+          ? matchedClients[0]
+          : null);
+
+      duplicateMatches = matchedClients;
+
+      shouldOpenDuplicateModal =
+        matchedClients.length > 1 &&
+        !previouslyLinkedClient;
+
+      const rows = currentRows.map(
+        (row, index) => {
+          if (index !== rowIndex) return row;
+
+          rowToSave = {
+            ...row,
+            number: formattedNumber,
+            ...(matchedClient
+              ? {
+                  clientId: String(
+                    matchedClient.id
+                  ),
+                  client:
+                    matchedClient.name || "",
+                  district:
+                    matchedClient.address || "",
+                  frame: Boolean(
+                    matchedClient.frame
+                  ),
+                  order: String(
+                    getVisitLabel(
+                      matchedClient.visits || 0
+                    )
+                  ),
+                }
+              : {
+                  clientId: "",
+                }),
+          };
+
+          return rowToSave;
+        }
+      );
+
+      stylesToSave =
+        currentDayData.cellStyles || {};
 
       return {
         ...prev,
@@ -3263,7 +4635,24 @@ const getScheduleClientBadges = (row) => {
 
     setTimeout(() => {
       if (rowToSave) {
-        queueScheduleRowSave(selectedScheduleDate, rowIndex, rowToSave, stylesToSave);
+        queueScheduleRowSave(
+          selectedScheduleDate,
+          rowIndex,
+          rowToSave,
+          stylesToSave
+        );
+      }
+
+      if (shouldOpenDuplicateModal) {
+        setDuplicateClientSearch("");
+
+        setDuplicateClientModal({
+          targetType: "primary",
+          scheduleDate: selectedScheduleDate,
+          rowIndex,
+          phone: rowToSave?.number || "",
+          matches: duplicateMatches,
+        });
       }
     }, 0);
   };
@@ -3325,6 +4714,9 @@ const getScheduleClientBadges = (row) => {
     const createEmptyHouseholdClient = (client = {}) => ({
     id: client.id || "",
 
+    // رقم سجل العميلة الحقيقي لمنع الخلط عند تكرار رقم الجوال
+    clientId: client.clientId ?? "",
+
     clientBy: client.clientBy ?? "",
     serviceTime: client.serviceTime ?? "",
     driver: client.driver ?? "",
@@ -3359,6 +4751,539 @@ const getScheduleClientBadges = (row) => {
   const getAdditionalClientCount = (row) =>
     getAdditionalClientsForRow(row).length;
 
+  const issueCompletedServiceInvoice = async ({
+    rowIndex,
+    rowSnapshot,
+    householdRole = "primary",
+    extraClientIndex = null,
+    extraClientSnapshot = null,
+  }) => {
+    const normalizedRowIndex =
+      Number(rowIndex);
+
+    const appointmentDate =
+      String(
+        selectedScheduleDate || ""
+      ).slice(0, 10);
+
+    const currentLocalDate =
+      getCurrentLocalDate();
+
+    if (
+      !Number.isInteger(
+        normalizedRowIndex
+      ) ||
+      normalizedRowIndex < 0
+    ) {
+      alert(
+        "تعذر تحديد صف الموعد. لم يتم إصدار الفاتورة."
+      );
+
+      return {
+        success: false,
+        invoice: null,
+        completedRow: null,
+      };
+    }
+
+    if (
+      !appointmentDate ||
+      appointmentDate >
+        currentLocalDate
+    ) {
+      alert(
+        "لا يمكن تأكيد تمت الخدمة لموعد مستقبلي."
+      );
+
+      return {
+        success: false,
+        invoice: null,
+        completedRow: null,
+      };
+    }
+
+    const currentDayData =
+      scheduleData[
+        appointmentDate
+      ] || {};
+
+    const currentRows =
+      currentDayData.rows ||
+      timeSlots.map(
+        createEmptyAppointmentRow
+      );
+
+    const originalRowSnapshot =
+      rowSnapshot ||
+      currentRows[
+        normalizedRowIndex
+      ] ||
+      createEmptyAppointmentRow(
+        timeSlots[
+          normalizedRowIndex
+        ] || ""
+      );
+
+    const isAdditionalClient =
+      householdRole ===
+      "additional";
+
+    const normalizedExtraClientIndex =
+      Number(extraClientIndex);
+
+    const hasValidExtraClientIndex =
+      Number.isInteger(
+        normalizedExtraClientIndex
+      ) &&
+      normalizedExtraClientIndex >= 0;
+
+    const additionalClients =
+      getAdditionalClientsForRow(
+        originalRowSnapshot
+      );
+
+    if (
+      isAdditionalClient &&
+      (
+        !hasValidExtraClientIndex ||
+        !additionalClients[
+          normalizedExtraClientIndex
+        ]
+      )
+    ) {
+      alert(
+        "تعذر تحديد عميلة نفس المنزل. لم يتم إصدار الفاتورة."
+      );
+
+      return {
+        success: false,
+        invoice: null,
+        completedRow: null,
+      };
+    }
+
+    const invoiceClient =
+      isAdditionalClient
+        ? extraClientSnapshot ||
+          additionalClients[
+            normalizedExtraClientIndex
+          ] ||
+          {}
+        : originalRowSnapshot;
+
+    const clientName = String(
+      isAdditionalClient
+        ? invoiceClient.name || ""
+        : invoiceClient.client || ""
+    ).trim();
+
+    const clientPhone = String(
+      isAdditionalClient
+        ? invoiceClient.phone || ""
+        : invoiceClient.number || ""
+    ).trim();
+
+    const clientId = String(
+      invoiceClient.clientId || ""
+    ).trim();
+
+    const serviceName = String(
+      isAdditionalClient
+        ? invoiceClient.service || ""
+        : invoiceClient.services || ""
+    ).trim();
+
+    const paymentMethod = String(
+      invoiceClient.paymentMethod || ""
+    ).trim();
+
+    const serviceTime = String(
+      isAdditionalClient
+        ? invoiceClient.serviceTime ||
+          originalRowSnapshot.serviceTime ||
+          ""
+        : invoiceClient.serviceTime || ""
+    ).trim();
+
+    const serviceAmount =
+      parseAmount(
+        invoiceClient.serviceAmount
+      );
+
+    const transportationAmount =
+      parseAmount(
+        invoiceClient.transportation
+      );
+
+    const invoiceTotal =
+      serviceAmount +
+      transportationAmount;
+
+    if (!clientName) {
+      alert(
+        "لا يمكن إصدار الفاتورة. أدخلي اسم العميلة أولًا."
+      );
+
+      return {
+        success: false,
+        invoice: null,
+        completedRow: null,
+      };
+    }
+
+    if (!serviceName) {
+      alert(
+        "لا يمكن إصدار الفاتورة. اختاري الخدمة أولًا."
+      );
+
+      return {
+        success: false,
+        invoice: null,
+        completedRow: null,
+      };
+    }
+
+    if (!paymentMethod) {
+      alert(
+        "لا يمكن إصدار الفاتورة. اختاري طريقة الدفع أولًا."
+      );
+
+      return {
+        success: false,
+        invoice: null,
+        completedRow: null,
+      };
+    }
+
+    if (invoiceTotal <= 0) {
+      alert(
+        "لا يمكن إصدار الفاتورة. أدخلي مبلغ الخدمة أولًا."
+      );
+
+      return {
+        success: false,
+        invoice: null,
+        completedRow: null,
+      };
+    }
+
+    const completedRowData =
+      isAdditionalClient
+        ? {
+            ...originalRowSnapshot,
+
+            additionalClients:
+              additionalClients.map(
+                (
+                  client,
+                  clientIndex
+                ) =>
+                  clientIndex ===
+                  normalizedExtraClientIndex
+                    ? {
+                        ...client,
+                        ...invoiceClient,
+                        status:
+                          "تمت الخدمة",
+                      }
+                    : client
+              ),
+          }
+        : {
+            ...originalRowSnapshot,
+            status:
+              "تمت الخدمة",
+          };
+
+    const scheduleRowId =
+      getScheduleRowId(
+        appointmentDate,
+        normalizedRowIndex
+      );
+
+    const normalizedClientNameKey =
+      clientName
+        .toLowerCase()
+        .replace(/\s+/g, "-");
+
+    const primaryClientIdentity =
+      clientId ||
+      normalizeDigits(
+        clientPhone
+      ) ||
+      normalizedClientNameKey;
+
+    const additionalClientIdentity =
+      String(
+        invoiceClient.id ||
+        clientId ||
+        normalizeDigits(
+          clientPhone
+        ) ||
+        normalizedClientNameKey ||
+        `extra-${normalizedExtraClientIndex}`
+      );
+
+    const householdClientKey =
+      isAdditionalClient
+        ? additionalClientIdentity
+        : "";
+
+    const sourceServiceKey =
+      isAdditionalClient
+        ? `${scheduleRowId}:additional:${additionalClientIdentity}`
+        : `${scheduleRowId}:primary:${primaryClientIdentity}`;
+
+    const existingSaveTimer =
+      scheduleRowSaveTimersRef
+        .current[
+        scheduleRowId
+      ];
+
+    if (existingSaveTimer) {
+      clearTimeout(
+        existingSaveTimer
+      );
+
+      delete scheduleRowSaveTimersRef
+        .current[
+        scheduleRowId
+      ];
+    }
+
+    const restorePendingRowSave =
+      () => {
+        queueScheduleRowSave(
+          appointmentDate,
+          normalizedRowIndex,
+          originalRowSnapshot,
+          currentDayData
+            .cellStyles || {}
+        );
+      };
+
+    try {
+      const {
+        data,
+        error,
+      } = await supabase.rpc(
+        "issue_paradise_invoice",
+        {
+          p_source_service_key:
+            sourceServiceKey,
+
+          p_schedule_row_id:
+            scheduleRowId,
+
+          p_schedule_date:
+            appointmentDate,
+
+          p_schedule_row_index:
+            normalizedRowIndex,
+
+          p_household_role:
+            householdRole,
+
+          p_household_client_key:
+            householdClientKey,
+
+          p_client_id:
+            clientId || null,
+
+          p_client_name:
+            clientName,
+
+          p_client_phone:
+            clientPhone || null,
+
+          p_service_name:
+            serviceName,
+
+          p_service_time:
+            serviceTime || null,
+
+          p_payment_method:
+            paymentMethod,
+
+          p_service_amount_including_vat:
+            serviceAmount,
+
+          p_transportation_amount_including_vat:
+            transportationAmount,
+
+          p_completed_row_data:
+            completedRowData,
+
+          p_previous_status:
+            String(
+              isAdditionalClient
+                ? invoiceClient.status || ""
+                : originalRowSnapshot.status || ""
+            ).trim(),
+
+          p_updated_by:
+            sharedDataDeviceIdRef
+              .current,
+        }
+      );
+
+      if (error) {
+        console.error(
+          "Invoice issue error:",
+          error
+        );
+
+        restorePendingRowSave();
+
+        alert(
+          "لم يتم إصدار الفاتورة. لم يتم اعتماد تمت الخدمة، تأكد من الاتصال والبيانات ثم حاول مرة أخرى."
+        );
+
+        return {
+          success: false,
+          invoice: null,
+          completedRow: null,
+        };
+      }
+
+      const issuedInvoice =
+        Array.isArray(data)
+          ? data[0] || null
+          : data || null;
+
+      if (!issuedInvoice?.id) {
+        restorePendingRowSave();
+
+        alert(
+          "لم يرجع نظام الفواتير بيانات الفاتورة. لم يتم اعتماد تمت الخدمة."
+        );
+
+        return {
+          success: false,
+          invoice: null,
+          completedRow: null,
+        };
+      }
+
+      const invoiceLinkKey =
+        isAdditionalClient
+          ? `additional:${householdClientKey}`
+          : "primary";
+
+      const invoiceLink = {
+        invoiceId:
+          issuedInvoice.id,
+
+        invoiceCode:
+          issuedInvoice
+            .invoice_code || "",
+
+        invoiceNumber:
+          Number(
+            issuedInvoice
+              .invoice_number || 0
+          ),
+
+        issuedAt:
+          issuedInvoice
+            .issued_at || "",
+      };
+
+      const completedRowWithInvoice = {
+        ...completedRowData,
+
+        invoiceLinks: {
+          ...(
+            completedRowData
+              .invoiceLinks || {}
+          ),
+
+          [invoiceLinkKey]:
+            invoiceLink,
+        },
+      };
+
+      scheduleLastEditRef.current =
+        Date.now();
+
+      setScheduleData(
+        (previousData) => {
+          const previousDayData =
+            previousData[
+              appointmentDate
+            ] || {};
+
+          const previousRows =
+            previousDayData.rows ||
+            timeSlots.map(
+              createEmptyAppointmentRow
+            );
+
+          const nextRows =
+            previousRows.map(
+              (
+                row,
+                currentRowIndex
+              ) =>
+                currentRowIndex ===
+                normalizedRowIndex
+                  ? completedRowWithInvoice
+                  : row
+            );
+
+          return {
+            ...previousData,
+
+            [appointmentDate]: {
+              ...previousDayData,
+              rows: nextRows,
+            },
+          };
+        }
+      );
+
+      const normalizedIssuedInvoice =
+        normalizeInvoiceRecord(
+          issuedInvoice
+        );
+
+      setInvoices(
+        (previousInvoices) =>
+          mergeInvoicesById(
+            previousInvoices,
+            [
+              normalizedIssuedInvoice,
+            ]
+          )
+      );
+
+      return {
+        success: true,
+        invoice:
+          normalizedIssuedInvoice,
+        completedRow:
+          completedRowWithInvoice,
+      };
+    } catch (error) {
+      console.error(
+        "Invoice issue request error:",
+        error
+      );
+
+      restorePendingRowSave();
+
+      alert(
+        "تعذر الاتصال بنظام الفواتير. لم يتم اعتماد تمت الخدمة."
+      );
+
+      return {
+        success: false,
+        invoice: null,
+        completedRow: null,
+      };
+    }
+  };
+
   const updateAdditionalClientField = async (
     rowIndex,
     extraClientIndex,
@@ -3367,28 +5292,119 @@ const getScheduleClientBadges = (row) => {
   ) => {
     if (!ensureSystemWritable() || !canEditData) return;
 
-    const currentDayData = scheduleData[selectedScheduleDate] || {};
+    const currentDayData =
+      scheduleData[selectedScheduleDate] || {};
+
     const currentRows =
-      currentDayData.rows || timeSlots.map(createEmptyAppointmentRow);
+      currentDayData.rows ||
+      timeSlots.map(
+        createEmptyAppointmentRow
+      );
 
     const baseRow =
       currentRows[rowIndex] ||
-      createEmptyAppointmentRow(timeSlots[rowIndex] || "");
+      createEmptyAppointmentRow(
+        timeSlots[rowIndex] || ""
+      );
 
-    const extraClients = getAdditionalClientsForRow(baseRow);
+    const extraClients =
+      getAdditionalClientsForRow(
+        baseRow
+      );
+
+    const currentExtraClient =
+      extraClients[
+        extraClientIndex
+      ];
+
+    if (!currentExtraClient) {
+      return;
+    }
+
+    const currentFieldValue =
+      currentExtraClient[field];
+
+    if (
+      String(
+        currentFieldValue ?? ""
+      ) ===
+      String(value ?? "")
+    ) {
+      return;
+    }
+
+    const additionalClientIdentity =
+      String(
+        currentExtraClient.id ||
+        currentExtraClient.clientId ||
+        normalizeDigits(
+          currentExtraClient.phone
+        ) ||
+        String(
+          currentExtraClient.name || ""
+        )
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, "-") ||
+        `extra-${extraClientIndex}`
+      );
+
+    const invoiceLinkKey =
+      `additional:${additionalClientIdentity}`;
+
+    const hasIssuedInvoice =
+      Boolean(
+        baseRow.invoiceLinks?.[
+          invoiceLinkKey
+        ]
+      );
+
+    const invoiceLockedFields = [
+      "status",
+      "serviceTime",
+      "name",
+      "phone",
+      "service",
+      "transportation",
+      "serviceAmount",
+      "paymentMethod",
+    ];
+
+    if (
+      hasIssuedInvoice &&
+      invoiceLockedFields.includes(
+        field
+      )
+    ) {
+      alert(
+        field === "status"
+          ? "تم إصدار فاتورة نهائية لهذه الخدمة، لذلك لا يمكن تغيير حالتها مباشرة. أي إلغاء أو تصحيح يجب أن يتم من صفحة الفواتير."
+          : "لا يمكن تعديل هذا الحقل لأن فاتورة نهائية صدرت لخدمة هذه العميلة."
+      );
+
+      return;
+    }
 
     let updatedExtraClient = null;
 
-    const nextExtraClients = extraClients.map((client, index) => {
-      if (index !== extraClientIndex) return client;
+    const nextExtraClients =
+      extraClients.map(
+        (client, index) => {
+          if (
+            index !==
+            extraClientIndex
+          ) {
+            return client;
+          }
 
-      updatedExtraClient = {
-        ...client,
-        [field]: value,
-      };
+          updatedExtraClient = {
+            ...client,
+            [field]: value,
+          };
 
-      return updatedExtraClient;
-    });
+          return updatedExtraClient;
+        }
+      );
 
     await updateScheduleRow(
       rowIndex,
@@ -3396,25 +5412,107 @@ const getScheduleClientBadges = (row) => {
       nextExtraClients
     );
 
-    if (field === "order" && updatedExtraClient) {
-      const matchedClient = findClientByExactPhone(
-        updatedExtraClient.phone || ""
-      );
+    if (
+      field === "order" &&
+      updatedExtraClient
+    ) {
+      const matchedClient =
+        clients.find(
+          (client) =>
+            String(client.id) ===
+            String(
+              updatedExtraClient.clientId ||
+                ""
+            )
+        ) ||
+        findClientByExactPhone(
+          updatedExtraClient.phone || ""
+        );
 
-      const visitsValue = orderToVisits(value);
+      const visitsValue =
+        orderToVisits(value);
 
-      if (matchedClient && visitsValue !== null) {
-        const activityTime = new Date().toISOString();
+      if (
+        matchedClient &&
+        visitsValue !== null
+      ) {
+        const activityTime =
+          new Date().toISOString();
 
-        const { data: updatedClient, error } = await supabase
+        const currentLocalDate =
+          getCurrentLocalDate();
+
+        const appointmentDate =
+          String(
+            selectedScheduleDate || ""
+          ).slice(0, 10);
+
+        const excludedOrderStatuses = [
+          "Cancel",
+          "Postponed",
+          "Gift Giver",
+        ];
+
+        const canUpdateLastOrder =
+          appointmentDate &&
+          appointmentDate <=
+            currentLocalDate &&
+          !excludedOrderStatuses.includes(
+            updatedExtraClient.status ||
+              ""
+          );
+
+        const appointmentTimestamp =
+          canUpdateLastOrder
+            ? new Date(
+                `${appointmentDate}T12:00:00.000Z`
+              ).toISOString()
+            : "";
+
+        const currentLastOrderTime =
+          matchedClient.last_order_at
+            ? new Date(
+                matchedClient.last_order_at
+              ).getTime()
+            : 0;
+
+        const appointmentTime =
+          appointmentTimestamp
+            ? new Date(
+                appointmentTimestamp
+              ).getTime()
+            : 0;
+
+        const nextLastOrderAt =
+          appointmentTime >=
+          currentLastOrderTime
+            ? appointmentTimestamp
+            : matchedClient.last_order_at ||
+              null;
+
+        const clientUpdate = {
+          visits: visitsValue,
+          last_activity_at:
+            activityTime,
+        };
+
+        if (nextLastOrderAt) {
+          clientUpdate.last_order_at =
+            nextLastOrderAt;
+        }
+
+        const {
+          data: updatedClient,
+          error,
+        } = await supabase
           .from("clients")
-          .update({
-            visits: visitsValue,
-            last_activity_at: activityTime,
-          })
-          .eq("id", matchedClient.id)
+          .update(clientUpdate)
+          .eq(
+            "id",
+            matchedClient.id
+          )
           .select(
-            "id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_activity_at"
+            "id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at"
           )
           .single();
 
@@ -3425,7 +5523,7 @@ const getScheduleClientBadges = (row) => {
           );
 
           alert(
-            "تم تعديل العدد في الموعد، لكن لم يتم تحديث كرت الولاء. تأكد من الاتصال وجرب مرة ثانية."
+            "تم تعديل العدد في الموعد، لكن لم يتم تحديث كرت الولاء أو تاريخ آخر طلب. تأكد من الاتصال وجرب مرة ثانية."
           );
 
           return;
@@ -3433,11 +5531,14 @@ const getScheduleClientBadges = (row) => {
 
         if (updatedClient) {
           const nextClient =
-            normalizeClientRecord(updatedClient);
+            normalizeClientRecord(
+              updatedClient
+            );
 
           setClients((prev) =>
             prev.map((client) =>
-              String(client.id) === String(nextClient.id)
+              String(client.id) ===
+              String(nextClient.id)
                 ? nextClient
                 : client
             )
@@ -3454,42 +5555,82 @@ const getScheduleClientBadges = (row) => {
   ) => {
     if (!ensureSystemWritable() || !canEditData) return null;
 
-    const currentDayData = scheduleData[selectedScheduleDate] || {};
+    const currentDayData =
+      scheduleData[selectedScheduleDate] || {};
+
     const currentRows =
-      currentDayData.rows || timeSlots.map(createEmptyAppointmentRow);
+      currentDayData.rows ||
+      timeSlots.map(createEmptyAppointmentRow);
 
     const baseRow =
       currentRows[rowIndex] ||
-      createEmptyAppointmentRow(timeSlots[rowIndex] || "");
+      createEmptyAppointmentRow(
+        timeSlots[rowIndex] || ""
+      );
 
-    const formattedPhone = formatSaudiPhoneForStorage(
-      phoneValue || ""
-    );
+    const formattedPhone =
+      formatSaudiPhoneForStorage(
+        phoneValue || ""
+      );
 
-    const matchedClient = findClientByExactPhone(
-      formattedPhone || phoneValue
-    );
+    const extraClients =
+      getAdditionalClientsForRow(baseRow);
 
-    const extraClients = getAdditionalClientsForRow(baseRow);
+    const currentExtraClient =
+      extraClients[extraClientIndex] || {};
 
-    const nextExtraClients = extraClients.map((client, index) => {
-      if (index !== extraClientIndex) return client;
+    const matchedClients =
+      findClientsByExactPhone(
+        formattedPhone || phoneValue
+      );
 
-      return {
-        ...client,
-        phone: formattedPhone,
-        ...(matchedClient
-          ? {
-              name: matchedClient.name || "",
-              district: matchedClient.address || "",
-              frame: Boolean(matchedClient.frame),
-              order: String(
-                getVisitLabel(matchedClient.visits || 0)
-              ),
-            }
-          : {}),
-      };
-    });
+    const previouslyLinkedClient =
+      matchedClients.find(
+        (client) =>
+          String(client.id) ===
+          String(
+            currentExtraClient.clientId || ""
+          )
+      ) || null;
+
+    const matchedClient =
+      previouslyLinkedClient ||
+      (matchedClients.length === 1
+        ? matchedClients[0]
+        : null);
+
+    const nextExtraClients =
+      extraClients.map((client, index) => {
+        if (index !== extraClientIndex) {
+          return client;
+        }
+
+        return {
+          ...client,
+          phone: formattedPhone,
+          ...(matchedClient
+            ? {
+                clientId: String(
+                  matchedClient.id
+                ),
+                name:
+                  matchedClient.name || "",
+                district:
+                  matchedClient.address || "",
+                frame: Boolean(
+                  matchedClient.frame
+                ),
+                order: String(
+                  getVisitLabel(
+                    matchedClient.visits || 0
+                  )
+                ),
+              }
+            : {
+                clientId: "",
+              }),
+        };
+      });
 
     await updateScheduleRow(
       rowIndex,
@@ -3497,7 +5638,145 @@ const getScheduleClientBadges = (row) => {
       nextExtraClients
     );
 
+    if (
+      matchedClients.length > 1 &&
+      !previouslyLinkedClient
+    ) {
+      setDuplicateClientSearch("");
+
+      setDuplicateClientModal({
+        targetType: "household",
+        scheduleDate: selectedScheduleDate,
+        rowIndex,
+        extraClientIndex,
+        phone: formattedPhone,
+        matches: matchedClients,
+      });
+    }
+
     return matchedClient;
+  };
+
+  const selectDuplicateClient = async (client) => {
+    if (!duplicateClientModal || !client) return;
+    if (!ensureSystemWritable() || !canEditData) return;
+
+    const targetDate =
+      duplicateClientModal.scheduleDate ||
+      selectedScheduleDate;
+
+    const rowIndex =
+      duplicateClientModal.rowIndex;
+
+    const currentDayData =
+      scheduleData[targetDate] || {};
+
+    const currentRows =
+      currentDayData.rows ||
+      timeSlots.map(createEmptyAppointmentRow);
+
+    const currentRow =
+      currentRows[rowIndex] ||
+      createEmptyAppointmentRow(
+        timeSlots[rowIndex] || ""
+      );
+
+    const formattedPhone =
+      formatSaudiPhoneForStorage(
+        client.phone ||
+        duplicateClientModal.phone ||
+        ""
+      );
+
+    let updatedRowSnapshot = currentRow;
+
+    if (
+      duplicateClientModal.targetType ===
+      "household"
+    ) {
+      const extraClientIndex =
+        duplicateClientModal.extraClientIndex;
+
+      const extraClients =
+        getAdditionalClientsForRow(currentRow);
+
+      const nextExtraClients =
+        extraClients.map(
+          (extraClient, index) => {
+            if (index !== extraClientIndex) {
+              return extraClient;
+            }
+
+            return {
+              ...extraClient,
+              clientId: String(client.id),
+              name: client.name || "",
+              phone: formattedPhone,
+              district: client.address || "",
+              frame: Boolean(client.frame),
+              order: String(
+                getVisitLabel(
+                  client.visits || 0
+                )
+              ),
+            };
+          }
+        );
+
+      updatedRowSnapshot = {
+        ...currentRow,
+        additionalClients:
+          nextExtraClients,
+      };
+    } else {
+      updatedRowSnapshot = {
+        ...currentRow,
+        clientId: String(client.id),
+        client: client.name || "",
+        number: formattedPhone,
+        district: client.address || "",
+        frame: Boolean(client.frame),
+        order: String(
+          getVisitLabel(client.visits || 0)
+        ),
+      };
+    }
+
+    setScheduleData((prev) => {
+      const dayData =
+        prev[targetDate] || {};
+
+      const rowsForDate =
+        dayData.rows ||
+        timeSlots.map(
+          createEmptyAppointmentRow
+        );
+
+      const rows = rowsForDate.map(
+        (row, index) =>
+          index === rowIndex
+            ? updatedRowSnapshot
+            : row
+      );
+
+      return {
+        ...prev,
+        [targetDate]: {
+          ...dayData,
+          rows,
+        },
+      };
+    });
+
+    queueScheduleRowSave(
+      targetDate,
+      rowIndex,
+      updatedRowSnapshot,
+      currentDayData.cellStyles || {}
+    );
+
+    setDuplicateClientModal(null);
+    setDuplicateClientSearch("");
   };
 
   const resetAdditionalClientDraft = () => {
@@ -3774,27 +6053,51 @@ const getScheduleClientBadges = (row) => {
   };
 
   const subtractOneVisitForScheduleRow = async (row) => {
-    const matchedClient = findClientByExactPhone(row?.number || "");
+    const matchedClient =
+      clients.find(
+        (client) =>
+          String(client.id) ===
+          String(row?.clientId || "")
+      ) ||
+      findClientByExactPhone(
+        row?.number || ""
+      );
+
     if (!matchedClient) return;
 
-    const nextVisits = Math.max(0, Number(matchedClient.visits || 0) - 1);
+    const nextVisits = Math.max(
+      0,
+      Number(matchedClient.visits || 0) - 1
+    );
 
     const { data: updatedClient, error } = await supabase
       .from("clients")
       .update({ visits: nextVisits })
       .eq("id", matchedClient.id)
-      .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_activity_at")
+      .select(
+        "id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at"
+      )
       .single();
 
     if (error) {
-      console.log("Schedule status visit subtract error:", error);
+      console.log(
+        "Schedule status visit subtract error:",
+        error
+      );
       return;
     }
 
     if (updatedClient) {
-      const nextClient = normalizeClientRecord(updatedClient);
+      const nextClient =
+        normalizeClientRecord(updatedClient);
+
       setClients((prev) =>
-        prev.map((client) => String(client.id) === String(nextClient.id) ? nextClient : client)
+        prev.map((client) =>
+          String(client.id) ===
+          String(nextClient.id)
+            ? nextClient
+            : client
+        )
       );
     }
   };
@@ -3857,7 +6160,7 @@ if (visitsValue === null) {
           total_paid: 0,
           service_history: [],
         },
-      ]).select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_activity_at").single();
+      ]).select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at").single();
 
       if (error) {
         console.log("Additional client Send To clients copy error:", error);
@@ -3962,73 +6265,324 @@ if (
   };
 
   const saveAdditionalClient = async () => {
-    if (!ensureSystemWritable() || !canAddData) return;
     if (!additionalClientModal) return;
 
-    const rowIndex = additionalClientModal.rowIndex;
-    const currentDayData = scheduleData[selectedScheduleDate] || {};
-    const currentRows = currentDayData.rows || timeSlots.map(createEmptyAppointmentRow);
-    const baseRow = currentRows[rowIndex] || createEmptyAppointmentRow(timeSlots[rowIndex] || "");
-
-        const cleanExtraClient = {
-      id:
-        additionalClientDraft.id ||
-        `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      name: String(additionalClientDraft.name || "").trim(),
-      phone: formatSaudiPhoneForStorage(
-        additionalClientDraft.phone || ""
-      ),
-      order: String(additionalClientDraft.order || "").trim(),
-      service: String(additionalClientDraft.service || "").trim(),
-      therapist: String(additionalClientDraft.therapist || "").trim(),
-      serviceAmount: String(
-        additionalClientDraft.serviceAmount || ""
-      ).trim(),
-      sendTo: String(additionalClientDraft.sendTo || "").trim(),
-    };
+    const isEditing =
+      Number.isInteger(
+        additionalClientModal.editIndex
+      );
 
     if (
-      !cleanExtraClient.name &&
-      !cleanExtraClient.phone &&
-      !cleanExtraClient.order &&
-      !cleanExtraClient.service &&
-      !cleanExtraClient.therapist &&
-      !cleanExtraClient.serviceAmount &&
-      !cleanExtraClient.sendTo
+      !ensureSystemWritable() ||
+      (
+        isEditing
+          ? !canEditData
+          : !canAddData
+      )
     ) {
       return;
     }
 
-    const extraClients = getAdditionalClientsForRow(baseRow);
-    const nextExtraClients = Number.isInteger(additionalClientModal.editIndex)
-      ? extraClients.map((client, index) =>
-          index === additionalClientModal.editIndex ? cleanExtraClient : client
-        )
-      : [...extraClients, cleanExtraClient];
+    const rowIndex =
+      additionalClientModal.rowIndex;
+
+    const editIndex =
+      additionalClientModal.editIndex;
+
+    const currentDayData =
+      scheduleData[selectedScheduleDate] || {};
+
+    const currentRows =
+      currentDayData.rows ||
+      timeSlots.map(
+        createEmptyAppointmentRow
+      );
+
+    const baseRow =
+      currentRows[rowIndex] ||
+      createEmptyAppointmentRow(
+        timeSlots[rowIndex] || ""
+      );
+
+    const extraClients =
+      getAdditionalClientsForRow(
+        baseRow
+      );
+
+    const currentExtraClient =
+      isEditing
+        ? extraClients[editIndex]
+        : null;
+
+    if (
+      isEditing &&
+      !currentExtraClient
+    ) {
+      alert(
+        "تعذر العثور على بيانات العميلة. أغلقي النافذة وحاولي مرة أخرى."
+      );
+
+      return;
+    }
+
+    const cleanDraftFields = {
+      name: String(
+        additionalClientDraft.name || ""
+      ).trim(),
+
+      phone:
+        formatSaudiPhoneForStorage(
+          additionalClientDraft.phone || ""
+        ),
+
+      order: String(
+        additionalClientDraft.order || ""
+      ).trim(),
+
+      service: String(
+        additionalClientDraft.service || ""
+      ).trim(),
+
+      therapist: String(
+        additionalClientDraft.therapist || ""
+      ).trim(),
+
+      serviceAmount: String(
+        additionalClientDraft.serviceAmount ||
+          ""
+      ).trim(),
+
+      sendTo: String(
+        additionalClientDraft.sendTo || ""
+      ).trim(),
+    };
+
+    if (
+      !cleanDraftFields.name &&
+      !cleanDraftFields.phone &&
+      !cleanDraftFields.order &&
+      !cleanDraftFields.service &&
+      !cleanDraftFields.therapist &&
+      !cleanDraftFields.serviceAmount &&
+      !cleanDraftFields.sendTo
+    ) {
+      return;
+    }
+
+    const cleanExtraClient =
+      isEditing
+        ? {
+            ...currentExtraClient,
+            ...cleanDraftFields,
+
+            id:
+              currentExtraClient.id ||
+              additionalClientDraft.id ||
+              `${Date.now()}-${Math.random()
+                .toString(36)
+                .slice(2)}`,
+          }
+        : {
+            id:
+              additionalClientDraft.id ||
+              `${Date.now()}-${Math.random()
+                .toString(36)
+                .slice(2)}`,
+
+            ...cleanDraftFields,
+          };
+
+    if (isEditing) {
+      const additionalClientIdentity =
+        String(
+          currentExtraClient.id ||
+          currentExtraClient.clientId ||
+          normalizeDigits(
+            currentExtraClient.phone
+          ) ||
+          String(
+            currentExtraClient.name || ""
+          )
+            .trim()
+            .toLowerCase()
+            .replace(/\s+/g, "-") ||
+          `extra-${editIndex}`
+        );
+
+      const invoiceLinkKey =
+        `additional:${additionalClientIdentity}`;
+
+      const hasIssuedInvoice =
+        Boolean(
+          baseRow.invoiceLinks?.[
+            invoiceLinkKey
+          ]
+        );
+
+      const invoiceDataChanged =
+        String(
+          currentExtraClient.name || ""
+        ).trim() !==
+          cleanExtraClient.name ||
+
+        formatSaudiPhoneForStorage(
+          currentExtraClient.phone || ""
+        ) !==
+          cleanExtraClient.phone ||
+
+        String(
+          currentExtraClient.service || ""
+        ).trim() !==
+          cleanExtraClient.service ||
+
+        parseAmount(
+          currentExtraClient.serviceAmount
+        ) !==
+          parseAmount(
+            cleanExtraClient.serviceAmount
+          );
+
+      if (
+        hasIssuedInvoice &&
+        invoiceDataChanged
+      ) {
+        alert(
+          "لا يمكن تعديل اسم العميلة أو رقمها أو الخدمة أو المبلغ لأن فاتورة نهائية صدرت لهذه الخدمة."
+        );
+
+        return;
+      }
+    }
+
+    const nextExtraClients =
+      isEditing
+        ? extraClients.map(
+            (client, index) =>
+              index === editIndex
+                ? cleanExtraClient
+                : client
+          )
+        : [
+            ...extraClients,
+            cleanExtraClient,
+          ];
 
     const updatedRow = {
       ...baseRow,
-      additionalClients: nextExtraClients,
+      additionalClients:
+        nextExtraClients,
     };
 
-    await updateScheduleRow(rowIndex, "additionalClients", nextExtraClients);
+    await updateScheduleRow(
+      rowIndex,
+      "additionalClients",
+      nextExtraClients
+    );
 
-    if (cleanExtraClient.sendTo) {
-      await copyAdditionalClientToSelectedList(updatedRow, cleanExtraClient);
+    const sendToChanged =
+      !isEditing ||
+      String(
+        currentExtraClient?.sendTo || ""
+      ) !==
+        cleanExtraClient.sendTo;
+
+    if (
+      cleanExtraClient.sendTo &&
+      sendToChanged
+    ) {
+      await copyAdditionalClientToSelectedList(
+        updatedRow,
+        cleanExtraClient
+      );
     }
 
     closeAdditionalClientModal();
   };
 
-  const deleteAdditionalClient = async (rowIndex, extraClientIndex) => {
+  const deleteAdditionalClient = async (
+    rowIndex,
+    extraClientIndex
+  ) => {
     if (!ensureDeleteAllowed()) return;
-    const currentDayData = scheduleData[selectedScheduleDate] || {};
-    const currentRows = currentDayData.rows || timeSlots.map(createEmptyAppointmentRow);
-    const baseRow = currentRows[rowIndex] || createEmptyAppointmentRow(timeSlots[rowIndex] || "");
-    const extraClients = getAdditionalClientsForRow(baseRow);
-    const nextExtraClients = extraClients.filter((_, index) => index !== extraClientIndex);
 
-    await updateScheduleRow(rowIndex, "additionalClients", nextExtraClients);
+    const currentDayData =
+      scheduleData[
+        selectedScheduleDate
+      ] || {};
+
+    const currentRows =
+      currentDayData.rows ||
+      timeSlots.map(
+        createEmptyAppointmentRow
+      );
+
+    const baseRow =
+      currentRows[rowIndex] ||
+      createEmptyAppointmentRow(
+        timeSlots[rowIndex] || ""
+      );
+
+    const extraClients =
+      getAdditionalClientsForRow(
+        baseRow
+      );
+
+    const targetClient =
+      extraClients[
+        extraClientIndex
+      ];
+
+    if (!targetClient) {
+      return;
+    }
+
+    const targetClientIdentity =
+      String(
+        targetClient.id ||
+        targetClient.clientId ||
+        normalizeDigits(
+          targetClient.phone
+        ) ||
+        String(
+          targetClient.name || ""
+        )
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, "-") ||
+        `extra-${extraClientIndex}`
+      );
+
+    const invoiceLinkKey =
+      `additional:${targetClientIdentity}`;
+
+    const hasIssuedInvoice =
+      Boolean(
+        baseRow.invoiceLinks?.[
+          invoiceLinkKey
+        ]
+      );
+
+    if (hasIssuedInvoice) {
+      alert(
+        "لا يمكن حذف هذه العميلة لأن فاتورة نهائية صدرت لخدمتها. أي إلغاء أو تصحيح يجب أن يتم من صفحة الفواتير."
+      );
+
+      return;
+    }
+
+    const nextExtraClients =
+      extraClients.filter(
+        (_, index) =>
+          index !==
+          extraClientIndex
+      );
+
+    await updateScheduleRow(
+      rowIndex,
+      "additionalClients",
+      nextExtraClients
+    );
+
     closeAdditionalClientModal();
   };
 
@@ -4075,7 +6629,7 @@ if (visitsValue === null) {
           total_paid: 0,
           service_history: [],
         },
-      ]).select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_activity_at").single();
+      ]).select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at").single();
 
       if (error) {
         console.log("Send To clients copy error:", error);
@@ -4197,38 +6751,70 @@ const handleScheduleRowAction = (rowIndex, action) => {
   if (!action) return;
   if (!ensureSystemWritable() || !canEditData) return;
 
-  const currentDayData = scheduleData[selectedScheduleDate] || {};
+  const currentDayData =
+    scheduleData[selectedScheduleDate] || {};
+
   const currentRows =
-    currentDayData.rows || timeSlots.map(createEmptyAppointmentRow);
+    currentDayData.rows ||
+    timeSlots.map(createEmptyAppointmentRow);
 
   const currentRow =
     currentRows[rowIndex] ||
-    createEmptyAppointmentRow(timeSlots[rowIndex] || "");
+    createEmptyAppointmentRow(
+      timeSlots[rowIndex] || ""
+    );
 
-  const currentCellStyles = currentDayData.cellStyles || {};
+  const currentCellStyles =
+    currentDayData.cellStyles || {};
 
-    if (action === "addHouseholdClient") {
-    const additionalClients = getAdditionalClientsForRow(currentRow);
+  const rowHasIssuedInvoice = (row) => {
+    const invoiceLinks =
+      row?.invoiceLinks;
 
-    const hasEmptyHouseholdClient = additionalClients.some((client) => {
-      return ![
-        client?.name,
-        client?.phone,
-        client?.order,
-        client?.service,
-        client?.therapist,
-        client?.serviceAmount,
-        client?.sendTo,
-      ].some((value) => String(value || "").trim() !== "");
-    });
+    return Boolean(
+      invoiceLinks &&
+      typeof invoiceLinks === "object" &&
+      Object.keys(invoiceLinks).length > 0
+    );
+  };
+
+  if (action === "addHouseholdClient") {
+    const additionalClients =
+      getAdditionalClientsForRow(
+        currentRow
+      );
+
+    const hasEmptyHouseholdClient =
+      additionalClients.some(
+        (client) => {
+          return ![
+            client?.name,
+            client?.phone,
+            client?.order,
+            client?.service,
+            client?.therapist,
+            client?.serviceAmount,
+            client?.sendTo,
+          ].some(
+            (value) =>
+              String(value || "").trim() !==
+              ""
+          );
+        }
+      );
 
     if (hasEmptyHouseholdClient) {
-      alert("يوجد سطر فارغ لعميلة من نفس المنزل. أكملي بياناته أولًا.");
+      alert(
+        "يوجد سطر فارغ لعميلة من نفس المنزل. أكملي بياناته أولًا."
+      );
+
       return;
     }
 
     const newHouseholdClient = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id: `${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`,
       name: "",
       phone: "",
       order: "",
@@ -4238,42 +6824,137 @@ const handleScheduleRowAction = (rowIndex, action) => {
       sendTo: "",
     };
 
-    updateScheduleRow(rowIndex, "additionalClients", [
-      ...additionalClients,
-      newHouseholdClient,
-    ]);
+    updateScheduleRow(
+      rowIndex,
+      "additionalClients",
+      [
+        ...additionalClients,
+        newHouseholdClient,
+      ]
+    );
 
     return;
   }
 
   if (action === "copy") {
-    setScheduleCopiedRow(cloneScheduleRowWithoutTime(currentRow));
+    if (
+      rowHasIssuedInvoice(
+        currentRow
+      )
+    ) {
+      alert(
+        "لا يمكن نسخ صف صدرت له فاتورة نهائية. أنشئ موعدًا جديدًا وأدخل بياناته بشكل مستقل."
+      );
+
+      return;
+    }
+
+    setScheduleCopiedRow(
+      cloneScheduleRowWithoutTime(
+        currentRow
+      )
+    );
+
     return;
   }
 
   if (action === "paste") {
+    if (
+      rowHasIssuedInvoice(
+        currentRow
+      )
+    ) {
+      alert(
+        "لا يمكن اللصق فوق صف صدرت له فاتورة نهائية."
+      );
+
+      return;
+    }
+
     if (!scheduleCopiedRow) {
       alert("لا يوجد صف منسوخ");
       return;
     }
 
+    if (
+      rowHasIssuedInvoice(
+        scheduleCopiedRow
+      )
+    ) {
+      alert(
+        "الصف المنسوخ يحتوي على ارتباط فاتورة ولا يمكن لصقه. انسخ صفًا آخر."
+      );
+
+      return;
+    }
+
     const pastedRow = {
-      ...createEmptyAppointmentRow(currentRow.serviceTime || timeSlots[rowIndex] || ""),
+      ...createEmptyAppointmentRow(
+        currentRow.serviceTime ||
+          timeSlots[rowIndex] ||
+          ""
+      ),
+
       ...scheduleCopiedRow,
-      serviceTime: currentRow.serviceTime || timeSlots[rowIndex] || "",
+
+      serviceTime:
+        currentRow.serviceTime ||
+        timeSlots[rowIndex] ||
+        "",
     };
 
-    scheduleLastEditRef.current = Date.now();
+    delete pastedRow.invoiceLinks;
+
+    if (
+      pastedRow.status ===
+      "تمت الخدمة"
+    ) {
+      pastedRow.status = "";
+    }
+
+    if (
+      Array.isArray(
+        pastedRow.additionalClients
+      )
+    ) {
+      pastedRow.additionalClients =
+        pastedRow.additionalClients.map(
+          (client) => ({
+            ...client,
+
+            status:
+              client?.status ===
+              "تمت الخدمة"
+                ? ""
+                : client?.status || "",
+          })
+        );
+    }
+
+    scheduleLastEditRef.current =
+      Date.now();
 
     setScheduleData((prev) => {
-      const dayData = prev[selectedScheduleDate] || {};
-      const rowsForDate = dayData.rows || timeSlots.map(createEmptyAppointmentRow);
-      const rows = rowsForDate.map((row, index) =>
-        index === rowIndex ? pastedRow : row
-      );
+      const dayData =
+        prev[selectedScheduleDate] || {};
+
+      const rowsForDate =
+        dayData.rows ||
+        timeSlots.map(
+          createEmptyAppointmentRow
+        );
+
+      const rows =
+        rowsForDate.map(
+          (row, index) =>
+            index === rowIndex
+              ? pastedRow
+              : row
+        );
 
       return {
         ...prev,
+
         [selectedScheduleDate]: {
           ...dayData,
           rows,
@@ -4281,61 +6962,110 @@ const handleScheduleRowAction = (rowIndex, action) => {
       };
     });
 
-    queueScheduleRowSave(selectedScheduleDate, rowIndex, pastedRow, currentCellStyles);
+    queueScheduleRowSave(
+      selectedScheduleDate,
+      rowIndex,
+      pastedRow,
+      currentCellStyles
+    );
+
     return;
   }
 
-    if (action === "clear") {
-    const householdGroupId = currentRow.householdGroupId || "";
+  if (action === "clear") {
+    const householdGroupId =
+      currentRow.householdGroupId || "";
 
-    const householdRowIndexes = householdGroupId
-      ? currentRows
-          .map((row, index) =>
-            row?.householdGroupId === householdGroupId ? index : null
-          )
-          .filter((index) => index !== null)
-      : [];
+    const householdRowIndexes =
+      householdGroupId
+        ? currentRows
+            .map(
+              (row, index) =>
+                row?.householdGroupId ===
+                householdGroupId
+                  ? index
+                  : null
+            )
+            .filter(
+              (index) =>
+                index !== null
+            )
+        : [];
 
     const isHouseholdPrimary =
-      currentRow.householdRole === "primary" &&
+      currentRow.householdRole ===
+        "primary" &&
       householdRowIndexes.length > 1;
 
-    if (isHouseholdPrimary) {
-      const confirmed = window.confirm(
-        "هذا الصف هو العميلة الأساسية لزيارة منزلية جماعية.\n\nسيتم مسح العميلة الأساسية وجميع عميلات نفس المنزل المرتبطات بها.\n\nهل أنت متأكد؟"
+    const indexesToClear =
+      isHouseholdPrimary
+        ? householdRowIndexes
+        : [rowIndex];
+
+    const containsIssuedInvoice =
+      indexesToClear.some(
+        (index) =>
+          rowHasIssuedInvoice(
+            currentRows[index]
+          )
       );
+
+    if (containsIssuedInvoice) {
+      alert(
+        "لا يمكن مسح هذا الصف لأن فاتورة نهائية صدرت له. أي إلغاء أو تصحيح يجب أن يتم من صفحة الفواتير."
+      );
+
+      return;
+    }
+
+    if (isHouseholdPrimary) {
+      const confirmed =
+        window.confirm(
+          "هذا الصف هو العميلة الأساسية لزيارة منزلية جماعية.\n\nسيتم مسح العميلة الأساسية وجميع عميلات نفس المنزل المرتبطات بها.\n\nهل أنت متأكد؟"
+        );
 
       if (!confirmed) return;
     }
 
-    const indexesToClear = isHouseholdPrimary
-      ? householdRowIndexes
-      : [rowIndex];
-
     const clearedRows = {};
 
-    indexesToClear.forEach((index) => {
-      // إعادة كل صف إلى وقته الأصلي في الجدول
-      clearedRows[index] = createEmptyAppointmentRow(
-        timeSlots[index] || ""
-      );
-    });
+    indexesToClear.forEach(
+      (index) => {
+        clearedRows[index] =
+          createEmptyAppointmentRow(
+            timeSlots[index] || ""
+          );
+      }
+    );
 
-    scheduleLastEditRef.current = Date.now();
+    scheduleLastEditRef.current =
+      Date.now();
 
     setScheduleData((prev) => {
-      const dayData = prev[selectedScheduleDate] || {};
-      const rowsForDate =
-        dayData.rows || timeSlots.map(createEmptyAppointmentRow);
+      const dayData =
+        prev[selectedScheduleDate] || {};
 
-      const rows = rowsForDate.map((row, index) =>
-        Object.prototype.hasOwnProperty.call(clearedRows, index)
-          ? clearedRows[index]
-          : row
-      );
+      const rowsForDate =
+        dayData.rows ||
+        timeSlots.map(
+          createEmptyAppointmentRow
+        );
+
+      const rows =
+        rowsForDate.map(
+          (row, index) =>
+            Object.prototype
+              .hasOwnProperty.call(
+                clearedRows,
+                index
+              )
+              ? clearedRows[index]
+              : row
+        );
 
       return {
         ...prev,
+
         [selectedScheduleDate]: {
           ...dayData,
           rows,
@@ -4343,14 +7073,16 @@ const handleScheduleRowAction = (rowIndex, action) => {
       };
     });
 
-    indexesToClear.forEach((index) => {
-      queueScheduleRowSave(
-        selectedScheduleDate,
-        index,
-        clearedRows[index],
-        currentCellStyles
-      );
-    });
+    indexesToClear.forEach(
+      (index) => {
+        queueScheduleRowSave(
+          selectedScheduleDate,
+          index,
+          clearedRows[index],
+          currentCellStyles
+        );
+      }
+    );
 
     return;
   }
@@ -4401,28 +7133,117 @@ const handleScheduleRowAction = (rowIndex, action) => {
     queueScheduleRowSave(selectedScheduleDate, rowIndex, updatedRowSnapshot, nextCellStyles);
 
     if (field === "order") {
-      const matchedClientForOrder = findClientByExactPhone(
-        updatedRowSnapshot?.number || ""
-      );
+      const matchedClientForOrder =
+        clients.find(
+          (client) =>
+            String(client.id) ===
+            String(
+              updatedRowSnapshot?.clientId || ""
+            )
+        ) ||
+        findClientByExactPhone(
+          updatedRowSnapshot?.number || ""
+        );
+
       const visitsValue = orderToVisits(value);
 
-      if (matchedClientForOrder && visitsValue !== null) {
-        const { data: updatedClient, error } = await supabase
+      if (
+        matchedClientForOrder &&
+        visitsValue !== null
+      ) {
+        const activityTime =
+          new Date().toISOString();
+
+        const currentLocalDate =
+          getCurrentLocalDate();
+
+        const appointmentDate =
+          String(selectedScheduleDate || "")
+            .slice(0, 10);
+
+        const excludedOrderStatuses = [
+          "Cancel",
+          "Postponed",
+          "Gift Giver",
+        ];
+
+        const canUpdateLastOrder =
+          appointmentDate &&
+          appointmentDate <= currentLocalDate &&
+          !excludedOrderStatuses.includes(
+            updatedRowSnapshot.status || ""
+          );
+
+        const appointmentTimestamp =
+          canUpdateLastOrder
+            ? new Date(
+                `${appointmentDate}T12:00:00.000Z`
+              ).toISOString()
+            : "";
+
+        const currentLastOrderTime =
+          matchedClientForOrder.last_order_at
+            ? new Date(
+                matchedClientForOrder.last_order_at
+              ).getTime()
+            : 0;
+
+        const appointmentTime =
+          appointmentTimestamp
+            ? new Date(
+                appointmentTimestamp
+              ).getTime()
+            : 0;
+
+        const nextLastOrderAt =
+          appointmentTime >= currentLastOrderTime
+            ? appointmentTimestamp
+            : matchedClientForOrder.last_order_at ||
+              null;
+
+        const clientUpdate = {
+          visits: visitsValue,
+          last_activity_at: activityTime,
+        };
+
+        if (nextLastOrderAt) {
+          clientUpdate.last_order_at =
+            nextLastOrderAt;
+        }
+
+        const {
+          data: updatedClient,
+          error,
+        } = await supabase
           .from("clients")
-          .update({
-  visits: visitsValue,
-  last_activity_at: new Date().toISOString(),
-})
-          .eq("id", matchedClientForOrder.id)
-          .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_activity_at")
+          .update(clientUpdate)
+          .eq(
+            "id",
+            matchedClientForOrder.id
+          )
+          .select(
+            "id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at"
+          )
           .single();
 
         if (error) {
-          console.log(error);
+          console.log(
+            "Client order date update error:",
+            error
+          );
         } else if (updatedClient) {
-          const nextClient = normalizeClientRecord(updatedClient);
+          const nextClient =
+            normalizeClientRecord(
+              updatedClient
+            );
+
           setClients((prev) =>
-            prev.map((client) => String(client.id) === String(nextClient.id) ? nextClient : client)
+            prev.map((client) =>
+              String(client.id) ===
+              String(nextClient.id)
+                ? nextClient
+                : client
+            )
           );
         }
       }
@@ -4432,9 +7253,17 @@ const handleScheduleRowAction = (rowIndex, action) => {
       await copyScheduleRowToSelectedList(updatedRowSnapshot, value);
     }
 if (field === "frame") {
-  const matchedClientForFrame = findClientByExactPhone(
-    updatedRowSnapshot?.number || ""
-  );
+  const matchedClientForFrame =
+    clients.find(
+      (client) =>
+        String(client.id) ===
+        String(
+          updatedRowSnapshot?.clientId || ""
+        )
+    ) ||
+    findClientByExactPhone(
+      updatedRowSnapshot?.number || ""
+    );
 
   if (matchedClientForFrame) {
     await updateClientFrame(
@@ -6343,9 +9172,17 @@ const sendWhatsApp = async (client) => {
   );
 })
       .map((row, index) => {
-        const matchedClient = clients.find(
-          (client) => normalizePhone(client.phone) === normalizePhone(row.number)
-        );
+        const matchedClient =
+          clients.find(
+            (client) =>
+              String(client.id) ===
+              String(row.clientId || "")
+          ) ||
+          clients.find(
+            (client) =>
+              normalizePhone(client.phone) ===
+              normalizePhone(row.number)
+          );
 
         return {
           ...row,
@@ -6628,8 +9465,10 @@ const leavingTime = addMinutesToDisplayTime(
     ["giftClients", "عملاء الإهداء"],
     ["referrals", "العملاء المرشحين"],
     ["potentialClients", "العملاء المحتملين"],
+    ["inactiveClients", "العملاء المنقطعين"],
     ["availableAppointments", "المواعيد المتاحة"],
     ["printFrame", "طباعة اللوحة الترحيبية"],
+    ["invoices", "الفواتير"],
     ["finance", "التقارير"],
     ["incomeExpenses", "الدخل والمصاريف"],
     ["settings", "الإعدادات"],
@@ -6652,10 +9491,12 @@ const leavingTime = addMinutesToDisplayTime(
     ["clients", "عملائنا"],
     ["loyalty", "كروت الولاء"],
     ["giftClients", "عملاء الإهداء"],
-    ["referrals", "العملاء المرشحين"],
+    ["referrals", "العملاء المرشحون"],
     ["potentialClients", "العملاء المحتملين"],
+    ["inactiveClients", "العملاء المنقطعين"],
     ["availableAppointments", "المواعيد المتاحة"],
     ["printFrame", "طباعة اللوحة الترحيبية"],
+    ["invoices", "الفواتير"],
     ["finance", "التقارير"],
     ["incomeExpenses", "الدخل والمصاريف"],
     ["settings", "الإعدادات"],
@@ -6779,15 +9620,128 @@ const leavingTime = addMinutesToDisplayTime(
   };
 
   const openDirectWhatsApp = (phoneNumber) => {
-    const cleanPhone = cleanSaudiPhone(phoneNumber || "");
+    const cleanPhone = cleanSaudiPhone(
+      phoneNumber || ""
+    );
 
     if (!cleanPhone) {
       alert("رقم الجوال غير موجود");
       return;
     }
 
-    window.location.href = `whatsapp://send?phone=${cleanPhone}`;
+    window.location.href =
+      `whatsapp://send?phone=${cleanPhone}`;
   };
+
+  const formatInactiveClientDate = (
+    dateValue
+  ) => {
+    if (!dateValue) return "-";
+
+    const parsedDate = new Date(dateValue);
+
+    if (
+      Number.isNaN(parsedDate.getTime())
+    ) {
+      return "-";
+    }
+
+    return parsedDate.toLocaleDateString(
+      "ar-SA",
+      {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }
+    );
+  };
+
+  const getDaysSinceClientOrder = (
+    lastOrderAt
+  ) => {
+    if (!lastOrderAt) return null;
+
+    const lastOrderTime =
+      new Date(lastOrderAt).getTime();
+
+    if (
+      !Number.isFinite(lastOrderTime)
+    ) {
+      return null;
+    }
+
+    const difference =
+      Date.now() - lastOrderTime;
+
+    return Math.max(
+      0,
+      Math.floor(
+        difference /
+          (1000 * 60 * 60 * 24)
+      )
+    );
+  };
+
+  const markInactiveClientContacted =
+    async (client) => {
+      if (
+        !ensureSystemWritable() ||
+        !canEditData
+      ) {
+        return;
+      }
+
+      if (!client?.id) return;
+
+      const contactedAt =
+        new Date().toISOString();
+
+      const {
+        data: updatedClient,
+        error,
+      } = await supabase
+        .from("clients")
+        .update({
+          last_contacted_at:
+            contactedAt,
+          last_activity_at:
+            contactedAt,
+        })
+        .eq("id", client.id)
+        .select(
+          "id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at"
+        )
+        .single();
+
+      if (error) {
+        console.log(
+          "Inactive client contact update error:",
+          error
+        );
+
+        alert(
+          "لم يتم تسجيل التواصل. تأكد من الاتصال وجرب مرة ثانية."
+        );
+
+        return;
+      }
+
+      if (updatedClient) {
+        const nextClient =
+          normalizeClientRecord(
+            updatedClient
+          );
+
+        setClients((prev) =>
+          prev.map((clientItem) =>
+            String(clientItem.id) ===
+            String(nextClient.id)
+              ? nextClient
+              : clientItem
+          )
+        );
+      }
+    };
 
   const addManualReferral = async () => {
     if (!ensureSystemWritable() || !canAddData) return;
@@ -6854,18 +9808,266 @@ const leavingTime = addMinutesToDisplayTime(
 };
 
   const filteredPotentialClients = potentialClients.filter((client) => {
-    const textSearch = String(potentialSearch || "").toLowerCase().trim();
+    const textSearch = String(potentialSearch || "")
+      .toLowerCase()
+      .trim();
+
     const matchesSearch =
       !textSearch ||
-      (client.name || "").toLowerCase().includes(textSearch) ||
-      (client.status || "").toLowerCase().includes(textSearch) ||
-      phoneMatchesSearch(client.phone, potentialSearch);
+      (client.name || "")
+        .toLowerCase()
+        .includes(textSearch) ||
+      (client.status || "")
+        .toLowerCase()
+        .includes(textSearch) ||
+      phoneMatchesSearch(
+        client.phone,
+        potentialSearch
+      );
 
     return (
       matchesSearch &&
-      matchesCustomerStatusFilter(client.phone, potentialCustomerFilter)
+      matchesCustomerStatusFilter(
+        client.phone,
+        potentialCustomerFilter
+      )
     );
   });
+
+  const inactiveFutureClientIdsSet =
+    new Set(
+      inactiveFutureClientIds.map(
+        (clientId) => String(clientId)
+      )
+    );
+
+  const getInactiveClientServiceData =
+    (client) => {
+      const serviceHistory =
+        inactiveServiceHistoryByClientId[
+          String(client.id)
+        ];
+
+      const historyLastOrderAt =
+        serviceHistory?.lastOrderAt || "";
+
+      const clientLastOrderAt =
+        client.last_order_at || "";
+
+      const getValidOrderTime =
+        (dateValue) => {
+          if (!dateValue) return 0;
+
+          const parsedTime =
+            new Date(
+              dateValue
+            ).getTime();
+
+          return Number.isFinite(
+            parsedTime
+          )
+            ? parsedTime
+            : 0;
+        };
+
+      const historyLastOrderTime =
+        getValidOrderTime(
+          historyLastOrderAt
+        );
+
+      const clientLastOrderTime =
+        getValidOrderTime(
+          clientLastOrderAt
+        );
+
+      const lastOrderAt =
+        historyLastOrderTime >=
+        clientLastOrderTime
+          ? historyLastOrderAt
+          : clientLastOrderAt;
+
+      const historyServiceCount =
+        Number(
+          serviceHistory?.serviceCount || 0
+        );
+
+      const clientServiceCount =
+        Number(client.visits || 0);
+
+      return {
+        lastOrderAt,
+        serviceCount:
+          historyServiceCount > 0
+            ? historyServiceCount
+            : clientServiceCount,
+      };
+    };
+
+  const applyInactiveClientServiceData =
+    (client) => {
+      const serviceData =
+        getInactiveClientServiceData(
+          client
+        );
+
+      return {
+        ...client,
+        last_order_at:
+          serviceData.lastOrderAt,
+        visits:
+          serviceData.serviceCount,
+      };
+    };
+
+  const inactiveClientsBase =
+    clients.filter((client) => {
+      if (client.blacklist) {
+        return false;
+      }
+
+      if (
+        inactiveFutureClientIdsSet.has(
+          String(client.id)
+        )
+      ) {
+        return false;
+      }
+
+      return true;
+    });
+
+  const confirmedInactiveClients =
+    inactiveClientsBase
+      .map(
+        applyInactiveClientServiceData
+      )
+      .filter(
+        (client) =>
+          Boolean(client.last_order_at)
+      )
+      .filter((client) => {
+        const daysSinceLastOrder =
+          getDaysSinceClientOrder(
+            client.last_order_at
+          );
+
+        if (daysSinceLastOrder === null) {
+          return false;
+        }
+
+        return (
+          daysSinceLastOrder >
+          Number(
+            inactiveClientsDays || 60
+          )
+        );
+      })
+      .sort(
+        (firstClient, secondClient) =>
+          new Date(
+            firstClient.last_order_at
+          ).getTime() -
+          new Date(
+            secondClient.last_order_at
+          ).getTime()
+      );
+
+  const recentOrderClients =
+    clients
+      .filter(
+        (client) =>
+          !client.blacklist
+      )
+      .map(
+        applyInactiveClientServiceData
+      )
+      .filter(
+        (client) =>
+          Boolean(client.last_order_at)
+      )
+      .sort(
+        (firstClient, secondClient) =>
+          new Date(
+            secondClient.last_order_at
+          ).getTime() -
+          new Date(
+            firstClient.last_order_at
+          ).getTime()
+      );
+
+  const unknownLastOrderClients =
+    inactiveClientsBase
+      .map(
+        applyInactiveClientServiceData
+      )
+      .filter(
+        (client) =>
+          !client.last_order_at &&
+          Number(client.visits || 0) > 0
+      )
+      .sort(
+        (firstClient, secondClient) =>
+          Number(
+            secondClient.visits || 0
+          ) -
+          Number(
+            firstClient.visits || 0
+          )
+      );
+
+  const neverOrderedClients =
+    inactiveClientsBase
+      .map(
+        applyInactiveClientServiceData
+      )
+      .filter(
+        (client) =>
+          !client.last_order_at &&
+          Number(client.visits || 0) === 0
+      )
+      .sort(
+        (firstClient, secondClient) =>
+          Number(secondClient.id || 0) -
+          Number(firstClient.id || 0)
+      );
+
+  const inactiveClientsByTab =
+    inactiveClientsTab === "recent"
+      ? recentOrderClients
+      : inactiveClientsTab === "unknown"
+      ? unknownLastOrderClients
+      : inactiveClientsTab === "never"
+      ? neverOrderedClients
+      : confirmedInactiveClients;
+
+  const filteredInactiveClients =
+    inactiveClientsByTab.filter(
+      (client) => {
+        const searchValue =
+          String(
+            inactiveClientsSearch || ""
+          )
+            .toLowerCase()
+            .trim();
+
+        if (!searchValue) {
+          return true;
+        }
+
+        return (
+          (client.name || "")
+            .toLowerCase()
+            .includes(searchValue) ||
+          (client.address || "")
+            .toLowerCase()
+            .includes(searchValue) ||
+          phoneMatchesSearch(
+            client.phone,
+            inactiveClientsSearch
+          )
+        );
+      }
+    );
 
   const addGiftClient = async () => {
     if (!ensureSystemWritable() || !canAddData) return;
@@ -10929,6 +14131,26 @@ if (!isLoggedIn) {
           </button>
 
           <button
+            onClick={() => setScreen("invoices")}
+            style={{
+              ...buttonStyle,
+              width: "85%",
+              padding: "17px 22px",
+              background:
+                "linear-gradient(135deg, #8b684f, #5f3d29)",
+              color: "#ffffff",
+              fontSize: "17px",
+              marginBottom: "16px",
+              borderRadius: "18px",
+              border: "1px solid #d6c7b8",
+              boxShadow:
+                "0 10px 22px rgba(75,46,31,0.16)",
+            }}
+          >
+            الفواتير
+          </button>
+
+          <button
             onClick={() => setScreen("finance")}
             style={{
               ...buttonStyle,
@@ -11308,6 +14530,351 @@ if (!isLoggedIn) {
             ))}
           </datalist>
 
+          {duplicateClientModal && (() => {
+            const cleanSearch = String(
+              duplicateClientSearch || ""
+            )
+              .trim()
+              .toLowerCase();
+
+            const visibleDuplicateClients = (
+              duplicateClientModal.matches || []
+            ).filter((client) => {
+              if (!cleanSearch) return true;
+
+              const searchableValues = [
+                client.name,
+                client.arabic_name,
+                client.phone,
+                client.address,
+                getVisitLabel(client.visits || 0),
+              ];
+
+              return searchableValues.some((value) =>
+                String(value || "")
+                  .toLowerCase()
+                  .includes(cleanSearch)
+              );
+            });
+
+            return createPortal(
+              <div
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  width: "100vw",
+                  height: "100dvh",
+                  zIndex: 999999,
+                  background: "rgba(75,46,31,0.28)",
+                  padding: "24px",
+                  boxSizing: "border-box",
+                  display: "grid",
+                  placeItems: "center",
+                  overflow: "hidden",
+                }}
+                onMouseDown={(event) => {
+                  if (event.target !== event.currentTarget) return;
+
+                  setDuplicateClientModal(null);
+                  setDuplicateClientSearch("");
+                }}
+              >
+                <div
+                  style={{
+                    width: "100%",
+                    maxWidth: "560px",
+                    maxHeight: "calc(100dvh - 48px)",
+                    overflowY: "auto",
+                    overscrollBehavior: "contain",
+                    background:
+                      "linear-gradient(145deg, #fffaf7, #f2e7da)",
+                    border: "1px solid #d6c7b8",
+                    borderRadius: "26px",
+                    padding: "18px",
+                    boxSizing: "border-box",
+                    boxShadow:
+                      "0 28px 70px rgba(75,46,31,0.3)",
+                    color: "#4b2e1f",
+                    direction: "rtl",
+                    fontFamily:
+                      "Arial, sans-serif",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: "12px",
+                      marginBottom: "14px",
+                    }}
+                  >
+                    <div>
+                      <h3
+                        style={{
+                          margin: 0,
+                          fontSize: "20px",
+                        }}
+                      >
+                        اختيار العميلة
+                      </h3>
+
+                      <div
+                        style={{
+                          marginTop: "5px",
+                          color: "#7a5a43",
+                          fontSize: "13px",
+                          fontWeight: "700",
+                        }}
+                      >
+                        يوجد أكثر من عميلة مسجلة بنفس رقم الجوال
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDuplicateClientModal(null);
+                        setDuplicateClientSearch("");
+                      }}
+                      style={{
+                        width: "36px",
+                        height: "36px",
+                        borderRadius: "50%",
+                        border: "1px solid #d6c7b8",
+                        background: "#fffaf3",
+                        color: "#4b2e1f",
+                        fontSize: "20px",
+                        fontWeight: "900",
+                        cursor: "pointer",
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <div
+                    style={{
+                      padding: "10px 12px",
+                      marginBottom: "12px",
+                      borderRadius: "14px",
+                      background: "#efe3d6",
+                      border: "1px solid rgba(75,46,31,0.12)",
+                      fontSize: "13px",
+                      fontWeight: "800",
+                      textAlign: "center",
+                    }}
+                  >
+                    رقم الجوال:{" "}
+                    {duplicateClientModal.phone || "-"}
+                  </div>
+
+                  <input
+                    value={duplicateClientSearch}
+                    onChange={(event) =>
+                      setDuplicateClientSearch(
+                        event.target.value
+                      )
+                    }
+                    placeholder="ابحثي بالاسم أو الحي أو عدد الخدمات"
+                    style={{
+                      width: "100%",
+                      padding: "12px 14px",
+                      marginBottom: "14px",
+                      borderRadius: "14px",
+                      border: "1px solid #d6c7b8",
+                      background: "#ffffff",
+                      color: "#4b2e1f",
+                      outline: "none",
+                      boxSizing: "border-box",
+                      fontWeight: "700",
+                      fontFamily:
+                        "Arial, sans-serif",
+                    }}
+                  />
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: "10px",
+                    }}
+                  >
+                    {visibleDuplicateClients.map((client) => (
+                      <button
+                        key={client.id}
+                        type="button"
+                        onClick={() =>
+                          selectDuplicateClient(client)
+                        }
+                        style={{
+                          width: "100%",
+                          padding: "13px",
+                          borderRadius: "16px",
+                          border:
+                            "1px solid rgba(75,46,31,0.18)",
+                          background: "#fffaf3",
+                          color: "#4b2e1f",
+                          cursor: "pointer",
+                          textAlign: "right",
+                          fontFamily:
+                            "Arial, sans-serif",
+                          boxShadow:
+                            "0 6px 16px rgba(75,46,31,0.07)",
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: "17px",
+                            fontWeight: "800",
+                            lineHeight: 1.45,
+                            color: "#4b2e1f",
+                            marginBottom: "9px",
+                          }}
+                        >
+                          {client.name || "بدون اسم"}
+                        </div>
+
+                        <div
+                          style={{
+                            display: "grid",
+                            gap: "5px",
+                            fontSize: "14px",
+                            lineHeight: 1.7,
+                            color: "#6b4d39",
+                          }}
+                        >
+                          <div>
+                            <span
+                              style={{
+                                fontWeight: "800",
+                                color: "#4b2e1f",
+                              }}
+                            >
+                              رقم الجوال:
+                            </span>{" "}
+                            <span
+                              dir="ltr"
+                              style={{
+                                display: "inline-block",
+                                fontWeight: "700",
+                              }}
+                            >
+                              {client.phone || "-"}
+                            </span>
+                          </div>
+
+                          <div>
+                            <span
+                              style={{
+                                fontWeight: "800",
+                                color: "#4b2e1f",
+                              }}
+                            >
+                              الحي:
+                            </span>{" "}
+                            <span
+                              style={{
+                                fontWeight: "700",
+                              }}
+                            >
+                              {client.address || "-"}
+                            </span>
+                          </div>
+
+                          <div>
+                            <span
+                              style={{
+                                fontWeight: "800",
+                                color: "#4b2e1f",
+                              }}
+                            >
+                              عدد الخدمات:
+                            </span>{" "}
+                            <span
+                              style={{
+                                fontWeight: "700",
+                              }}
+                            >
+                              {getVisitLabel(
+                                client.visits || 0
+                              )}
+                            </span>
+                          </div>
+
+                          <div>
+                            <span
+                              style={{
+                                fontWeight: "800",
+                                color: "#4b2e1f",
+                              }}
+                            >
+                              آخر طلب:
+                            </span>{" "}
+                            <span
+                              style={{
+                                fontWeight: "700",
+                              }}
+                            >
+                              {client.last_order_at
+                                ? new Date(
+                                    client.last_order_at
+                                  ).toLocaleDateString(
+                                    "ar-SA"
+                                  )
+                                : "غير مسجل بعد"}
+                            </span>
+                          </div>
+
+                          <div>
+                            <span
+                              style={{
+                                fontWeight: "800",
+                                color: "#4b2e1f",
+                              }}
+                            >
+                              آخر نشاط:
+                            </span>{" "}
+                            <span
+                              style={{
+                                fontWeight: "700",
+                              }}
+                            >
+                              {client.last_activity_at
+                                ? new Date(
+                                    client.last_activity_at
+                                  ).toLocaleDateString(
+                                    "ar-SA"
+                                  )
+                                : "لا يوجد نشاط مسجل"}
+                            </span>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+
+                    {visibleDuplicateClients.length === 0 && (
+                      <div
+                        style={{
+                          padding: "20px",
+                          textAlign: "center",
+                          borderRadius: "16px",
+                          border:
+                            "1px dashed rgba(75,46,31,0.25)",
+                          background: "#fffaf3",
+                          color: "#7a5a43",
+                          fontWeight: "800",
+                        }}
+                      >
+                        لا توجد نتيجة مطابقة للبحث
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>,
+              document.body
+            );
+          })()}
+
           {giftDoneLinkModal && (() => {
             const cleanSearch = String(
               giftDoneLinkSearch || ""
@@ -11336,18 +14903,20 @@ if (!isLoggedIn) {
               );
             });
 
-            return (
+            return createPortal(
               <div
                 style={{
                   position: "fixed",
                   inset: 0,
-                  zIndex: 10020,
-                  background: "rgba(75,46,31,0.26)",
-                  padding: "16px",
+                  width: "100vw",
+                  height: "100dvh",
+                  zIndex: 999998,
+                  background: "rgba(75,46,31,0.28)",
+                  padding: "24px",
                   boxSizing: "border-box",
-                  display: "flex",
-                  justifyContent: "center",
-                  alignItems: "center",
+                  display: "grid",
+                  placeItems: "center",
+                  overflow: "hidden",
                 }}
                 onMouseDown={(event) => {
                   if (event.target !== event.currentTarget) return;
@@ -11360,8 +14929,9 @@ if (!isLoggedIn) {
                   style={{
                     width: "100%",
                     maxWidth: "560px",
-                    maxHeight: "88vh",
+                    maxHeight: "calc(100dvh - 48px)",
                     overflowY: "auto",
+                    overscrollBehavior: "contain",
                     background:
                       "linear-gradient(145deg, #fffaf7, #f2e7da)",
                     border: "1px solid #d6c7b8",
@@ -11428,7 +14998,6 @@ if (!isLoggedIn) {
                   </div>
 
                   <input
-                    autoFocus
                     value={giftDoneLinkSearch}
                     onChange={(event) =>
                       setGiftDoneLinkSearch(
@@ -11480,7 +15049,9 @@ if (!isLoggedIn) {
                         <div
                           style={{
                             fontWeight: "900",
-                            fontSize: "15px",
+                            fontSize: "18px",
+                            lineHeight: 1.5,
+                            color: "#4b2e1f",
                           }}
                         >
                           {gift.toName || "بدون اسم"}
@@ -11491,10 +15062,11 @@ if (!isLoggedIn) {
 
                         <div
                           style={{
-                            marginTop: "6px",
-                            fontSize: "13px",
-                            color: "#7a5a43",
-                            lineHeight: 1.7,
+                            marginTop: "8px",
+                            fontSize: "15px",
+                            fontWeight: "800",
+                            color: "#5f422f",
+                            lineHeight: 1.9,
                           }}
                         >
                           المُهدي:{" "}
@@ -11528,7 +15100,8 @@ if (!isLoggedIn) {
                     )}
                   </div>
                 </div>
-              </div>
+              </div>,
+              document.body
             );
           })()}
 
@@ -11907,17 +15480,155 @@ transform: "translate(-50%, -50%)",
                     >
                       <select
                         value={row.status}
-                        onChange={(e) =>
-                          updateScheduleRow(index, "status", e.target.value)
-                        }
-                        {...getScheduleEditableProps(index, "status")}
-                        style={getScheduleInputStyle(index, "status")}
+                        onChange={async (event) => {
+                          const statusSelect =
+                            event.currentTarget;
+
+                          const previousStatus =
+                            row.status || "";
+
+                          const nextStatus =
+                            event.target.value;
+
+                          const primaryInvoiceLink =
+                            row.invoiceLinks?.primary;
+
+                          if (
+                            primaryInvoiceLink &&
+                            nextStatus !==
+                              "تمت الخدمة"
+                          ) {
+                            statusSelect.value =
+                              previousStatus;
+
+                            alert(
+                              "تم إصدار فاتورة نهائية لهذه الخدمة، لذلك لا يمكن تغيير حالتها مباشرة. أي إلغاء أو تصحيح يجب أن يتم من خلال إشعار دائن أو إشعار مدين."
+                            );
+
+                            return;
+                          }
+
+                          if (
+                            nextStatus !==
+                            "تمت الخدمة"
+                          ) {
+                            updateScheduleRow(
+                              index,
+                              "status",
+                              nextStatus
+                            );
+
+                            return;
+                          }
+
+                          if (
+                            previousStatus ===
+                              "تمت الخدمة" &&
+                            primaryInvoiceLink
+                          ) {
+                            return;
+                          }
+
+                          const serviceAmount =
+                            parseAmount(
+                              row.serviceAmount
+                            );
+
+                          const transportationAmount =
+                            parseAmount(
+                              row.transportation
+                            );
+
+                          const invoiceTotal =
+                            serviceAmount +
+                            transportationAmount;
+
+                          const confirmed =
+                            window.confirm(
+                              [
+                                "تأكيد اكتمال الخدمة وإصدار الفاتورة النهائية؟",
+                                "",
+                                `العميلة: ${
+                                  row.client ||
+                                  "غير محددة"
+                                }`,
+                                `الخدمة: ${
+                                  row.services ||
+                                  "غير محددة"
+                                }`,
+                                `مبلغ الخدمة: ${serviceAmount.toFixed(
+                                  2
+                                )} ر.س`,
+                                `المواصلات: ${transportationAmount.toFixed(
+                                  2
+                                )} ر.س`,
+                                `الإجمالي شامل الضريبة: ${invoiceTotal.toFixed(
+                                  2
+                                )} ر.س`,
+                                "",
+                                "بعد الإصدار لا يمكن تعديل الفاتورة أو إلغاؤها مباشرة.",
+                              ].join("\n")
+                            );
+
+                          if (!confirmed) {
+                            statusSelect.value =
+                              previousStatus;
+
+                            return;
+                          }
+
+                          statusSelect.disabled =
+                            true;
+
+                          try {
+                            const result =
+                              await issueCompletedServiceInvoice(
+                                {
+                                  rowIndex:
+                                    index,
+
+                                  rowSnapshot:
+                                    row,
+
+                                  householdRole:
+                                    "primary",
+                                }
+                              );
+
+                            if (
+                              !result?.success
+                            ) {
+                              statusSelect.value =
+                                previousStatus;
+                            }
+                          } finally {
+                            if (
+                              statusSelect?.isConnected
+                            ) {
+                              statusSelect.disabled =
+                                false;
+                            }
+                          }
+                        }}
+                        {...getScheduleEditableProps(
+                          index,
+                          "status"
+                        )}
+                        style={getScheduleInputStyle(
+                          index,
+                          "status"
+                        )}
                       >
-                        {appointmentStatuses.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
+                        {appointmentStatuses.map(
+                          (option) => (
+                            <option
+                              key={option}
+                              value={option}
+                            >
+                              {option}
+                            </option>
+                          )
+                        )}
                       </select>
                     </td>
 
@@ -12057,11 +15768,23 @@ transform: "translate(-50%, -50%)",
     onClick={(event) => {
       event.preventDefault();
       event.stopPropagation();
-      const matchedClient = findClientByExactPhone(row.number || "");
+
+      const matchedClient =
+        clients.find(
+          (client) =>
+            String(client.id) ===
+            String(row.clientId || "")
+        ) ||
+        findClientByExactPhone(
+          row.number || ""
+        );
+
       if (matchedClient) {
         openClientProfile(matchedClient);
       } else {
-        alert("لم يتم العثور على العميلة في قائمة العملاء");
+        alert(
+          "لم يتم العثور على العميلة في قائمة العملاء"
+        );
       }
     }}
     style={{
@@ -12373,10 +16096,19 @@ margin: "0 auto",
                                     ...getAdditionalClientsForRow(row).map(
                     (extraClient, extraIndex, extraClients) => {
                       const matchedHouseholdClient =
-                        findClientByExactPhone(extraClient.phone || "");
+                        clients.find(
+                          (client) =>
+                            String(client.id) ===
+                            String(
+                              extraClient.clientId || ""
+                            )
+                        ) ||
+                        findClientByExactPhone(
+                          extraClient.phone || ""
+                        );
 
                       const householdStatus =
-                        extraClient.status ?? row.status ?? "";
+                        extraClient.status ?? "";
 
                       return (
                         <tr
@@ -12522,27 +16254,184 @@ margin: "0 auto",
                                 >
                                   <select
                                     value={householdStatus}
-                                    onChange={(event) =>
-                                      updateAdditionalClientField(
-                                        index,
-                                        extraIndex,
-                                        "status",
-                                        event.target.value
-                                      )
-                                    }
+                                    onChange={async (event) => {
+                                      const statusSelect =
+                                        event.currentTarget;
+
+                                      const previousStatus =
+                                        extraClient.status || "";
+
+                                      const nextStatus =
+                                        event.target.value;
+
+                                      const additionalClientIdentity =
+                                        String(
+                                          extraClient.id ||
+                                            extraClient.clientId ||
+                                            normalizeDigits(
+                                              extraClient.phone
+                                            ) ||
+                                            String(
+                                              extraClient.name ||
+                                                ""
+                                            )
+                                              .trim()
+                                              .toLowerCase()
+                                              .replace(
+                                                /\s+/g,
+                                                "-"
+                                              ) ||
+                                            `extra-${extraIndex}`
+                                        );
+
+                                      const invoiceLinkKey =
+                                        `additional:${additionalClientIdentity}`;
+
+                                      const additionalInvoiceLink =
+                                        row.invoiceLinks?.[
+                                          invoiceLinkKey
+                                        ];
+
+                                      if (
+                                        additionalInvoiceLink &&
+                                        nextStatus !==
+                                          "تمت الخدمة"
+                                      ) {
+                                        statusSelect.value =
+                                          previousStatus;
+
+                                        alert(
+                                          "تم إصدار فاتورة نهائية لخدمة هذه العميلة، لذلك لا يمكن تغيير حالتها مباشرة. أي إلغاء أو تصحيح يجب أن يتم من صفحة الفواتير."
+                                        );
+
+                                        return;
+                                      }
+
+                                      if (
+                                        nextStatus !==
+                                        "تمت الخدمة"
+                                      ) {
+                                        await updateAdditionalClientField(
+                                          index,
+                                          extraIndex,
+                                          "status",
+                                          nextStatus
+                                        );
+
+                                        return;
+                                      }
+
+                                      if (
+                                        previousStatus ===
+                                          "تمت الخدمة" &&
+                                        additionalInvoiceLink
+                                      ) {
+                                        return;
+                                      }
+
+                                      const serviceAmount =
+                                        parseAmount(
+                                          extraClient.serviceAmount
+                                        );
+
+                                      const transportationAmount =
+                                        parseAmount(
+                                          extraClient.transportation
+                                        );
+
+                                      const invoiceTotal =
+                                        serviceAmount +
+                                        transportationAmount;
+
+                                      const confirmed =
+                                        window.confirm(
+                                          [
+                                            "تأكيد اكتمال الخدمة وإصدار الفاتورة النهائية؟",
+                                            "",
+                                            `العميلة: ${
+                                              extraClient.name ||
+                                              "غير محددة"
+                                            }`,
+                                            `الخدمة: ${
+                                              extraClient.service ||
+                                              "غير محددة"
+                                            }`,
+                                            `مبلغ الخدمة: ${serviceAmount.toFixed(
+                                              2
+                                            )} ر.س`,
+                                            `المواصلات: ${transportationAmount.toFixed(
+                                              2
+                                            )} ر.س`,
+                                            `الإجمالي شامل الضريبة: ${invoiceTotal.toFixed(
+                                              2
+                                            )} ر.س`,
+                                            "",
+                                            "سيتم إصدار فاتورة مستقلة لهذه العميلة.",
+                                            "بعد الإصدار لا يمكن تعديل الفاتورة أو إلغاؤها مباشرة.",
+                                          ].join("\n")
+                                        );
+
+                                      if (!confirmed) {
+                                        statusSelect.value =
+                                          previousStatus;
+
+                                        return;
+                                      }
+
+                                      statusSelect.disabled =
+                                        true;
+
+                                      try {
+                                        const result =
+                                          await issueCompletedServiceInvoice(
+                                            {
+                                              rowIndex:
+                                                index,
+
+                                              rowSnapshot:
+                                                row,
+
+                                              householdRole:
+                                                "additional",
+
+                                              extraClientIndex:
+                                                extraIndex,
+
+                                              extraClientSnapshot:
+                                                extraClient,
+                                            }
+                                          );
+
+                                        if (
+                                          !result?.success
+                                        ) {
+                                          statusSelect.value =
+                                            previousStatus;
+                                        }
+                                      } finally {
+                                        if (
+                                          statusSelect?.isConnected
+                                        ) {
+                                          statusSelect.disabled =
+                                            false;
+                                        }
+                                      }
+                                    }}
                                     style={getScheduleInputStyle(
                                       index,
                                       field
                                     )}
                                   >
-                                    {appointmentStatuses.map((option) => (
-                                      <option
-                                        key={option}
-                                        value={option}
-                                      >
-                                        {option}
-                                      </option>
-                                    ))}
+                                    {appointmentStatuses.map(
+                                      (option) => (
+                                        <option
+                                          key={option}
+                                          value={option}
+                                        >
+                                          {option}
+                                        </option>
+                                      )
+                                    )}
                                   </select>
                                 </td>
                               );
@@ -14021,6 +17910,633 @@ margin: "0 auto",
     );
   }
 
+if (screen === "invoices") {
+    const normalizedInvoiceSearch = String(invoicesSearch || "")
+      .trim()
+      .toLowerCase();
+
+    const filteredInvoices = invoices.filter((invoice) => {
+      if (!normalizedInvoiceSearch) return true;
+
+      return [
+        invoice.invoiceCode,
+        invoice.invoiceNumber,
+        invoice.clientName,
+        invoice.clientPhone,
+        invoice.serviceName,
+        invoice.paymentMethod,
+      ].some((value) =>
+        String(value || "")
+          .toLowerCase()
+          .includes(normalizedInvoiceSearch)
+      );
+    });
+
+    const visibleInvoices = filteredInvoices.slice(
+      0,
+      invoicesVisibleCount
+    );
+
+    const invoicesTotal = filteredInvoices.reduce(
+      (total, invoice) =>
+        total +
+        Number(invoice.totalIncludingVat || 0),
+      0
+    );
+
+    const invoicesVatTotal = filteredInvoices.reduce(
+      (total, invoice) =>
+        total +
+        Number(invoice.vatAmount || 0),
+      0
+    );
+
+    const formatInvoiceAmount = (value) =>
+      Number(value || 0).toLocaleString(
+        "en-US",
+        {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        }
+      );
+
+    const formatInvoiceDate = (value) => {
+      const cleanDate = String(value || "").slice(
+        0,
+        10
+      );
+
+      if (!cleanDate) return "-";
+
+      const [year, month, day] =
+        cleanDate.split("-");
+
+      return year && month && day
+        ? `${day}-${month}-${year}`
+        : cleanDate;
+    };
+
+    return withGreeting(
+      <div
+        style={{
+          minHeight: "100vh",
+          width: "100%",
+          background:
+            "radial-gradient(circle at top, #fffaf3, #ebe1d3 48%, #d8c5b3)",
+          padding: "24px",
+          boxSizing: "border-box",
+          fontFamily: "Arial",
+          color: "#4b2e1f",
+          direction: "rtl",
+        }}
+      >
+        <style>
+          {`
+            .invoices-filter-grid {
+              display: grid;
+              grid-template-columns:
+                minmax(220px, 1.5fr)
+                minmax(150px, 0.75fr)
+                minmax(150px, 0.75fr);
+              gap: 12px;
+            }
+
+            .invoices-summary-grid {
+              display: grid;
+              grid-template-columns:
+                repeat(3, minmax(160px, 1fr));
+              gap: 12px;
+            }
+
+            @media (max-width: 760px) {
+              .invoices-filter-grid,
+              .invoices-summary-grid {
+                grid-template-columns: 1fr;
+              }
+            }
+          `}
+        </style>
+
+        <div
+          style={{
+            width: "min(1380px, 100%)",
+            margin: "0 auto",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "14px",
+              flexWrap: "wrap",
+              marginBottom: "18px",
+            }}
+          >
+            <div>
+              <h1
+                style={{
+                  margin: 0,
+                  fontSize: "34px",
+                  fontWeight: 950,
+                }}
+              >
+                الفواتير
+              </h1>
+
+              <div
+                style={{
+                  marginTop: "7px",
+                  color: "#7a5a43",
+                  fontWeight: 800,
+                }}
+              >
+                سجل الفواتير الضريبية
+                للخدمات المكتملة
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() =>
+                setScreen("welcome")
+              }
+              style={{
+                ...buttonStyle,
+                padding: "11px 20px",
+                borderRadius: "15px",
+                background: "#fffaf3",
+                color: "#4b2e1f",
+                border:
+                  "1px solid #d6c7b8",
+                fontWeight: 900,
+              }}
+            >
+              رجوع
+            </button>
+          </div>
+
+          <div
+            style={{
+              background:
+                "rgba(255,255,255,0.88)",
+              border:
+                "1px solid #d6c7b8",
+              borderRadius: "24px",
+              padding: "18px",
+              boxShadow:
+                "0 16px 38px rgba(75,46,31,0.09)",
+              marginBottom: "14px",
+            }}
+          >
+            <div className="invoices-filter-grid">
+              <label
+                style={{
+                  display: "grid",
+                  gap: "7px",
+                  fontWeight: 900,
+                }}
+              >
+                بحث
+
+                <input
+                  value={invoicesSearch}
+                  onChange={(event) => {
+                    setInvoicesSearch(
+                      event.target.value
+                    );
+
+                    setInvoicesVisibleCount(
+                      20
+                    );
+                  }}
+                  placeholder="رقم الفاتورة، العميلة، الجوال أو الخدمة"
+                  style={{
+                    ...inputStyle,
+                    width: "100%",
+                    margin: 0,
+                    boxSizing:
+                      "border-box",
+                  }}
+                />
+              </label>
+
+              <label
+                style={{
+                  display: "grid",
+                  gap: "7px",
+                  fontWeight: 900,
+                }}
+              >
+                من تاريخ
+
+                <input
+                  type="date"
+                  value={invoicesFromDate}
+                  onChange={(event) => {
+                    setInvoicesFromDate(
+                      event.target.value
+                    );
+
+                    setInvoicesVisibleCount(
+                      20
+                    );
+                  }}
+                  style={{
+                    ...inputStyle,
+                    width: "100%",
+                    margin: 0,
+                    boxSizing:
+                      "border-box",
+                  }}
+                />
+              </label>
+
+              <label
+                style={{
+                  display: "grid",
+                  gap: "7px",
+                  fontWeight: 900,
+                }}
+              >
+                إلى تاريخ
+
+                <input
+                  type="date"
+                  value={invoicesToDate}
+                  onChange={(event) => {
+                    setInvoicesToDate(
+                      event.target.value
+                    );
+
+                    setInvoicesVisibleCount(
+                      20
+                    );
+                  }}
+                  style={{
+                    ...inputStyle,
+                    width: "100%",
+                    margin: 0,
+                    boxSizing:
+                      "border-box",
+                  }}
+                />
+              </label>
+            </div>
+
+            {invoicesFromDate &&
+              invoicesToDate &&
+              invoicesFromDate >
+                invoicesToDate && (
+                <div
+                  style={{
+                    marginTop: "12px",
+                    padding: "11px 14px",
+                    borderRadius: "13px",
+                    background: "#f7dddd",
+                    color: "#8e3028",
+                    textAlign: "center",
+                    fontWeight: 900,
+                  }}
+                >
+                  تاريخ البداية يجب أن
+                  يكون قبل تاريخ النهاية.
+                </div>
+              )}
+          </div>
+
+          <div
+            className="invoices-summary-grid"
+            style={{
+              marginBottom: "14px",
+            }}
+          >
+            {[
+              [
+                "عدد الفواتير",
+                filteredInvoices.length,
+              ],
+              [
+                "إجمالي الضريبة",
+                `${formatInvoiceAmount(
+                  invoicesVatTotal
+                )} ر.س`,
+              ],
+              [
+                "الإجمالي شامل الضريبة",
+                `${formatInvoiceAmount(
+                  invoicesTotal
+                )} ر.س`,
+              ],
+            ].map(([label, value]) => (
+              <div
+                key={label}
+                style={{
+                  background:
+                    "rgba(255,255,255,0.9)",
+                  border:
+                    "1px solid #d6c7b8",
+                  borderRadius: "21px",
+                  padding: "16px",
+                  textAlign: "center",
+                  boxShadow:
+                    "0 12px 28px rgba(75,46,31,0.07)",
+                }}
+              >
+                <div
+                  style={{
+                    color: "#8a6e59",
+                    fontSize: "13px",
+                    fontWeight: 850,
+                  }}
+                >
+                  {label}
+                </div>
+
+                <div
+                  style={{
+                    marginTop: "8px",
+                    fontSize: "22px",
+                    fontWeight: 950,
+                  }}
+                >
+                  {value}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div
+            style={{
+              background:
+                "rgba(255,255,255,0.92)",
+              border:
+                "1px solid #d6c7b8",
+              borderRadius: "24px",
+              overflow: "hidden",
+              boxShadow:
+                "0 16px 38px rgba(75,46,31,0.09)",
+            }}
+          >
+            {invoicesError ? (
+              <div
+                style={{
+                  padding: "24px",
+                  textAlign: "center",
+                  color: "#8e3028",
+                  fontWeight: 900,
+                }}
+              >
+                {invoicesError}
+              </div>
+            ) : invoicesLoading &&
+              invoices.length === 0 ? (
+              <div
+                style={{
+                  padding: "42px 20px",
+                  textAlign: "center",
+                  fontWeight: 900,
+                }}
+              >
+                جاري تحميل الفواتير...
+              </div>
+            ) : (
+              <div
+                style={{
+                  width: "100%",
+                  overflowX: "auto",
+                }}
+              >
+                <table
+                  style={{
+                    width: "100%",
+                    minWidth: "1040px",
+                    borderCollapse:
+                      "collapse",
+                    direction: "rtl",
+                  }}
+                >
+                  <thead>
+                    <tr
+                      style={{
+                        background:
+                          "#5f3d29",
+                        color: "white",
+                      }}
+                    >
+                      {[
+                        "رقم الفاتورة",
+                        "تاريخ الخدمة",
+                        "اسم العميلة",
+                        "رقم الجوال",
+                        "الخدمة",
+                        "طريقة الدفع",
+                        "الضريبة",
+                        "الإجمالي",
+                      ].map((title) => (
+                        <th
+                          key={title}
+                          style={{
+                            padding:
+                              "14px 11px",
+                            fontSize:
+                              "13px",
+                          }}
+                        >
+                          {title}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {visibleInvoices.map(
+                      (invoice, index) => (
+                        <tr
+                          key={invoice.id}
+                          style={{
+                            background:
+                              index % 2 ===
+                              0
+                                ? "#fffdf9"
+                                : "#f6eee5",
+                            borderBottom:
+                              "1px solid #eadfd5",
+                          }}
+                        >
+                          <td
+                            style={{
+                              padding:
+                                "13px 11px",
+                              textAlign:
+                                "center",
+                              fontWeight:
+                                950,
+                            }}
+                          >
+                            {invoice.invoiceCode ||
+                              invoice.invoiceNumber ||
+                              "-"}
+                          </td>
+
+                          <td
+                            style={{
+                              padding:
+                                "13px 11px",
+                              textAlign:
+                                "center",
+                            }}
+                          >
+                            {formatInvoiceDate(
+                              invoice.scheduleDate
+                            )}
+                          </td>
+
+                          <td
+                            style={{
+                              padding:
+                                "13px 11px",
+                              textAlign:
+                                "center",
+                              fontWeight:
+                                850,
+                            }}
+                          >
+                            {invoice.clientName ||
+                              "-"}
+                          </td>
+
+                          <td
+                            style={{
+                              padding:
+                                "13px 11px",
+                              textAlign:
+                                "center",
+                              direction: "ltr",
+                            }}
+                          >
+                            {invoice.clientPhone ||
+                              "-"}
+                          </td>
+
+                          <td
+                            style={{
+                              padding:
+                                "13px 11px",
+                              textAlign:
+                                "center",
+                            }}
+                          >
+                            {invoice.serviceName ||
+                              "-"}
+                          </td>
+
+                          <td
+                            style={{
+                              padding:
+                                "13px 11px",
+                              textAlign:
+                                "center",
+                            }}
+                          >
+                            {invoice.paymentMethod ||
+                              "-"}
+                          </td>
+
+                          <td
+                            style={{
+                              padding:
+                                "13px 11px",
+                              textAlign:
+                                "center",
+                            }}
+                          >
+                            {formatInvoiceAmount(
+                              invoice.vatAmount
+                            )}
+                          </td>
+
+                          <td
+                            style={{
+                              padding:
+                                "13px 11px",
+                              textAlign:
+                                "center",
+                              color: "#287746",
+                              fontWeight:
+                                950,
+                            }}
+                          >
+                            {formatInvoiceAmount(
+                              invoice.totalIncludingVat
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    )}
+
+                    {!invoicesLoading &&
+                      filteredInvoices.length ===
+                        0 && (
+                        <tr>
+                          <td
+                            colSpan="8"
+                            style={{
+                              padding:
+                                "45px 20px",
+                              textAlign:
+                                "center",
+                              color:
+                                "#8a7a68",
+                              fontWeight:
+                                900,
+                            }}
+                          >
+                            لا توجد فواتير ضمن
+                            الفترة المحددة.
+                          </td>
+                        </tr>
+                      )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {invoicesVisibleCount <
+            filteredInvoices.length && (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "center",
+                marginTop: "15px",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() =>
+                  setInvoicesVisibleCount(
+                    (count) =>
+                      count + 20
+                  )
+                }
+                style={{
+                  ...buttonStyle,
+                  padding: "11px 20px",
+                  borderRadius: "15px",
+                  background: "#4b2e1f",
+                  color: "white",
+                }}
+              >
+                عرض المزيد
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
 if (screen === "finance") {
     const financeMonths = getAvailableFinanceMonths();
     const activeFinanceMonth = financeMonths.includes(selectedFinanceMonth)
@@ -15070,6 +19586,649 @@ marginRight: "auto",
             setGiftVisibleCount,
             filteredGiftClients.length
           )}
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === "inactiveClients") {
+    const visibleInactiveClients =
+      filteredInactiveClients.slice(
+        0,
+        inactiveClientsVisibleCount
+      );
+
+    const inactiveHeaderCellStyle = {
+      padding: "14px",
+      backgroundColor: "#cbb7a4",
+      color: "#000000",
+      borderBottom: "1px solid #eadfd5",
+      fontSize: "14px",
+      fontWeight: "800",
+      whiteSpace: "nowrap",
+      textAlign: "center",
+    };
+
+    const inactiveCellStyle = {
+      padding: "18px 12px",
+      borderBottom: "1px solid #eadfd5",
+      fontSize: "14px",
+      fontWeight: "600",
+      color: "#4b2e1f",
+      textAlign: "center",
+      verticalAlign: "middle",
+      whiteSpace: "nowrap",
+    };
+
+    const inactiveDescription =
+      inactiveClientsTab === "recent"
+        ? "جميع العميلات اللاتي لديهن طلب موثّق، مرتبات من أحدث طلب إلى الأقدم."
+        : inactiveClientsTab === "unknown"
+        ? "عميلات لديهن خدمات سابقة، لكن تاريخ آخر طلب القديم غير محفوظ."
+        : inactiveClientsTab === "never"
+        ? "عميلات لم يُسجل لهن طلب سابق حتى الآن."
+        : `عميلات مرّ على آخر طلب لهن أكثر من ${inactiveClientsDays} يومًا.`;
+
+    return withGreeting(
+      <div
+        style={{
+          minHeight: "100vh",
+          background:
+            "radial-gradient(circle at top left, #fffaf3, #efe4d7 42%, #d4bfae)",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "flex-start",
+          padding: "30px 22px",
+          fontFamily: "Arial",
+          boxSizing: "border-box",
+        }}
+      >
+        <div
+          style={{
+            width: "96%",
+            maxWidth: "1240px",
+            minHeight: "calc(100vh - 160px)",
+            background: "rgba(255,255,255,0.76)",
+            border:
+              "1px solid rgba(255,255,255,0.88)",
+            borderRadius: "34px",
+            padding: "30px",
+            boxShadow:
+              "0 24px 60px rgba(75,46,31,0.14)",
+            backdropFilter: "blur(14px)",
+            textAlign: "center",
+            position: "relative",
+            boxSizing: "border-box",
+            color: "#4b2e1f",
+            direction: "rtl",
+          }}
+        >
+        <div
+          style={{
+            position: "absolute",
+            top: "18px",
+            right: "18px",
+            backgroundColor: "#faf7f2",
+            color: "#4b2e1f",
+            padding: "8px 16px",
+            border: "1px solid #d6c7b8",
+            borderRadius: "16px",
+            fontSize: "13px",
+            fontWeight: "bold",
+            cursor: "default",
+          }}
+        >
+          عدد العملاء: {inactiveClientsByTab.length}
+        </div>
+
+        <img
+          src={logo}
+          alt="logo"
+          style={{
+            width: "100px",
+            marginBottom: "14px",
+          }}
+        />
+
+        <h2
+          style={{
+            color: "#4b2e1f",
+            margin: "0 0 20px",
+            fontSize: "28px",
+          }}
+        >
+          العملاء المنقطعين
+        </h2>
+
+        <div
+          style={{
+            display: "flex",
+            gap: "12px",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            marginBottom: "20px",
+          }}
+        >
+          <input
+            placeholder="ابحث بالاسم أو رقم الجوال أو الحي"
+            value={inactiveClientsSearch}
+            onChange={(event) => {
+              setInactiveClientsSearch(
+                event.target.value
+              );
+              setInactiveClientsVisibleCount(15);
+            }}
+            style={{
+              flex: "1",
+              minWidth: "230px",
+              padding: "14px",
+              borderRadius: "16px",
+              border: "1px solid #d6c7b8",
+              backgroundColor: "#faf7f2",
+              color: "#4b2e1f",
+              outline: "none",
+              fontSize: "15px",
+              textAlign: "right",
+              direction: "rtl",
+            }}
+          />
+
+          <select
+            value={inactiveClientsTab}
+            onChange={(event) => {
+              setInactiveClientsTab(
+                event.target.value
+              );
+              setInactiveClientsVisibleCount(15);
+              setInactiveClientsSearch("");
+            }}
+            style={{
+              minWidth: "240px",
+              padding: "14px",
+              borderRadius: "16px",
+              border: "1px solid #d6c7b8",
+              backgroundColor: "#faf7f2",
+              color: "#4b2e1f",
+              outline: "none",
+              fontSize: "15px",
+              fontWeight: "bold",
+              direction: "rtl",
+            }}
+          >
+            <option value="confirmed">
+              العملاء المنقطعين
+            </option>
+
+            <option value="recent">
+              آخر الطلبات
+            </option>
+
+            <option value="unknown">
+              سجل الخدمات غير موثّق
+            </option>
+          </select>
+
+          {inactiveClientsTab ===
+            "confirmed" && (
+            <select
+              value={inactiveClientsDays}
+              onChange={(event) => {
+                setInactiveClientsDays(
+                  event.target.value
+                );
+                setInactiveClientsVisibleCount(
+                  15
+                );
+              }}
+              style={{
+                minWidth: "180px",
+                padding: "14px",
+                borderRadius: "16px",
+                border:
+                  "1px solid #d6c7b8",
+                backgroundColor: "#faf7f2",
+                color: "#4b2e1f",
+                outline: "none",
+                fontSize: "15px",
+                fontWeight: "bold",
+                direction: "rtl",
+              }}
+            >
+              <option value="60">
+                أكثر من شهرين
+              </option>
+
+              <option value="90">
+                أكثر من 3 أشهر
+              </option>
+
+              <option value="180">
+                أكثر من 6 أشهر
+              </option>
+
+              <option value="365">
+                أكثر من سنة
+              </option>
+            </select>
+          )}
+        </div>
+
+        {clients.length === 0 &&
+        (inactiveFutureAppointmentsLoading ||
+          inactiveServiceHistoryLoading) ? (
+          <div
+            style={{
+              width: "min(900px, 100%)",
+              margin: "0 auto",
+              padding: "24px",
+              textAlign: "center",
+              borderRadius: "18px",
+              backgroundColor: "#fffaf3",
+              border: "1px solid #d6c7b8",
+              fontWeight: "800",
+              color: "#7a5a43",
+              boxSizing: "border-box",
+            }}
+          >
+            جارٍ تحميل سجل الخدمات وفحص المواعيد القادمة...
+          </div>
+        ) : (
+          <>
+            <div
+              style={{
+                width: "100%",
+                margin: 0,
+                overflow: "hidden",
+                borderRadius: "20px",
+                border: "1px solid #d6c7b8",
+                boxShadow:
+                  "0 10px 28px rgba(75,46,31,0.1)",
+                backgroundColor: "#fffaf3",
+                boxSizing: "border-box",
+              }}
+            >
+              <style>
+                {`
+                  .inactive-clients-table th {
+                    font-size: clamp(13px, 1.35vw, 16px) !important;
+                    line-height: 1.35;
+                  }
+
+                  .inactive-clients-table td {
+                    font-size: clamp(12px, 1.2vw, 15px) !important;
+                    line-height: 1.4;
+                  }
+
+                  .inactive-clients-table td button {
+                    font-size: clamp(9px, 0.9vw, 11px) !important;
+                  }
+                `}
+              </style>
+
+              <table
+                className="inactive-clients-table"
+                style={{
+                  width: "100%",
+                  tableLayout: "fixed",
+                  borderCollapse: "collapse",
+                }}
+              >
+                <colgroup>
+                  <col style={{ width: "16%" }} />
+                  <col style={{ width: "14%" }} />
+                  <col style={{ width: "12%" }} />
+                  <col style={{ width: "11%" }} />
+                  <col style={{ width: "14%" }} />
+                  <col style={{ width: "15%" }} />
+                  <col style={{ width: "18%" }} />
+                </colgroup>
+
+                <thead>
+                  <tr>
+                    <th
+                      style={{
+                        ...inactiveHeaderCellStyle,
+                        padding: "10px 5px",
+                        whiteSpace: "normal",
+                      }}
+                    >
+                      الاسم
+                    </th>
+
+                    <th
+                      style={{
+                        ...inactiveHeaderCellStyle,
+                        padding: "10px 5px",
+                        whiteSpace: "normal",
+                      }}
+                    >
+                      رقم الجوال
+                    </th>
+
+                    <th
+                      style={{
+                        ...inactiveHeaderCellStyle,
+                        padding: "10px 5px",
+                        whiteSpace: "normal",
+                      }}
+                    >
+                      الحي
+                    </th>
+
+                    <th
+                      style={{
+                        ...inactiveHeaderCellStyle,
+                        padding: "10px 5px",
+                        whiteSpace: "normal",
+                      }}
+                    >
+                      عدد الخدمات
+                    </th>
+
+                    <th
+                      style={{
+                        ...inactiveHeaderCellStyle,
+                        padding: "10px 5px",
+                        whiteSpace: "normal",
+                      }}
+                    >
+                      آخر طلب
+                    </th>
+
+                    <th
+                      style={{
+                        ...inactiveHeaderCellStyle,
+                        padding: "10px 5px",
+                        whiteSpace: "normal",
+                      }}
+                    >
+                      آخر تواصل
+                    </th>
+
+                    <th
+                      style={{
+                        ...inactiveHeaderCellStyle,
+                        padding: "10px 4px",
+                        whiteSpace: "normal",
+                      }}
+                    >
+                      الإجراءات
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {visibleInactiveClients.map(
+                    (client, index) => {
+                      const serviceHistory =
+                        inactiveServiceHistoryByClientId[
+                          String(client.id)
+                        ];
+
+                      const recordedLastOrderDates =
+                        [
+                          client.last_order_at,
+                          serviceHistory?.lastOrderAt,
+                        ]
+                          .filter(Boolean)
+                          .sort();
+
+                      const effectiveLastOrderAt =
+                        recordedLastOrderDates.length >
+                        0
+                          ? recordedLastOrderDates[
+                              recordedLastOrderDates.length -
+                                1
+                            ]
+                          : "";
+
+                      const effectiveServiceCount =
+                        Number(
+                          serviceHistory?.serviceCount ||
+                            client.visits ||
+                            0
+                        );
+
+                      const lastOrderText =
+                        effectiveLastOrderAt
+                          ? formatInactiveClientDate(
+                              effectiveLastOrderAt
+                            )
+                          : inactiveClientsTab ===
+                            "never"
+                          ? "لم تطلب من قبل"
+                          : "غير مسجل في البروفايل";
+
+                      return (
+                        <tr
+                          key={client.id}
+                          style={{
+                            backgroundColor:
+                              index % 2 === 0
+                                ? "#ffffff"
+                                : "#faf7f2",
+                          }}
+                        >
+                          <td
+                            style={{
+                              ...inactiveCellStyle,
+                              padding: "9px 5px",
+                              fontWeight: "900",
+                              fontSize: "13px",
+                              whiteSpace: "normal",
+                              overflowWrap: "anywhere",
+                            }}
+                          >
+                            {client.name ||
+                              "بدون اسم"}
+                          </td>
+
+                          <td
+                            style={{
+                              ...inactiveCellStyle,
+                              padding: "9px 4px",
+                              fontSize: "11px",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            <span dir="ltr">
+                              {client.phone || "-"}
+                            </span>
+                          </td>
+
+                          <td
+                            style={{
+                              ...inactiveCellStyle,
+                              padding: "9px 4px",
+                              whiteSpace: "normal",
+                              overflowWrap: "anywhere",
+                            }}
+                          >
+                            {client.address || "-"}
+                          </td>
+
+                          <td
+                            style={{
+                              ...inactiveCellStyle,
+                              padding: "9px 4px",
+                              whiteSpace: "normal",
+                            }}
+                          >
+                            {getVisitLabel(
+                              effectiveServiceCount
+                            )}
+                          </td>
+
+                          <td
+                            style={{
+                              ...inactiveCellStyle,
+                              padding: "9px 4px",
+                              whiteSpace: "normal",
+                            }}
+                          >
+                            {lastOrderText}
+                          </td>
+
+                          <td
+                            style={{
+                              ...inactiveCellStyle,
+                              padding: "9px 4px",
+                              whiteSpace: "normal",
+                            }}
+                          >
+                            {client.last_contacted_at
+                              ? formatInactiveClientDate(
+                                  client.last_contacted_at
+                                )
+                              : "لم يتم التواصل"}
+                          </td>
+
+                          <td
+                            style={{
+                              ...inactiveCellStyle,
+                              padding: "6px 4px",
+                              whiteSpace: "normal",
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: "100%",
+                                display: "grid",
+                                gridTemplateColumns:
+                                  "repeat(3, minmax(0, 1fr))",
+                                alignItems: "center",
+                                gap: "3px",
+                              }}
+                            >
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  openDirectWhatsApp(
+                                    client.phone
+                                  )
+                                }
+                                style={{
+                                  ...buttonStyle,
+                                  width: "100%",
+                                  minWidth: 0,
+                                  padding: "6px 2px",
+                                  borderRadius: "7px",
+                                  backgroundColor:
+                                    "#dcebdc",
+                                  color: "#315b37",
+                                  border:
+                                    "1px solid #b9d5bb",
+                                  fontSize: "9px",
+                                  fontWeight: "800",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                واتساب
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  openClientProfile(
+                                    client
+                                  )
+                                }
+                                style={{
+                                  ...buttonStyle,
+                                  width: "100%",
+                                  minWidth: 0,
+                                  padding: "6px 2px",
+                                  borderRadius: "7px",
+                                  backgroundColor:
+                                    "#efe3d6",
+                                  color: "#4b2e1f",
+                                  border:
+                                    "1px solid #d6c7b8",
+                                  fontSize: "9px",
+                                  fontWeight: "800",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                البروفايل
+                              </button>
+
+                              {canEditData ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    markInactiveClientContacted(
+                                      client
+                                    )
+                                  }
+                                  style={{
+                                    ...buttonStyle,
+                                    width: "100%",
+                                    minWidth: 0,
+                                    padding: "6px 2px",
+                                    borderRadius: "7px",
+                                    backgroundColor:
+                                      client.last_contacted_at
+                                        ? "#e8ded4"
+                                        : "#4b2e1f",
+                                    color:
+                                      client.last_contacted_at
+                                        ? "#4b2e1f"
+                                        : "#ffffff",
+                                    border:
+                                      "1px solid #4b2e1f",
+                                    fontSize: "9px",
+                                    fontWeight: "800",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  تواصل
+                                </button>
+                              ) : (
+                                <div />
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }
+                  )}
+
+                  {visibleInactiveClients.length ===
+                    0 && (
+                    <tr>
+                      <td
+                        colSpan="7"
+                        style={{
+                          padding: "34px",
+                          textAlign: "center",
+                          color: "#8a6b55",
+                          fontWeight: "800",
+                        }}
+                      >
+                        لا توجد عميلات منقطعات
+                        ضمن المدة المختارة حاليًا
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div
+              style={{
+                width: "min(1100px, 100%)",
+                margin: "18px auto 0",
+              }}
+            >
+              {renderLoadMoreButtons(
+                inactiveClientsVisibleCount,
+                setInactiveClientsVisibleCount,
+                filteredInactiveClients.length
+              )}
+            </div>
+          </>
+        )}
         </div>
       </div>
     );
