@@ -68,6 +68,11 @@ const [scheduleCopiedRow, setScheduleCopiedRow] = useState(null);
 const [scheduleUndoStack, setScheduleUndoStack] = useState([]);
 const [scheduleRedoStack, setScheduleRedoStack] = useState([]);
 const [additionalClientModal, setAdditionalClientModal] = useState(null);
+
+// نافذة ربط موعد Gift Done بسجل الهدية الصحيح
+const [giftDoneLinkModal, setGiftDoneLinkModal] = useState(null);
+const [giftDoneLinkSearch, setGiftDoneLinkSearch] = useState("");
+
 const [additionalClientDraft, setAdditionalClientDraft] = useState({
   name: "",
   phone: "",
@@ -178,7 +183,7 @@ const [savedWelcomeBoards, setSavedWelcomeBoards] = useState([]);
   const [clients, setClients] = useState([]);
   const [clientsVisibleCount, setClientsVisibleCount] = useState(15);
   const [loyaltyVisibleCount, setLoyaltyVisibleCount] = useState(15);
-const [giftVisibleCount] = useState(15);
+const [giftVisibleCount, setGiftVisibleCount] = useState(15);
   const [referralsVisibleCount, setReferralsVisibleCount] = useState(15);
   const [potentialVisibleCount, setPotentialVisibleCount] = useState(15);
 
@@ -770,6 +775,10 @@ function fetchSharedClientLists() {
 
   const todayDate = currentDate;
   const [selectedScheduleDate, setSelectedScheduleDate] = useState(todayDate);
+
+  // بداية نافذة الأيام الثلاثة في صفحة المواعيد الرئيسية
+  // 0 = اليوم، 1 = غدًا، -1 = أمس
+  const [dashboardDateOffset, setDashboardDateOffset] = useState(0);
   const availablePosterRef = useRef(null);
   const availableAppointmentTimes = ["3:00", "4:00", "5:00", "6:00", "7:00", "8:00", "9:00", "10:00", "11:00"];
   const [availableAppointmentDate, setAvailableAppointmentDate] = useState(todayDate);
@@ -1974,7 +1983,7 @@ const stepScheduleOrder = (rowIndex, currentOrder, direction) => {
     return `${formatTime(startMinutes)} - ${formatTime(endMinutes)}`;
   });
 
-  const createEmptyAppointmentRow = (serviceTime) => ({
+    const createEmptyAppointmentRow = (serviceTime) => ({
     clientBy: "",
     serviceTime,
     driver: "",
@@ -1991,9 +2000,21 @@ const stepScheduleOrder = (rowIndex, currentOrder, direction) => {
     cashReceivedBy: "",
     status: "",
     sendTo: "",
+
+    // نظام الزيارة المنزلية الجماعية الجديد
+    householdGroupId: "",
+    householdRole: "",
+    householdPrimaryRowIndex: null,
+
+    // النظام القديم يبقى مؤقتًا لحماية البيانات السابقة
     additionalClients: [],
+
     addExtra: "",
     note: "",
+
+    // الربط المباشر مع سجل عميلة الإهداء
+    giftClientId: "",
+
     giftFrom: "",
     giftPhone: "",
   });
@@ -2836,11 +2857,13 @@ const getScheduleClientBadges = (row) => {
     }
   };
 
-  const getScheduleCellStyle = (rowIndex, field, extraStyle = {}) => {
+    const getScheduleCellStyle = (rowIndex, field, extraStyle = {}) => {
     const savedStyle = getScheduleCellSavedStyle(rowIndex, field);
     const isSelected = isScheduleCellSelected(rowIndex, field);
     const isActive =
-      scheduleActiveCell?.row === rowIndex && scheduleActiveCell?.field === field;
+      scheduleActiveCell?.row === rowIndex &&
+      scheduleActiveCell?.field === field;
+
     const selectedStyle = isSelected
       ? {
           outline: "1px solid #4b2e1f",
@@ -2854,18 +2877,96 @@ const getScheduleClientBadges = (row) => {
         }
       : {};
 
+    const currentRows =
+      scheduleData[selectedScheduleDate]?.rows || [];
+
+    const currentRow = currentRows[rowIndex] || {};
+
+    const hasHouseholdClients =
+      Array.isArray(currentRow.additionalClients) &&
+      currentRow.additionalClients.length > 0;
+
+    const firstColumnField = scheduleColumns[0]?.field;
+    const lastColumnField =
+      scheduleColumns[scheduleColumns.length - 1]?.field;
+
+    const householdPrimaryBorderStyle = hasHouseholdClients
+      ? {
+          borderTop: "3px solid #4b2e1f",
+          ...(field === firstColumnField
+            ? { borderLeft: "3px solid #4b2e1f" }
+            : {}),
+          ...(field === lastColumnField
+            ? { borderRight: "3px solid #4b2e1f" }
+            : {}),
+        }
+      : {};
+
     return {
       ...scheduleDataCellStyle,
       width: `${getScheduleColumnWidth(field)}px`,
       minWidth: `${getScheduleColumnWidth(field)}px`,
       maxWidth: `${getScheduleColumnWidth(field)}px`,
       height: "23px",
-  minHeight: "23px",
-  verticalAlign: "middle",
+      minHeight: "23px",
+      verticalAlign: "middle",
+      boxSizing: "border-box",
       backgroundColor: savedStyle.fillColor || "transparent",
-      fontSize: `${savedStyle.fontSize || scheduleSettings.defaultFontSize || 14}px`,
+      fontSize: `${
+        savedStyle.fontSize ||
+        scheduleSettings.defaultFontSize ||
+        14
+      }px`,
       ...selectedStyle,
       ...extraStyle,
+      ...householdPrimaryBorderStyle,
+    };
+  };
+
+  const getHouseholdClientCellStyle = (
+    primaryRow,
+    primaryRowIndex,
+    field,
+    extraClientIndex,
+    totalExtraClients,
+    extraStyle = {}
+  ) => {
+    const firstColumnField = scheduleColumns[0]?.field;
+    const lastColumnField =
+      scheduleColumns[scheduleColumns.length - 1]?.field;
+
+    const isFirstColumn = field === firstColumnField;
+    const isLastColumn = field === lastColumnField;
+    const isLastHouseholdClient =
+      extraClientIndex === totalExtraClients - 1;
+
+    const rowBackgroundColor =
+      statusColors[primaryRow?.status] ||
+      (primaryRowIndex % 2 === 0 ? "#fffaf3" : "#f2e7da");
+
+    return {
+      ...scheduleDataCellStyle,
+      width: `${getScheduleColumnWidth(field)}px`,
+      minWidth: `${getScheduleColumnWidth(field)}px`,
+      maxWidth: `${getScheduleColumnWidth(field)}px`,
+      height: "23px",
+      minHeight: "23px",
+      verticalAlign: "middle",
+      boxSizing: "border-box",
+      backgroundColor: rowBackgroundColor,
+      fontSize: `${
+        scheduleSettings.defaultFontSize || 14
+      }px`,
+      ...extraStyle,
+      ...(isFirstColumn
+        ? { borderLeft: "3px solid #4b2e1f" }
+        : {}),
+      ...(isLastColumn
+        ? { borderRight: "3px solid #4b2e1f" }
+        : {}),
+      ...(isLastHouseholdClient
+        ? { borderBottom: "3px solid #4b2e1f" }
+        : {}),
     };
   };
 
@@ -3221,10 +3322,183 @@ const getScheduleClientBadges = (row) => {
     fetchGiftClients();
   };
 
-  const getAdditionalClientsForRow = (row) =>
-    Array.isArray(row?.additionalClients) ? row.additionalClients : [];
+    const createEmptyHouseholdClient = (client = {}) => ({
+    id: client.id || "",
 
-  const getAdditionalClientCount = (row) => getAdditionalClientsForRow(row).length;
+    clientBy: client.clientBy ?? "",
+    serviceTime: client.serviceTime ?? "",
+    driver: client.driver ?? "",
+    therapist: client.therapist ?? "",
+    district: client.district ?? "",
+
+    name: client.name ?? "",
+    phone: client.phone ?? "",
+    frame: Boolean(client.frame),
+
+    order: client.order ?? "",
+    service: client.service ?? "",
+
+    transportation: client.transportation ?? "",
+    serviceAmount: client.serviceAmount ?? "",
+    paymentMethod: client.paymentMethod ?? "",
+    cashReceivedBy: client.cashReceivedBy ?? "",
+
+    status: client.status ?? "",
+    sendTo: client.sendTo ?? "",
+
+    note: client.note ?? "",
+    giftFrom: client.giftFrom ?? "",
+    giftPhone: client.giftPhone ?? "",
+  });
+
+  const getAdditionalClientsForRow = (row) =>
+    Array.isArray(row?.additionalClients)
+      ? row.additionalClients.map(createEmptyHouseholdClient)
+      : [];
+
+  const getAdditionalClientCount = (row) =>
+    getAdditionalClientsForRow(row).length;
+
+  const updateAdditionalClientField = async (
+    rowIndex,
+    extraClientIndex,
+    field,
+    value
+  ) => {
+    if (!ensureSystemWritable() || !canEditData) return;
+
+    const currentDayData = scheduleData[selectedScheduleDate] || {};
+    const currentRows =
+      currentDayData.rows || timeSlots.map(createEmptyAppointmentRow);
+
+    const baseRow =
+      currentRows[rowIndex] ||
+      createEmptyAppointmentRow(timeSlots[rowIndex] || "");
+
+    const extraClients = getAdditionalClientsForRow(baseRow);
+
+    let updatedExtraClient = null;
+
+    const nextExtraClients = extraClients.map((client, index) => {
+      if (index !== extraClientIndex) return client;
+
+      updatedExtraClient = {
+        ...client,
+        [field]: value,
+      };
+
+      return updatedExtraClient;
+    });
+
+    await updateScheduleRow(
+      rowIndex,
+      "additionalClients",
+      nextExtraClients
+    );
+
+    if (field === "order" && updatedExtraClient) {
+      const matchedClient = findClientByExactPhone(
+        updatedExtraClient.phone || ""
+      );
+
+      const visitsValue = orderToVisits(value);
+
+      if (matchedClient && visitsValue !== null) {
+        const activityTime = new Date().toISOString();
+
+        const { data: updatedClient, error } = await supabase
+          .from("clients")
+          .update({
+            visits: visitsValue,
+            last_activity_at: activityTime,
+          })
+          .eq("id", matchedClient.id)
+          .select(
+            "id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_activity_at"
+          )
+          .single();
+
+        if (error) {
+          console.log(
+            "Household client loyalty update error:",
+            error
+          );
+
+          alert(
+            "تم تعديل العدد في الموعد، لكن لم يتم تحديث كرت الولاء. تأكد من الاتصال وجرب مرة ثانية."
+          );
+
+          return;
+        }
+
+        if (updatedClient) {
+          const nextClient =
+            normalizeClientRecord(updatedClient);
+
+          setClients((prev) =>
+            prev.map((client) =>
+              String(client.id) === String(nextClient.id)
+                ? nextClient
+                : client
+            )
+          );
+        }
+      }
+    }
+  };
+
+  const applyAdditionalClientNumberLookup = async (
+    rowIndex,
+    extraClientIndex,
+    phoneValue
+  ) => {
+    if (!ensureSystemWritable() || !canEditData) return null;
+
+    const currentDayData = scheduleData[selectedScheduleDate] || {};
+    const currentRows =
+      currentDayData.rows || timeSlots.map(createEmptyAppointmentRow);
+
+    const baseRow =
+      currentRows[rowIndex] ||
+      createEmptyAppointmentRow(timeSlots[rowIndex] || "");
+
+    const formattedPhone = formatSaudiPhoneForStorage(
+      phoneValue || ""
+    );
+
+    const matchedClient = findClientByExactPhone(
+      formattedPhone || phoneValue
+    );
+
+    const extraClients = getAdditionalClientsForRow(baseRow);
+
+    const nextExtraClients = extraClients.map((client, index) => {
+      if (index !== extraClientIndex) return client;
+
+      return {
+        ...client,
+        phone: formattedPhone,
+        ...(matchedClient
+          ? {
+              name: matchedClient.name || "",
+              district: matchedClient.address || "",
+              frame: Boolean(matchedClient.frame),
+              order: String(
+                getVisitLabel(matchedClient.visits || 0)
+              ),
+            }
+          : {}),
+      };
+    });
+
+    await updateScheduleRow(
+      rowIndex,
+      "additionalClients",
+      nextExtraClients
+    );
+
+    return matchedClient;
+  };
 
   const resetAdditionalClientDraft = () => {
     setAdditionalClientDraft({
@@ -3233,6 +3507,7 @@ const getScheduleClientBadges = (row) => {
       order: "",
       service: "",
       therapist: "",
+      serviceAmount: "",
       sendTo: "",
     });
     setAdditionalClientPhoneNotice("");
@@ -3254,13 +3529,15 @@ const getScheduleClientBadges = (row) => {
 
     setAdditionalClientModal({ rowIndex, editIndex, position: modalPosition });
 
-    if (editClient) {
+        if (editClient) {
       setAdditionalClientDraft({
+        id: editClient.id || "",
         name: editClient.name || "",
         phone: editClient.phone || "",
         order: editClient.order || "",
         service: editClient.service || "",
         therapist: editClient.therapist || "",
+        serviceAmount: editClient.serviceAmount || "",
         sendTo: editClient.sendTo || "",
       });
       setAdditionalClientPhoneNotice("");
@@ -3336,20 +3613,164 @@ const getScheduleClientBadges = (row) => {
     return window.confirm("هذا العميل موجود مسبقاً، هل ترغب بإكمال نقل البيانات؟");
   };
 
-  const markGiftDoneFromScheduleRow = async (row) => {
-    const fromName = String(row.giftFrom || "").trim();
-    const fromPhone = formatSaudiPhoneForStorage(row.giftPhone || "");
-    const toName = String(row.client || "").trim();
-    const toPhone = formatSaudiPhoneForStorage(row.number || "");
+  const findGiftDoneMatchForScheduleRow = (row) => {
+    const savedGiftClientId = String(
+      row?.giftClientId || ""
+    ).trim();
 
-    const matchedGift = giftClients.find((gift) =>
-      isSameNameAndPhone(gift.fromName, gift.fromPhone, fromName, fromPhone) &&
-      isSameNameAndPhone(gift.toName, gift.toPhone, toName, toPhone)
+    if (savedGiftClientId) {
+      const directlyLinkedGift = giftClients.find(
+        (gift) =>
+          String(gift.id) === savedGiftClientId
+      );
+
+      if (directlyLinkedGift) {
+        return {
+          status: "matched",
+          gift: directlyLinkedGift,
+          matches: [directlyLinkedGift],
+        };
+      }
+    }
+
+    const recipientPhone = normalizeDigits(
+      formatSaudiPhoneForStorage(row?.number || "")
     );
 
-    if (!matchedGift) return;
+    if (recipientPhone.length < 9) {
+      return {
+        status: "missing-phone",
+        gift: null,
+        matches: [],
+      };
+    }
 
-    await updateGiftTaken(matchedGift, true);
+    const matchingGifts = giftClients.filter((gift) => {
+      const giftRecipientPhone = normalizeDigits(
+        formatSaudiPhoneForStorage(gift.toPhone || "")
+      );
+
+      return (
+        !gift.giftTaken &&
+        giftRecipientPhone === recipientPhone
+      );
+    });
+
+    if (matchingGifts.length === 1) {
+      return {
+        status: "matched",
+        gift: matchingGifts[0],
+        matches: matchingGifts,
+      };
+    }
+
+    if (matchingGifts.length > 1) {
+      return {
+        status: "multiple",
+        gift: null,
+        matches: matchingGifts,
+      };
+    }
+
+    return {
+      status: "not-found",
+      gift: null,
+      matches: [],
+    };
+  };
+
+  const markGiftDoneFromScheduleRow = async (row) => {
+    const matchResult =
+      findGiftDoneMatchForScheduleRow(row);
+
+    if (
+      matchResult.status !== "matched" ||
+      !matchResult.gift
+    ) {
+      return matchResult;
+    }
+
+    await updateGiftTaken(
+      matchResult.gift,
+      true
+    );
+
+    return matchResult;
+  };
+
+  const selectGiftDoneLink = async (gift) => {
+    if (!giftDoneLinkModal || !gift) return;
+    if (!ensureSystemWritable() || !canEditData) return;
+
+    const rowIndex = giftDoneLinkModal.rowIndex;
+    const currentRow =
+      giftDoneLinkModal.rowSnapshot || {};
+
+    const linkedGiftRowSnapshot = {
+      ...currentRow,
+      status: "Gift Done",
+      giftClientId: String(gift.id),
+      client:
+        gift.toName ||
+        currentRow.client ||
+        "",
+      number: formatSaudiPhoneForStorage(
+        gift.toPhone ||
+        currentRow.number ||
+        ""
+      ),
+      giftFrom:
+        gift.fromName ||
+        currentRow.giftFrom ||
+        "",
+      giftPhone: formatSaudiPhoneForStorage(
+        gift.fromPhone ||
+        currentRow.giftPhone ||
+        ""
+      ),
+      services:
+        gift.service ||
+        currentRow.services ||
+        "",
+    };
+
+    setScheduleData((prev) => {
+      const dayData =
+        prev[selectedScheduleDate] || {};
+
+      const rowsForDate =
+        dayData.rows ||
+        timeSlots.map(
+          createEmptyAppointmentRow
+        );
+
+      const rows = rowsForDate.map(
+        (row, index) =>
+          index === rowIndex
+            ? linkedGiftRowSnapshot
+            : row
+      );
+
+      return {
+        ...prev,
+        [selectedScheduleDate]: {
+          ...dayData,
+          rows,
+        },
+      };
+    });
+
+    queueScheduleRowSave(
+      selectedScheduleDate,
+      rowIndex,
+      linkedGiftRowSnapshot,
+      giftDoneLinkModal.cellStyles || {}
+    );
+
+    await updateGiftTaken(gift, true);
+
+    setGiftDoneLinkModal(null);
+    setGiftDoneLinkSearch("");
   };
 
   const subtractOneVisitForScheduleRow = async (row) => {
@@ -3549,17 +3970,32 @@ if (
     const currentRows = currentDayData.rows || timeSlots.map(createEmptyAppointmentRow);
     const baseRow = currentRows[rowIndex] || createEmptyAppointmentRow(timeSlots[rowIndex] || "");
 
-    const cleanExtraClient = {
-      id: additionalClientDraft.id || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        const cleanExtraClient = {
+      id:
+        additionalClientDraft.id ||
+        `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       name: String(additionalClientDraft.name || "").trim(),
-      phone: formatSaudiPhoneForStorage(additionalClientDraft.phone || ""),
+      phone: formatSaudiPhoneForStorage(
+        additionalClientDraft.phone || ""
+      ),
       order: String(additionalClientDraft.order || "").trim(),
       service: String(additionalClientDraft.service || "").trim(),
       therapist: String(additionalClientDraft.therapist || "").trim(),
+      serviceAmount: String(
+        additionalClientDraft.serviceAmount || ""
+      ).trim(),
       sendTo: String(additionalClientDraft.sendTo || "").trim(),
     };
 
-    if (!cleanExtraClient.name && !cleanExtraClient.phone && !cleanExtraClient.order && !cleanExtraClient.service && !cleanExtraClient.therapist && !cleanExtraClient.sendTo) {
+    if (
+      !cleanExtraClient.name &&
+      !cleanExtraClient.phone &&
+      !cleanExtraClient.order &&
+      !cleanExtraClient.service &&
+      !cleanExtraClient.therapist &&
+      !cleanExtraClient.serviceAmount &&
+      !cleanExtraClient.sendTo
+    ) {
       return;
     }
 
@@ -3745,7 +4181,15 @@ if (visitsValue === null) {
   };
 const cloneScheduleRowWithoutTime = (row) => {
   const clonedRow = JSON.parse(JSON.stringify(row || {}));
+
+  // وقت الصف لا يُنسخ؛ يبقى وقت الصف الذي سيتم اللصق داخله
   delete clonedRow.serviceTime;
+
+  // منع نسخ ارتباط الزيارة المنزلية إلى موعد مختلف بالخطأ
+  delete clonedRow.householdGroupId;
+  delete clonedRow.householdRole;
+  delete clonedRow.householdPrimaryRowIndex;
+
   return clonedRow;
 };
 
@@ -3754,13 +4198,56 @@ const handleScheduleRowAction = (rowIndex, action) => {
   if (!ensureSystemWritable() || !canEditData) return;
 
   const currentDayData = scheduleData[selectedScheduleDate] || {};
-  const currentRows = currentDayData.rows || timeSlots.map(createEmptyAppointmentRow);
-  const currentRow = currentRows[rowIndex] || createEmptyAppointmentRow(timeSlots[rowIndex] || "");
+  const currentRows =
+    currentDayData.rows || timeSlots.map(createEmptyAppointmentRow);
+
+  const currentRow =
+    currentRows[rowIndex] ||
+    createEmptyAppointmentRow(timeSlots[rowIndex] || "");
+
   const currentCellStyles = currentDayData.cellStyles || {};
+
+    if (action === "addHouseholdClient") {
+    const additionalClients = getAdditionalClientsForRow(currentRow);
+
+    const hasEmptyHouseholdClient = additionalClients.some((client) => {
+      return ![
+        client?.name,
+        client?.phone,
+        client?.order,
+        client?.service,
+        client?.therapist,
+        client?.serviceAmount,
+        client?.sendTo,
+      ].some((value) => String(value || "").trim() !== "");
+    });
+
+    if (hasEmptyHouseholdClient) {
+      alert("يوجد سطر فارغ لعميلة من نفس المنزل. أكملي بياناته أولًا.");
+      return;
+    }
+
+    const newHouseholdClient = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: "",
+      phone: "",
+      order: "",
+      service: "",
+      therapist: "",
+      serviceAmount: "",
+      sendTo: "",
+    };
+
+    updateScheduleRow(rowIndex, "additionalClients", [
+      ...additionalClients,
+      newHouseholdClient,
+    ]);
+
+    return;
+  }
 
   if (action === "copy") {
     setScheduleCopiedRow(cloneScheduleRowWithoutTime(currentRow));
-
     return;
   }
 
@@ -3798,16 +4285,53 @@ const handleScheduleRowAction = (rowIndex, action) => {
     return;
   }
 
-  if (action === "clear") {
-    const emptyRow = createEmptyAppointmentRow(currentRow.serviceTime || timeSlots[rowIndex] || "");
+    if (action === "clear") {
+    const householdGroupId = currentRow.householdGroupId || "";
+
+    const householdRowIndexes = householdGroupId
+      ? currentRows
+          .map((row, index) =>
+            row?.householdGroupId === householdGroupId ? index : null
+          )
+          .filter((index) => index !== null)
+      : [];
+
+    const isHouseholdPrimary =
+      currentRow.householdRole === "primary" &&
+      householdRowIndexes.length > 1;
+
+    if (isHouseholdPrimary) {
+      const confirmed = window.confirm(
+        "هذا الصف هو العميلة الأساسية لزيارة منزلية جماعية.\n\nسيتم مسح العميلة الأساسية وجميع عميلات نفس المنزل المرتبطات بها.\n\nهل أنت متأكد؟"
+      );
+
+      if (!confirmed) return;
+    }
+
+    const indexesToClear = isHouseholdPrimary
+      ? householdRowIndexes
+      : [rowIndex];
+
+    const clearedRows = {};
+
+    indexesToClear.forEach((index) => {
+      // إعادة كل صف إلى وقته الأصلي في الجدول
+      clearedRows[index] = createEmptyAppointmentRow(
+        timeSlots[index] || ""
+      );
+    });
 
     scheduleLastEditRef.current = Date.now();
 
     setScheduleData((prev) => {
       const dayData = prev[selectedScheduleDate] || {};
-      const rowsForDate = dayData.rows || timeSlots.map(createEmptyAppointmentRow);
+      const rowsForDate =
+        dayData.rows || timeSlots.map(createEmptyAppointmentRow);
+
       const rows = rowsForDate.map((row, index) =>
-        index === rowIndex ? emptyRow : row
+        Object.prototype.hasOwnProperty.call(clearedRows, index)
+          ? clearedRows[index]
+          : row
       );
 
       return {
@@ -3819,7 +4343,15 @@ const handleScheduleRowAction = (rowIndex, action) => {
       };
     });
 
-    queueScheduleRowSave(selectedScheduleDate, rowIndex, emptyRow, currentCellStyles);
+    indexesToClear.forEach((index) => {
+      queueScheduleRowSave(
+        selectedScheduleDate,
+        index,
+        clearedRows[index],
+        currentCellStyles
+      );
+    });
+
     return;
   }
 };
@@ -3911,8 +4443,96 @@ if (field === "frame") {
     );
   }
 }
-    if (field === "status" && value === "Gift Done" && originalRow.status !== "Gift Done") {
-      await markGiftDoneFromScheduleRow(updatedRowSnapshot);
+    const shouldTryGiftDoneLink =
+      (field === "status" &&
+        value === "Gift Done") ||
+      (field === "number" &&
+        updatedRowSnapshot.status ===
+          "Gift Done");
+
+    if (shouldTryGiftDoneLink) {
+      const giftMatchResult =
+        await markGiftDoneFromScheduleRow(
+          updatedRowSnapshot
+        );
+
+      if (
+        giftMatchResult?.status === "matched" &&
+        giftMatchResult.gift
+      ) {
+        const linkedGiftRowSnapshot = {
+          ...updatedRowSnapshot,
+          giftClientId: String(
+            giftMatchResult.gift.id
+          ),
+        };
+
+        setScheduleData((prev) => {
+          const dayData =
+            prev[selectedScheduleDate] || {};
+
+          const rowsForDate =
+            dayData.rows ||
+            timeSlots.map(
+              createEmptyAppointmentRow
+            );
+
+          const rows = rowsForDate.map(
+            (row, index) =>
+              index === rowIndex
+                ? linkedGiftRowSnapshot
+                : row
+          );
+
+          return {
+            ...prev,
+            [selectedScheduleDate]: {
+              ...dayData,
+              rows,
+            },
+          };
+        });
+
+        queueScheduleRowSave(
+          selectedScheduleDate,
+          rowIndex,
+          linkedGiftRowSnapshot,
+          nextCellStyles
+        );
+      }
+
+      if (
+        giftMatchResult?.status === "multiple" &&
+        giftMatchResult.matches?.length > 1
+      ) {
+        setGiftDoneLinkSearch("");
+
+        setGiftDoneLinkModal({
+          rowIndex,
+          rowSnapshot: updatedRowSnapshot,
+          cellStyles: nextCellStyles,
+          matches: giftMatchResult.matches,
+        });
+      }
+    }
+
+    if (
+      field === "status" &&
+      subtractVisitStatuses.includes(value) &&
+      updatedRowSnapshot.giftClientId
+    ) {
+      const linkedGift = giftClients.find(
+        (gift) =>
+          String(gift.id) ===
+          String(updatedRowSnapshot.giftClientId)
+      );
+
+      if (linkedGift?.giftTaken) {
+        await updateGiftTaken(
+          linkedGift,
+          false
+        );
+      }
     }
 
     if (
@@ -3966,22 +4586,79 @@ const normalizeOrderLabelForStats = (orderValue) =>
     const manual = getManualForDate(selectedScheduleDate);
 
     const activeRows = rows.filter(
-      (row) => row.client || row.number || row.services || row.serviceAmount
+      (row) =>
+        row.client ||
+        row.number ||
+        row.services ||
+        row.serviceAmount ||
+        row.transportation ||
+        getAdditionalClientsForRow(row).length > 0
     );
 
-    const totalIncome = rows.reduce(
+    const activeHouseholdClients = rows.flatMap((row) =>
+      getAdditionalClientsForRow(row)
+        .map((extraClient) => ({
+          ...extraClient,
+          effectiveStatus:
+            extraClient.status || row.status || "",
+        }))
+        .filter((extraClient) => {
+          const hasData =
+            extraClient.name ||
+            extraClient.phone ||
+            extraClient.service ||
+            extraClient.serviceAmount ||
+            extraClient.transportation ||
+            extraClient.paymentMethod;
+
+          return (
+            hasData &&
+            !nonRevenueStatuses.includes(
+              extraClient.effectiveStatus
+            )
+          );
+        })
+    );
+
+    const primaryClientsIncome = rows.reduce(
       (sum, row) =>
         nonRevenueStatuses.includes(row.status)
           ? sum
-          : sum + parseAmount(row.serviceAmount) + parseAmount(row.transportation),
+          : sum +
+            parseAmount(row.serviceAmount) +
+            parseAmount(row.transportation),
       0
     );
 
-    const totalTransportation = rows.reduce(
+    const householdClientsIncome =
+      activeHouseholdClients.reduce(
+        (sum, extraClient) =>
+          sum +
+          parseAmount(extraClient.serviceAmount) +
+          parseAmount(extraClient.transportation),
+        0
+      );
+
+    const totalIncome =
+      primaryClientsIncome + householdClientsIncome;
+
+    const primaryTransportation = rows.reduce(
       (sum, row) =>
-        nonRevenueStatuses.includes(row.status) ? sum : sum + parseAmount(row.transportation),
+        nonRevenueStatuses.includes(row.status)
+          ? sum
+          : sum + parseAmount(row.transportation),
       0
     );
+
+    const householdTransportation =
+      activeHouseholdClients.reduce(
+        (sum, extraClient) =>
+          sum + parseAmount(extraClient.transportation),
+        0
+      );
+
+    const totalTransportation =
+      primaryTransportation + householdTransportation;
 
     const paymentTotals = {
       Cash: 0,
@@ -3992,9 +4669,29 @@ const normalizeOrderLabelForStats = (orderValue) =>
     };
 
     rows.forEach((row) => {
-      const amount = parseAmount(row.serviceAmount) + parseAmount(row.transportation);
-      if (paymentTotals[row.paymentMethod] !== undefined && !nonRevenueStatuses.includes(row.status)) {
-        paymentTotals[row.paymentMethod] += amount;
+      if (nonRevenueStatuses.includes(row.status)) return;
+
+      const amount =
+        parseAmount(row.serviceAmount) +
+        parseAmount(row.transportation);
+
+      const method = row.paymentMethod || "";
+
+      if (paymentTotals[method] !== undefined) {
+        paymentTotals[method] += amount;
+      }
+    });
+
+    activeHouseholdClients.forEach((extraClient) => {
+      const amount =
+        parseAmount(extraClient.serviceAmount) +
+        parseAmount(extraClient.transportation);
+
+      const method =
+        extraClient.paymentMethod || "";
+
+      if (paymentTotals[method] !== undefined) {
+        paymentTotals[method] += amount;
       }
     });
 
@@ -4005,25 +4702,39 @@ const normalizeOrderLabelForStats = (orderValue) =>
       Package: parseAmount(manual.servicePackage),
     };
 
-    const totalServices = Object.values(servicesTotals).reduce(
-      (sum, value) => sum + value,
-      0
-    );
+    const totalServices = Object.values(
+      servicesTotals
+    ).reduce((sum, value) => sum + value, 0);
 
-    const clientCountItems = getClientCountItemsFromRows(rows);
-const newClients = clientCountItems.filter((item) => isNewClientOrder(item.order)).length;
-const loyalClients = clientCountItems.filter((item) => isLoyalClientOrder(item.order)).length;
+    const clientCountItems =
+      getClientCountItemsFromRows(rows);
 
+    const newClients = clientCountItems.filter((item) =>
+      isNewClientOrder(item.order)
+    ).length;
 
+    const loyalClients = clientCountItems.filter((item) =>
+      isLoyalClientOrder(item.order)
+    ).length;
 
-const giftsAdded = rows.filter((row) => row.status === "Gift Giver").length;
-const giftsReceived = rows.filter((row) => row.status === "Gift Done").length;
-const freeGifts = rows.filter(
-  (row) => normalizeOrderLabelForStats(row.order) === "Free"
-).length;
-const twoFreeGifts = rows.filter(
-  (row) => normalizeOrderLabelForStats(row.order) === "2 Free"
-).length;
+    const giftsAdded = rows.filter(
+      (row) => row.status === "Gift Giver"
+    ).length;
+
+    const giftsReceived = rows.filter(
+      (row) => row.status === "Gift Done"
+    ).length;
+
+    const freeGifts = rows.filter(
+      (row) =>
+        normalizeOrderLabelForStats(row.order) === "Free"
+    ).length;
+
+    const twoFreeGifts = rows.filter(
+      (row) =>
+        normalizeOrderLabelForStats(row.order) ===
+        "2 Free"
+    ).length;
 
     const totalCommission =
       parseAmount(manual.commissionJoce) +
@@ -4054,7 +4765,9 @@ const twoFreeGifts = rows.filter(
       giftsReceived,
       freeGifts,
       twoFreeGifts,
-      averageServicePrice: totalServices ? totalIncome / totalServices : 0,
+      averageServicePrice: totalServices
+        ? totalIncome / totalServices
+        : 0,
       totalCommission,
       dailyCost,
       netProfit: totalIncome - dailyCost,
@@ -4176,18 +4889,71 @@ const twoFreeGifts = rows.filter(
     );
 
     const activeRows = rows.filter(
-      (row) => !nonRevenueStatuses.includes(row.status) && (row.client || row.number || row.services || row.serviceAmount || row.transportation)
+      (row) =>
+        !nonRevenueStatuses.includes(row.status) &&
+        (
+          row.client ||
+          row.number ||
+          row.services ||
+          row.serviceAmount ||
+          row.transportation
+        )
     );
 
-    const income = activeRows.reduce(
-      (sum, row) => sum + parseAmount(row.serviceAmount) + parseAmount(row.transportation),
+    const activeHouseholdClients = activeRows.flatMap((row) =>
+      getAdditionalClientsForRow(row).filter((extraClient) => {
+        const extraStatus =
+          extraClient.status || row.status || "";
+
+        const hasData =
+          extraClient.name ||
+          extraClient.phone ||
+          extraClient.service ||
+          extraClient.serviceAmount ||
+          extraClient.transportation;
+
+        return (
+          hasData &&
+          !nonRevenueStatuses.includes(extraStatus)
+        );
+      })
+    );
+
+    const primaryClientsIncome = activeRows.reduce(
+      (sum, row) =>
+        sum +
+        parseAmount(row.serviceAmount) +
+        parseAmount(row.transportation),
       0
     );
 
-    const transportation = activeRows.reduce(
-      (sum, row) => sum + parseAmount(row.transportation),
+    const householdClientsIncome =
+      activeHouseholdClients.reduce(
+        (sum, extraClient) =>
+          sum +
+          parseAmount(extraClient.serviceAmount) +
+          parseAmount(extraClient.transportation),
+        0
+      );
+
+    const income =
+      primaryClientsIncome + householdClientsIncome;
+
+    const primaryTransportation = activeRows.reduce(
+      (sum, row) =>
+        sum + parseAmount(row.transportation),
       0
     );
+
+    const householdTransportation =
+      activeHouseholdClients.reduce(
+        (sum, extraClient) =>
+          sum + parseAmount(extraClient.transportation),
+        0
+      );
+
+    const transportation =
+      primaryTransportation + householdTransportation;
 
     const paymentTotals = {
       Cash: 0,
@@ -4200,8 +4966,24 @@ const twoFreeGifts = rows.filter(
     };
 
     activeRows.forEach((row) => {
-      const amount = parseAmount(row.serviceAmount) + parseAmount(row.transportation);
+      const amount =
+        parseAmount(row.serviceAmount) +
+        parseAmount(row.transportation);
+
       const method = row.paymentMethod || "";
+
+      if (paymentTotals[method] !== undefined) {
+        paymentTotals[method] += amount;
+      }
+    });
+
+    activeHouseholdClients.forEach((extraClient) => {
+      const amount =
+        parseAmount(extraClient.serviceAmount) +
+        parseAmount(extraClient.transportation);
+
+      const method =
+        extraClient.paymentMethod || "";
 
       if (paymentTotals[method] !== undefined) {
         paymentTotals[method] += amount;
@@ -5351,67 +6133,147 @@ const sendWhatsApp = async (client) => {
     return cleanOrder;
   };
 
-  const getClientServiceSummary = (client) => {
-  const clientPhone = normalizePhone(client.phone);
-  const serviceHistory = [];
-  let totalPaid = 0;
+   const getClientServiceSummary = (client) => {
+    const clientPhone = normalizePhone(client.phone);
+    const serviceHistory = [];
+    let totalPaid = 0;
 
-  Object.entries(scheduleData).forEach(([date, dayData]) => {
-    const rows = dayData?.rows || [];
+    Object.entries(scheduleData).forEach(([date, dayData]) => {
+      const rows = dayData?.rows || [];
 
-    rows.forEach((row) => {
-      if (excludedFromProfileHistoryStatuses.includes(row.status)) return;
+      rows.forEach((row) => {
+        getAdditionalClientsForRow(row).forEach((extraClient) => {
+          const extraStatus =
+            extraClient.status || row.status || "";
 
-      const hasRealAppointment =
-        row.therapist || row.serviceAmount || row.transportation || row.clientBy;
+          if (
+            excludedFromProfileHistoryStatuses.includes(
+              extraStatus
+            )
+          ) {
+            return;
+          }
 
-      if (!hasRealAppointment) return;
+          const sameExtraClient =
+            normalizePhone(extraClient.phone) === clientPhone &&
+            clientPhone !== "";
 
-      getAdditionalClientsForRow(row).forEach((extraClient) => {
-        const sameExtraClient =
-          normalizePhone(extraClient.phone) === clientPhone && clientPhone !== "";
+          if (!sameExtraClient) return;
 
-        if (!sameExtraClient) return;
+          const serviceAmount = parseAmount(
+            extraClient.serviceAmount
+          );
+
+          const transportation = parseAmount(
+            extraClient.transportation
+          );
+
+          const totalPrice =
+            serviceAmount + transportation;
+
+          totalPaid += totalPrice;
+
+          serviceHistory.push({
+            date,
+            therapist:
+              extraClient.therapist ||
+              row.therapist ||
+              "-",
+            services:
+              extraClient.service ||
+              row.services ||
+              "-",
+            order: extraClient.order || "",
+            serviceTime:
+              extraClient.serviceTime ||
+              row.serviceTime ||
+              "",
+            clientBy:
+              extraClient.clientBy ||
+              row.clientBy ||
+              "",
+            serviceAmount,
+            transportation,
+            totalPrice,
+            paymentMethod:
+              extraClient.paymentMethod || "",
+            cashReceivedBy:
+              extraClient.cashReceivedBy || "",
+            status: extraStatus,
+            householdClient: true,
+          });
+        });
+
+        if (
+          excludedFromProfileHistoryStatuses.includes(
+            row.status
+          )
+        ) {
+          return;
+        }
+
+        const hasRealAppointment =
+          row.therapist ||
+          row.services ||
+          row.serviceAmount ||
+          row.transportation ||
+          row.clientBy ||
+          row.client;
+
+        if (!hasRealAppointment) return;
+
+        const sameClient =
+          normalizePhone(row.number) === clientPhone &&
+          clientPhone !== "";
+
+        if (!sameClient) return;
+
+        const serviceAmount = parseAmount(
+          row.serviceAmount
+        );
+
+        const transportation = parseAmount(
+          row.transportation
+        );
+
+        const totalPrice =
+          serviceAmount + transportation;
+
+        totalPaid += totalPrice;
 
         serviceHistory.push({
           date,
-          therapist: extraClient.therapist || row.therapist || "-",
-          services: extraClient.service || row.services || "-",
-          order: extraClient.order || "",
+          therapist: row.therapist || "-",
+          services: row.services || "-",
+          order: row.order || "",
           serviceTime: row.serviceTime || "",
           clientBy: row.clientBy || "",
+          serviceAmount,
+          transportation,
+          totalPrice,
+          paymentMethod: row.paymentMethod || "",
+          cashReceivedBy: row.cashReceivedBy || "",
+          status: row.status || "",
+          householdClient: false,
         });
       });
-
-      const sameClient =
-        normalizePhone(row.number) === clientPhone && clientPhone !== "";
-
-      if (!sameClient) return;
-
-      totalPaid +=
-        parseAmount(row.serviceAmount) + parseAmount(row.transportation);
-
-      serviceHistory.push({
-        date,
-        therapist: row.therapist || "-",
-        services: row.services || "-",
-        order: row.order || "",
-        serviceTime: row.serviceTime || "",
-        clientBy: row.clientBy || "",
-      });
     });
-  });
 
-  serviceHistory.sort((a, b) => {
-    if (a.date === b.date) return a.serviceTime.localeCompare(b.serviceTime);
-    return a.date.localeCompare(b.date);
-  });
+    serviceHistory.sort((a, b) => {
+      if (a.date === b.date) {
+        return String(a.serviceTime || "").localeCompare(
+          String(b.serviceTime || "")
+        );
+      }
 
-  return {
-    serviceHistory,
-    totalPaid,
+      return a.date.localeCompare(b.date);
+    });
+
+    return {
+      serviceHistory,
+      totalPaid: Number(totalPaid.toFixed(2)),
+    };
   };
-};
 
   const selectedClientServiceSummary = selectedClient
     ? getClientServiceSummary(selectedClient)
@@ -5574,25 +6436,32 @@ const appointmentServicesText = (() => {
     "مساج رياضي 60 دقيقة + كلاسيك بديكير ومنيكير",
 
   "Sports Massage 90 Mins + Mani/Pedi":
-    "مساج رياضي 90 دقيقة + كلاسيك بديكير ومنيكير",
+    "مساج رياضي 90 دقيقة + كلاسيك بدكير منكير",
 
   "Thai Massage 60 Mins + Mani/Pedi":
-    "مساج تايلندي 60 دقيقة + كلاسيك بديكير ومنيكير",
+    "مساج تايلندي 60 دقيقة + كلاسيك بدكير منكير",
 
   "Thai Massage 90 Mins + Mani/Pedi":
-    "مساج تايلندي 90 دقيقة + كلاسيك بديكير ومنيكير",
+    "مساج تايلندي 90 دقيقة + كلاسيك بدكير منكير",
 
   "Lymphatic Massage 60 Mins + Mani/Pedi":
-    "مساج لمفاوي 60 دقيقة + كلاسيك بديكير ومنيكير",
+    "مساج لمفاوي 60 دقيقة + كلاسيك بدكير منكير",
 
   "Lymphatic Massage 90 Mins + Mani/Pedi":
-    "مساج لمفاوي 90 دقيقة + كلاسيك بديكير ومنيكير",
+    "مساج لمفاوي 90 دقيقة + كلاسيك بدكير منكير",
 
   "Wood Therapy Massage 60 Mins + Mani/Pedi":
-    "مساج أخشاب 60 دقيقة + كلاسيك بديكير ومنيكير",
+    "مساج أخشاب 60 دقيقة + كلاسيك بدكير منكير",
 
   "Wood Therapy Massage 90 Mins + Mani/Pedi":
-    "مساج أخشاب 90 دقيقة + كلاسيك بديكير ومنيكير",
+    "مساج أخشاب 90 دقيقة + كلاسيك بدكير منكير",
+
+    "Mani/Pedi With Color":
+    "كلاسيك بدكير منكير مع لون يد و قدم",
+
+"Mani/Pedi With Color Hand Only":
+    "كلاسيك بدكير منكير مع لون يد",
+    
     }[cleanService] || cleanService;
 
     return formatEnglishDigits(translatedService);
@@ -5709,18 +6578,43 @@ const leavingTime = addMinutesToDisplayTime(
   useEffect(() => {
     if (!isLoggedIn) return;
 
-    [todayDate, getDateOffset(1), getDateOffset(2)].forEach((date) => {
+    const dashboardDatesToLoad = [
+      getDateOffset(dashboardDateOffset),
+      getDateOffset(dashboardDateOffset + 1),
+      getDateOffset(dashboardDateOffset + 2),
+    ];
+
+    dashboardDatesToLoad.forEach((date) => {
       if (date) {
         loadScheduleRowsForDate(date);
       }
     });
-  }, [isLoggedIn, todayDate]);
+  }, [
+    isLoggedIn,
+    todayDate,
+    dashboardDateOffset,
+  ]);
 
-  const todayAppointments = getDashboardAppointments(todayDate);
-  const tomorrowDate = getDateOffset(1);
-  const dayAfterTomorrowDate = getDateOffset(2);
-  const tomorrowAppointments = getDashboardAppointments(tomorrowDate);
-  const dayAfterTomorrowAppointments = getDashboardAppointments(dayAfterTomorrowDate);
+  const dashboardFirstDate =
+    getDateOffset(dashboardDateOffset);
+
+  const dashboardSecondDate =
+    getDateOffset(dashboardDateOffset + 1);
+
+  const dashboardThirdDate =
+    getDateOffset(dashboardDateOffset + 2);
+
+  const todayAppointments =
+    getDashboardAppointments(dashboardFirstDate);
+
+  const tomorrowDate = dashboardSecondDate;
+  const dayAfterTomorrowDate = dashboardThirdDate;
+
+  const tomorrowAppointments =
+    getDashboardAppointments(dashboardSecondDate);
+
+  const dayAfterTomorrowAppointments =
+    getDashboardAppointments(dashboardThirdDate);
   const dashboardSearchResults = String(dashboardSearch || "").trim()
     ? clients
         .filter((client) => clientMatchesSearch(client, dashboardSearch))
@@ -7052,6 +7946,46 @@ const leavingTime = addMinutesToDisplayTime(
 
   const scheduleDataCellStyle = {
     ...scheduleCellStyle,
+  };
+
+  const scheduleRowNumberWidth = 38;
+
+  const getScheduleRowNumberCellStyle = (
+    row,
+    rowIndex,
+    isHeader = false
+  ) => {
+    const rowBackgroundColor =
+      statusColors[row?.status] ||
+      (rowIndex % 2 === 0 ? "#fffaf3" : "#f2e7da");
+
+    return {
+      width: `${scheduleRowNumberWidth}px`,
+      minWidth: `${scheduleRowNumberWidth}px`,
+      maxWidth: `${scheduleRowNumberWidth}px`,
+      height: isHeader ? "22px" : "23px",
+      minHeight: isHeader ? "22px" : "23px",
+      padding: "0 4px",
+      boxSizing: "border-box",
+      position: "sticky",
+      left: 0,
+      zIndex: isHeader ? 10 : 7,
+      background: isHeader
+        ? "linear-gradient(135deg, #d8c5b3, #efe5d9)"
+        : rowBackgroundColor,
+      color: "#4b2e1f",
+      border: "1px solid rgba(75,46,31,0.22)",
+      borderRight: "1px solid rgba(75,46,31,0.22)",
+      boxShadow:
+        "inset -1px 0 0 rgba(75,46,31,0.22), 3px 0 6px rgba(75,46,31,0.08)",
+      textAlign: "center",
+      verticalAlign: "middle",
+      fontSize: isHeader ? "13px" : "12px",
+      fontWeight: "900",
+      lineHeight: isHeader ? "18px" : "20px",
+      whiteSpace: "nowrap",
+      userSelect: "none",
+    };
   };
 
   const getScheduleRowStyle = (row, index) => ({
@@ -10033,28 +10967,39 @@ if (!isLoggedIn) {
   }
 
   if (screen === "dashboard") {
+    const getDashboardAppointmentSection = (
+      date,
+      items
+    ) => {
+      const isToday = date === todayDate;
+      const isFutureDate = date > todayDate;
+
+      return {
+        title: isToday
+          ? `مواعيد اليوم ${formatNumericDate(date)}`
+          : `مواعيد يوم ${formatNumericDate(date)}`,
+        empty: isToday
+          ? "لا توجد مواعيد اليوم"
+          : "لا توجد مواعيد لهذا اليوم",
+        date,
+        reminder: isFutureDate,
+        items,
+      };
+    };
+
     const appointmentSections = [
-      {
-        title: `مواعيد اليوم ${formatNumericDate(todayDate)}`,
-        empty: "لا توجد مواعيد اليوم",
-        date: todayDate,
-        reminder: false,
-        items: todayAppointments,
-      },
-      {
-        title: `مواعيد يوم ${formatNumericDate(tomorrowDate)}`,
-        empty: "لا توجد مواعيد لهذا اليوم",
-        date: tomorrowDate,
-        reminder: true,
-        items: tomorrowAppointments,
-      },
-      {
-        title: `مواعيد يوم ${formatNumericDate(dayAfterTomorrowDate)}`,
-        empty: "لا توجد مواعيد لهذا اليوم",
-        date: dayAfterTomorrowDate,
-        reminder: true,
-        items: dayAfterTomorrowAppointments,
-      },
+      getDashboardAppointmentSection(
+        dashboardFirstDate,
+        todayAppointments
+      ),
+      getDashboardAppointmentSection(
+        dashboardSecondDate,
+        tomorrowAppointments
+      ),
+      getDashboardAppointmentSection(
+        dashboardThirdDate,
+        dayAfterTomorrowAppointments
+      ),
     ];
 
     return withGreeting(
@@ -10075,11 +11020,93 @@ if (!isLoggedIn) {
         <div
           style={{
             textAlign: "center",
-            marginBottom: "32px",
+            marginBottom: "20px",
           }}
         >
-          <img src={logo} alt="logo" style={{ width: "100px", marginBottom: "14px" }} />
-          <h2 style={{ margin: 25, fontSize: "28px", color: "#4b2e1f" }}>المواعيد</h2>
+          <img
+            src={logo}
+            alt="logo"
+            style={{
+              width: "100px",
+              marginBottom: "14px",
+            }}
+          />
+
+          <h2
+            style={{
+              margin: 25,
+              fontSize: "28px",
+              color: "#4b2e1f",
+            }}
+          >
+            المواعيد
+          </h2>
+        </div>
+
+        <div
+          style={{
+            width: "100%",
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            alignItems: "center",
+            direction: "ltr",
+            marginTop: 0,
+            marginBottom: "14px",
+            transform: "translateY(-26px)",
+            boxSizing: "border-box",
+          }}
+        >
+          <button
+            type="button"
+            onClick={() =>
+              setDashboardDateOffset(
+                (previousOffset) => previousOffset - 1
+              )
+            }
+            style={{
+              ...buttonStyle,
+              justifySelf: "start",
+              width: "145px",
+              maxWidth: "42vw",
+              padding: "10px 12px",
+              borderRadius: "16px",
+              border: "1px solid #d6c7b8",
+              background:
+                "linear-gradient(135deg, #faf7f2, #eee2d5)",
+              color: "#4b2e1f",
+              fontSize: "14px",
+              fontWeight: "800",
+              whiteSpace: "nowrap",
+            }}
+          >
+            ← اليوم السابق
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              setDashboardDateOffset(
+                (previousOffset) => previousOffset + 1
+              )
+            }
+            style={{
+              ...buttonStyle,
+              justifySelf: "end",
+              width: "145px",
+              maxWidth: "42vw",
+              padding: "10px 12px",
+              borderRadius: "16px",
+              border: "1px solid #4b2e1f",
+              background:
+                "linear-gradient(135deg, #4b2e1f, #7a5a43)",
+              color: "#ffffff",
+              fontSize: "14px",
+              fontWeight: "800",
+              whiteSpace: "nowrap",
+            }}
+          >
+            اليوم التالي →
+          </button>
         </div>
 
         <div
@@ -10280,6 +11307,230 @@ if (!isLoggedIn) {
               <option key={option} value={option} />
             ))}
           </datalist>
+
+          {giftDoneLinkModal && (() => {
+            const cleanSearch = String(
+              giftDoneLinkSearch || ""
+            )
+              .trim()
+              .toLowerCase();
+
+            const visibleGiftMatches = (
+              giftDoneLinkModal.matches || []
+            ).filter((gift) => {
+              if (!cleanSearch) return true;
+
+              const searchableValues = [
+                gift.toName,
+                gift.toPhone,
+                gift.fromName,
+                gift.fromPhone,
+                gift.service,
+                gift.giftDate,
+              ];
+
+              return searchableValues.some((value) =>
+                String(value || "")
+                  .toLowerCase()
+                  .includes(cleanSearch)
+              );
+            });
+
+            return (
+              <div
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  zIndex: 10020,
+                  background: "rgba(75,46,31,0.26)",
+                  padding: "16px",
+                  boxSizing: "border-box",
+                  display: "flex",
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
+                onMouseDown={(event) => {
+                  if (event.target !== event.currentTarget) return;
+
+                  setGiftDoneLinkModal(null);
+                  setGiftDoneLinkSearch("");
+                }}
+              >
+                <div
+                  style={{
+                    width: "100%",
+                    maxWidth: "560px",
+                    maxHeight: "88vh",
+                    overflowY: "auto",
+                    background:
+                      "linear-gradient(145deg, #fffaf7, #f2e7da)",
+                    border: "1px solid #d6c7b8",
+                    borderRadius: "26px",
+                    padding: "18px",
+                    boxSizing: "border-box",
+                    boxShadow:
+                      "0 28px 70px rgba(75,46,31,0.3)",
+                    color: "#4b2e1f",
+                    direction: "rtl",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: "12px",
+                      marginBottom: "14px",
+                    }}
+                  >
+                    <div>
+                      <h3
+                        style={{
+                          margin: 0,
+                          fontSize: "20px",
+                        }}
+                      >
+                        اختيار سجل الهدية
+                      </h3>
+
+                      <div
+                        style={{
+                          marginTop: "5px",
+                          color: "#7a5a43",
+                          fontSize: "13px",
+                          fontWeight: "700",
+                        }}
+                      >
+                        يوجد أكثر من سجل هدية لنفس رقم الجوال
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGiftDoneLinkModal(null);
+                        setGiftDoneLinkSearch("");
+                      }}
+                      style={{
+                        width: "36px",
+                        height: "36px",
+                        borderRadius: "50%",
+                        border: "1px solid #d6c7b8",
+                        background: "#fffaf3",
+                        color: "#4b2e1f",
+                        fontSize: "20px",
+                        fontWeight: "900",
+                        cursor: "pointer",
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <input
+                    autoFocus
+                    value={giftDoneLinkSearch}
+                    onChange={(event) =>
+                      setGiftDoneLinkSearch(
+                        event.target.value
+                      )
+                    }
+                    placeholder="ابحثي باسم المستلمة أو رقمها أو اسم المُهدي"
+                    style={{
+                      width: "100%",
+                      padding: "12px 14px",
+                      marginBottom: "14px",
+                      borderRadius: "14px",
+                      border: "1px solid #d6c7b8",
+                      background: "#ffffff",
+                      color: "#4b2e1f",
+                      outline: "none",
+                      boxSizing: "border-box",
+                      fontWeight: "700",
+                    }}
+                  />
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: "10px",
+                    }}
+                  >
+                    {visibleGiftMatches.map((gift) => (
+                      <button
+                        key={gift.id}
+                        type="button"
+                        onClick={() =>
+                          selectGiftDoneLink(gift)
+                        }
+                        style={{
+                          width: "100%",
+                          padding: "13px",
+                          borderRadius: "16px",
+                          border:
+                            "1px solid rgba(75,46,31,0.18)",
+                          background: "#fffaf3",
+                          color: "#4b2e1f",
+                          cursor: "pointer",
+                          textAlign: "right",
+                          boxShadow:
+                            "0 6px 16px rgba(75,46,31,0.07)",
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontWeight: "900",
+                            fontSize: "15px",
+                          }}
+                        >
+                          {gift.toName || "بدون اسم"}
+                          {gift.toPhone
+                            ? ` — ${gift.toPhone}`
+                            : ""}
+                        </div>
+
+                        <div
+                          style={{
+                            marginTop: "6px",
+                            fontSize: "13px",
+                            color: "#7a5a43",
+                            lineHeight: 1.7,
+                          }}
+                        >
+                          المُهدي:{" "}
+                          {gift.fromName || "-"}
+                          {gift.fromPhone
+                            ? ` — ${gift.fromPhone}`
+                            : ""}
+                          <br />
+                          الخدمة: {gift.service || "-"}
+                          <br />
+                          التاريخ: {gift.giftDate || "-"}
+                        </div>
+                      </button>
+                    ))}
+
+                    {visibleGiftMatches.length === 0 && (
+                      <div
+                        style={{
+                          padding: "20px",
+                          textAlign: "center",
+                          borderRadius: "16px",
+                          border:
+                            "1px dashed rgba(75,46,31,0.25)",
+                          background: "#fffaf3",
+                          color: "#7a5a43",
+                          fontWeight: "800",
+                        }}
+                      >
+                        لا توجد نتيجة مطابقة للبحث
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {additionalClientModal && (() => {
             const modalRows = getRowsForDate(selectedScheduleDate);
@@ -10552,6 +11803,13 @@ transform: "translate(-50%, -50%)",
               }}
             >
               <colgroup>
+                <col
+                  style={{
+                    width: `${scheduleRowNumberWidth}px`,
+                    minWidth: `${scheduleRowNumberWidth}px`,
+                    maxWidth: `${scheduleRowNumberWidth}px`,
+                  }}
+                />
                 {scheduleColumns.map((column) => (
                   <col
                     key={column.field}
@@ -10567,6 +11825,16 @@ transform: "translate(-50%, -50%)",
                     color: "#4b2e1f",
                   }}
                 >
+                  <th
+                    style={getScheduleRowNumberCellStyle(
+                      null,
+                      0,
+                      true
+                    )}
+                  >
+                    #
+                  </th>
+
                   {scheduleColumns.map((column) => (
                     <th
                       key={column.field}
@@ -10598,11 +11866,20 @@ transform: "translate(-50%, -50%)",
               </thead>
 
               <tbody>
-                {appointmentStats.rows.map((row, index) => (
+                {appointmentStats.rows.flatMap((row, index) => [
                   <tr
                     key={`${selectedScheduleDate}-${index}`}
                     style={getScheduleRowStyle(row, index)}
                   >
+                    <td
+                      style={getScheduleRowNumberCellStyle(
+                        row,
+                        index
+                      )}
+                    >
+                      {index + 1}
+                    </td>
+
                     <td style={getScheduleCellStyle(index, "rowAction")}>
   <select
     value=""
@@ -10616,6 +11893,9 @@ transform: "translate(-50%, -50%)",
     }}
   >
     <option value="">⋯</option>
+<option value="addHouseholdClient">
+  إضافة عميلة لنفس المنزل
+</option>
 <option value="copy">Copy</option>
 <option value="paste">Paste</option>
 <option value="clear">Clear</option>
@@ -10720,73 +12000,50 @@ transform: "translate(-50%, -50%)",
   <div
     style={{
       display: "grid",
-      gridTemplateColumns: "18px 1fr auto auto",
+      gridTemplateColumns: "1fr auto auto",
       alignItems: "center",
       gap: "4px",
       width: "100%",
     }}
   >
-    <button
-  type="button"
-  title="إضافة عميلة لنفس البيت"
-  onMouseDown={(event) => event.stopPropagation()}
-  onClick={(event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    openAdditionalClientModal(index, null, event);
-  }}
-  style={{
-    width: "16px",
-    height: "16px",
-    borderRadius: "999px",
-    border: "1px solid rgba(122,90,67,0.55)",
-    background: "linear-gradient(135deg, #cbbbb3, #eeeae6)",
-    color: "white",
-    cursor: "pointer",
-    fontWeight: "900",
-    fontSize: "16px",
-    lineHeight: "16px",
-    padding: 0,
-    boxShadow: "0 3px 8px rgba(75,46,31,0.18)",
-  }}
->
-  +
-</button>
+    <input
+      value={row.client || ""}
+      onChange={(e) =>
+        updateScheduleRow(index, "client", e.target.value)
+      }
+      {...getScheduleEditableProps(index, "client")}
+      style={getScheduleInputStyle(index, "client", {
+        width: "100%",
+        minWidth: 0,
+      })}
+    />
 
-<input
-  value={
-    getAdditionalClientCount(row) > 0
-      ? `${row.client || ""} (+${getAdditionalClientCount(row)})`
-      : row.client
-  }
-  onChange={(e) => {
-    const cleanValue = String(e.target.value || "").replace(/\s*\(\+\d+\)\s*$/, "");
-    updateScheduleRow(index, "client", cleanValue);
-  }}
-  {...getScheduleEditableProps(index, "client")}
-  style={getScheduleInputStyle(index, "client", {
-    width: "100%",
-    minWidth: 0,
-  })}
-/>
-{getScheduleClientBadges(row).notes && (
-  <span
-    title={getScheduleClientBadges(row).notes}
-    style={{ fontSize: "12px", lineHeight: 1, cursor: "help" }}
-  >
-    📝
-  </span>
-)}
+    {getScheduleClientBadges(row).notes && (
+      <span
+        title={getScheduleClientBadges(row).notes}
+        style={{
+          fontSize: "12px",
+          lineHeight: 1,
+          cursor: "help",
+        }}
+      >
+        📝
+      </span>
+    )}
 
-{getScheduleClientBadges(row).blacklist && (
-  <span
-    title="Black List"
-    style={{ fontSize: "12px", lineHeight: 1, cursor: "help" }}
-  >
-    ⛔
-  </span>
-)}
-</div>
+    {getScheduleClientBadges(row).blacklist && (
+      <span
+        title="Black List"
+        style={{
+          fontSize: "12px",
+          lineHeight: 1,
+          cursor: "help",
+        }}
+      >
+        ⛔
+      </span>
+    )}
+  </div>
 </td>
 
 <td
@@ -11091,7 +12348,7 @@ margin: "0 auto",
                       />
                     </td>
 
-                    <td
+                                        <td
                       style={getScheduleCellStyle(index, "giftPhone")}
                       {...getScheduleCellHandlers(index, "giftPhone")}
                     >
@@ -11111,8 +12368,1105 @@ margin: "0 auto",
                         style={getScheduleInputStyle(index, "giftPhone")}
                       />
                     </td>
-                  </tr>
-                ))}
+                  </tr>,
+
+                                    ...getAdditionalClientsForRow(row).map(
+                    (extraClient, extraIndex, extraClients) => {
+                      const matchedHouseholdClient =
+                        findClientByExactPhone(extraClient.phone || "");
+
+                      const householdStatus =
+                        extraClient.status ?? row.status ?? "";
+
+                      return (
+                        <tr
+                          key={`${selectedScheduleDate}-${index}-household-${
+                            extraClient.id || extraIndex
+                          }`}
+                          style={getScheduleRowStyle(row, index)}
+                          onKeyDown={(event) => {
+                            if (event.key !== "Enter") return;
+
+                            const targetTag =
+                              event.target?.tagName || "";
+
+                            if (
+                              !["INPUT", "SELECT", "TEXTAREA"].includes(
+                                targetTag
+                              )
+                            ) {
+                              return;
+                            }
+
+                            if (event.defaultPrevented) return;
+
+                            event.preventDefault();
+
+                            const currentTableRow =
+                              event.currentTarget;
+
+                            const currentTableCell =
+                              event.target.closest("td");
+
+                            const currentCellIndex =
+                              Array.from(
+                                currentTableRow.children
+                              ).indexOf(currentTableCell);
+
+                            if (currentCellIndex < 0) return;
+
+                            const nextTableRow =
+                              currentTableRow.nextElementSibling;
+
+                            const nextTableCell =
+                              nextTableRow?.children?.[
+                                currentCellIndex
+                              ];
+
+                            const nextControl =
+                              nextTableCell?.querySelector(
+                                'input:not([disabled]), select:not([disabled]), textarea:not([disabled])'
+                              );
+
+                            event.target.blur();
+
+                            setTimeout(() => {
+                              if (!nextControl) return;
+
+                              nextControl.focus();
+
+                              if (
+                                nextControl.tagName === "INPUT" &&
+                                nextControl.type !== "checkbox" &&
+                                typeof nextControl.select ===
+                                  "function"
+                              ) {
+                                nextControl.select();
+                              }
+                            }, 0);
+                          }}
+                        >
+                          <td
+                            style={getScheduleRowNumberCellStyle(
+                              row,
+                              index
+                            )}
+                          >
+                            {`${index + 1}.${extraIndex + 1}`}
+                          </td>
+
+                          {scheduleColumns.map((column) => {
+                            const field = column.field;
+
+                            if (field === "rowAction") {
+                              return (
+                                <td
+                                  key={field}
+                                  style={getHouseholdClientCellStyle(
+                                    row,
+                                    index,
+                                    field,
+                                    extraIndex,
+                                    extraClients.length
+                                  )}
+                                >
+                                  <select
+                                    value=""
+                                    onChange={(event) => {
+                                      if (event.target.value !== "delete") {
+                                        return;
+                                      }
+
+                                      const confirmed = window.confirm(
+                                        `هل تريد حذف ${
+                                          extraClient.name ||
+                                          "عميلة نفس المنزل"
+                                        } من هذا الموعد؟`
+                                      );
+
+                                      if (confirmed) {
+                                        deleteAdditionalClient(
+                                          index,
+                                          extraIndex
+                                        );
+                                      }
+                                    }}
+                                    style={{
+                                      ...scheduleInputStyle,
+                                      width: "100%",
+                                      fontSize: "12px",
+                                      fontWeight: "bold",
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    <option value="">⋯</option>
+                                    <option value="delete">
+                                      حذف عميلة نفس المنزل
+                                    </option>
+                                  </select>
+                                </td>
+                              );
+                            }
+
+                            if (field === "status") {
+                              return (
+                                <td
+                                  key={field}
+                                  style={getHouseholdClientCellStyle(
+                                    row,
+                                    index,
+                                    field,
+                                    extraIndex,
+                                    extraClients.length
+                                  )}
+                                >
+                                  <select
+                                    value={householdStatus}
+                                    onChange={(event) =>
+                                      updateAdditionalClientField(
+                                        index,
+                                        extraIndex,
+                                        "status",
+                                        event.target.value
+                                      )
+                                    }
+                                    style={getScheduleInputStyle(
+                                      index,
+                                      field
+                                    )}
+                                  >
+                                    {appointmentStatuses.map((option) => (
+                                      <option
+                                        key={option}
+                                        value={option}
+                                      >
+                                        {option}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </td>
+                              );
+                            }
+
+                            if (field === "clientBy") {
+                              return (
+                                <td
+                                  key={field}
+                                  style={getHouseholdClientCellStyle(
+                                    row,
+                                    index,
+                                    field,
+                                    extraIndex,
+                                    extraClients.length
+                                  )}
+                                >
+                                  <input
+                                    list="clientByList"
+                                    value={
+                                      extraClient.clientBy ??
+                                      row.clientBy ??
+                                      ""
+                                    }
+                                    onChange={(event) =>
+                                      updateAdditionalClientField(
+                                        index,
+                                        extraIndex,
+                                        "clientBy",
+                                        event.target.value
+                                      )
+                                    }
+                                    style={getScheduleInputStyle(
+                                      index,
+                                      field
+                                    )}
+                                  />
+                                </td>
+                              );
+                            }
+
+                            if (field === "serviceTime") {
+                              return (
+                                <td
+                                  key={field}
+                                  style={getHouseholdClientCellStyle(
+                                    row,
+                                    index,
+                                    field,
+                                    extraIndex,
+                                    extraClients.length,
+                                    {
+                                      whiteSpace: "nowrap",
+                                    }
+                                  )}
+                                >
+                                  <input
+                                    value={
+                                      extraClient.serviceTime ||
+                                      "نفس المنزل"
+                                    }
+                                    onChange={(event) =>
+                                      updateAdditionalClientField(
+                                        index,
+                                        extraIndex,
+                                        "serviceTime",
+                                        event.target.value
+                                      )
+                                    }
+                                    style={getScheduleInputStyle(
+                                      index,
+                                      field,
+                                      {
+                                        whiteSpace: "nowrap",
+                                        fontWeight: "bold",
+                                        color: "#4b2e1f",
+                                      }
+                                    )}
+                                  />
+                                </td>
+                              );
+                            }
+
+                            if (field === "driver") {
+                              return (
+                                <td
+                                  key={field}
+                                  style={getHouseholdClientCellStyle(
+                                    row,
+                                    index,
+                                    field,
+                                    extraIndex,
+                                    extraClients.length
+                                  )}
+                                >
+                                  <input
+                                    value={
+                                      extraClient.driver ??
+                                      row.driver ??
+                                      ""
+                                    }
+                                    onChange={(event) =>
+                                      updateAdditionalClientField(
+                                        index,
+                                        extraIndex,
+                                        "driver",
+                                        event.target.value
+                                      )
+                                    }
+                                    style={getScheduleInputStyle(
+                                      index,
+                                      field
+                                    )}
+                                  />
+                                </td>
+                              );
+                            }
+
+                            if (field === "therapist") {
+                              return (
+                                <td
+                                  key={field}
+                                  style={getHouseholdClientCellStyle(
+                                    row,
+                                    index,
+                                    field,
+                                    extraIndex,
+                                    extraClients.length
+                                  )}
+                                >
+                                  <input
+                                    list="therapistList"
+                                    value={extraClient.therapist || ""}
+                                    onChange={(event) =>
+                                      updateAdditionalClientField(
+                                        index,
+                                        extraIndex,
+                                        "therapist",
+                                        event.target.value
+                                      )
+                                    }
+                                    style={getScheduleInputStyle(
+                                      index,
+                                      field
+                                    )}
+                                  />
+                                </td>
+                              );
+                            }
+
+                            if (field === "district") {
+                              return (
+                                <td
+                                  key={field}
+                                  style={getHouseholdClientCellStyle(
+                                    row,
+                                    index,
+                                    field,
+                                    extraIndex,
+                                    extraClients.length
+                                  )}
+                                >
+                                  <input
+                                    value={
+                                      extraClient.district ??
+                                      row.district ??
+                                      ""
+                                    }
+                                    onChange={(event) =>
+                                      updateAdditionalClientField(
+                                        index,
+                                        extraIndex,
+                                        "district",
+                                        event.target.value
+                                      )
+                                    }
+                                    style={getScheduleInputStyle(
+                                      index,
+                                      field
+                                    )}
+                                  />
+                                </td>
+                              );
+                            }
+
+                            if (field === "client") {
+                              return (
+                                <td
+                                  key={field}
+                                  style={getHouseholdClientCellStyle(
+                                    row,
+                                    index,
+                                    field,
+                                    extraIndex,
+                                    extraClients.length
+                                  )}
+                                >
+                                  <input
+                                    placeholder="اسم العميلة"
+                                    value={extraClient.name || ""}
+                                    onChange={(event) =>
+                                      updateAdditionalClientField(
+                                        index,
+                                        extraIndex,
+                                        "name",
+                                        event.target.value
+                                      )
+                                    }
+                                    style={getScheduleInputStyle(
+                                      index,
+                                      field
+                                    )}
+                                  />
+                                </td>
+                              );
+                            }
+
+                            if (field === "addExtra") {
+                              return (
+                                <td
+                                  key={field}
+                                  style={getHouseholdClientCellStyle(
+                                    row,
+                                    index,
+                                    field,
+                                    extraIndex,
+                                    extraClients.length,
+                                    {
+                                      textAlign: "center",
+                                    }
+                                  )}
+                                >
+                                  <button
+                                    type="button"
+                                    title="فتح بروفايل العميلة"
+                                    onClick={() => {
+                                      if (matchedHouseholdClient) {
+                                        openClientProfile(
+                                          matchedHouseholdClient
+                                        );
+                                      } else {
+                                        alert(
+                                          "لم يتم العثور على العميلة في قائمة العملاء"
+                                        );
+                                      }
+                                    }}
+                                    style={{
+                                      display: "block",
+                                      margin: "0 auto",
+                                      width: "16px",
+                                      minWidth: "16px",
+                                      height: "16px",
+                                      borderRadius: "999px",
+                                      border:
+                                        "1px solid rgba(122,90,67,0.55)",
+                                      background:
+                                        "linear-gradient(135deg, #cbbbb3, #eeeae6)",
+                                      color: "white",
+                                      cursor: "pointer",
+                                      fontWeight: "900",
+                                      fontSize: "16px",
+                                      lineHeight: "16px",
+                                      padding: 0,
+                                      boxShadow:
+                                        "0 3px 8px rgba(75,46,31,0.22)",
+                                    }}
+                                  />
+                                </td>
+                              );
+                            }
+
+                            if (field === "frame") {
+                              return (
+                                <td
+                                  key={field}
+                                  style={getHouseholdClientCellStyle(
+                                    row,
+                                    index,
+                                    field,
+                                    extraIndex,
+                                    extraClients.length,
+                                    {
+                                      textAlign: "center",
+                                    }
+                                  )}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={Boolean(
+                                      matchedHouseholdClient?.frame
+                                    )}
+                                    onChange={(event) => {
+                                      if (!matchedHouseholdClient) {
+                                        alert(
+                                          "سجلي رقم العميلة أولًا أو أضيفيها إلى قائمة العملاء"
+                                        );
+                                        return;
+                                      }
+
+                                      updateClientFrame(
+                                        matchedHouseholdClient.id,
+                                        event.target.checked
+                                      );
+                                    }}
+                                  />
+                                </td>
+                              );
+                            }
+
+                            if (field === "order") {
+                              return (
+                                <td
+                                  key={field}
+                                  style={getHouseholdClientCellStyle(
+                                    row,
+                                    index,
+                                    field,
+                                    extraIndex,
+                                    extraClients.length,
+                                    {
+                                      padding: "0px",
+                                    }
+                                  )}
+                                >
+                                  <div
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      width: "100%",
+                                      height: "23px",
+                                      overflow: "hidden",
+                                      gap: "2px",
+                                    }}
+                                  >
+                                    <input
+                                      value={extraClient.order || ""}
+                                      onChange={(event) =>
+                                        updateAdditionalClientField(
+                                          index,
+                                          extraIndex,
+                                          "order",
+                                          event.target.value
+                                        )
+                                      }
+                                      style={{
+                                        ...getScheduleInputStyle(
+                                          index,
+                                          field
+                                        ),
+                                        width: "calc(100% - 18px)",
+                                        height: "21px",
+                                        minHeight: "21px",
+                                        padding: "0 2px",
+                                        textAlign: "center",
+                                        border: "none",
+                                        background: "transparent",
+                                        fontWeight: "bold",
+                                      }}
+                                    />
+
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        width: "14px",
+                                        height: "21px",
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      <button
+                                        type="button"
+                                        onMouseDown={(event) =>
+                                          event.preventDefault()
+                                        }
+                                        onClick={(event) => {
+                                          event.preventDefault();
+                                          event.stopPropagation();
+
+                                          const currentIndex =
+                                            getOrderStepIndex(
+                                              extraClient.order
+                                            );
+
+                                          const nextOrder =
+                                            getOrderFromStepIndex(
+                                              Math.max(
+                                                0,
+                                                currentIndex + 1
+                                              )
+                                            );
+
+                                          updateAdditionalClientField(
+                                            index,
+                                            extraIndex,
+                                            "order",
+                                            nextOrder
+                                          );
+                                        }}
+                                        style={{
+                                          width: "14px",
+                                          height: "10px",
+                                          lineHeight: "8px",
+                                          padding: 0,
+                                          margin: 0,
+                                          border: "none",
+                                          background: "transparent",
+                                          cursor: "pointer",
+                                          fontSize: "10px",
+                                          fontWeight: "bold",
+                                          color: "#4b2e1f",
+                                        }}
+                                      >
+                                        ▲
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onMouseDown={(event) =>
+                                          event.preventDefault()
+                                        }
+                                        onClick={(event) => {
+                                          event.preventDefault();
+                                          event.stopPropagation();
+
+                                          const currentIndex =
+                                            getOrderStepIndex(
+                                              extraClient.order
+                                            );
+
+                                          const nextOrder =
+                                            getOrderFromStepIndex(
+                                              Math.max(
+                                                0,
+                                                currentIndex - 1
+                                              )
+                                            );
+
+                                          updateAdditionalClientField(
+                                            index,
+                                            extraIndex,
+                                            "order",
+                                            nextOrder
+                                          );
+                                        }}
+                                        style={{
+                                          width: "14px",
+                                          height: "10px",
+                                          lineHeight: "8px",
+                                          padding: 0,
+                                          margin: 0,
+                                          border: "none",
+                                          background: "transparent",
+                                          cursor: "pointer",
+                                          fontSize: "10px",
+                                          fontWeight: "bold",
+                                          color: "#4b2e1f",
+                                        }}
+                                      >
+                                        ▼
+                                      </button>
+                                    </div>
+                                  </div>
+                                </td>
+                              );
+                            }
+
+                            if (field === "services") {
+                              return (
+                                <td
+                                  key={field}
+                                  style={getHouseholdClientCellStyle(
+                                    row,
+                                    index,
+                                    field,
+                                    extraIndex,
+                                    extraClients.length
+                                  )}
+                                >
+                                  <input
+                                    list="serviceList"
+                                    value={extraClient.service || ""}
+                                    onChange={(event) =>
+                                      updateAdditionalClientField(
+                                        index,
+                                        extraIndex,
+                                        "service",
+                                        event.target.value
+                                      )
+                                    }
+                                    style={getScheduleInputStyle(
+                                      index,
+                                      field
+                                    )}
+                                  />
+                                </td>
+                              );
+                            }
+
+                             if (field === "number") {
+                              return (
+                                <td
+                                  key={field}
+                                  style={getHouseholdClientCellStyle(
+                                    row,
+                                    index,
+                                    field,
+                                    extraIndex,
+                                    extraClients.length
+                                  )}
+                                >
+                                  <input
+                                    data-household-field="number"
+                                    placeholder="رقم الجوال"
+                                    value={extraClient.phone || ""}
+                                    onChange={(event) =>
+                                      updateAdditionalClientField(
+                                        index,
+                                        extraIndex,
+                                        "phone",
+                                        event.target.value
+                                      )
+                                    }
+                                    onKeyDown={(event) => {
+                                      if (event.key !== "Enter") return;
+
+                                      event.preventDefault();
+
+                                      const currentTableRow =
+                                        event.currentTarget.closest("tr");
+
+                                      const nextTableRow =
+                                        currentTableRow?.nextElementSibling;
+
+                                      const nextNumberInput =
+                                        nextTableRow?.querySelector(
+                                          '[data-household-field="number"], [data-schedule-cell$="-number"]'
+                                        );
+
+                                      event.currentTarget.blur();
+
+                                      setTimeout(() => {
+                                        if (!nextNumberInput) return;
+
+                                        nextNumberInput.focus();
+
+                                        if (
+                                          typeof nextNumberInput.select ===
+                                          "function"
+                                        ) {
+                                          nextNumberInput.select();
+                                        }
+                                      }, 0);
+                                    }}
+                                    onBlur={(event) =>
+                                      applyAdditionalClientNumberLookup(
+                                        index,
+                                        extraIndex,
+                                        event.target.value
+                                      )
+                                    }
+                                    style={getScheduleInputStyle(
+                                      index,
+                                      field
+                                    )}
+                                  />
+                                </td>
+                              );
+                            }
+
+                            if (field === "transportation") {
+                              return (
+                                <td
+                                  key={field}
+                                  style={getHouseholdClientCellStyle(
+                                    row,
+                                    index,
+                                    field,
+                                    extraIndex,
+                                    extraClients.length
+                                  )}
+                                >
+                                  <input
+                                    value={
+                                      extraClient.transportation || ""
+                                    }
+                                    onChange={(event) =>
+                                      updateAdditionalClientField(
+                                        index,
+                                        extraIndex,
+                                        "transportation",
+                                        event.target.value
+                                      )
+                                    }
+                                    style={getScheduleInputStyle(
+                                      index,
+                                      field
+                                    )}
+                                  />
+                                </td>
+                              );
+                            }
+
+                            if (field === "serviceAmount") {
+                              return (
+                                <td
+                                  key={field}
+                                  style={getHouseholdClientCellStyle(
+                                    row,
+                                    index,
+                                    field,
+                                    extraIndex,
+                                    extraClients.length
+                                  )}
+                                >
+                                  <input
+                                    placeholder="سعر الخدمة"
+                                    value={
+                                      extraClient.serviceAmount || ""
+                                    }
+                                    onChange={(event) =>
+                                      updateAdditionalClientField(
+                                        index,
+                                        extraIndex,
+                                        "serviceAmount",
+                                        event.target.value
+                                      )
+                                    }
+                                    style={getScheduleInputStyle(
+                                      index,
+                                      field
+                                    )}
+                                  />
+                                </td>
+                              );
+                            }
+
+                            if (field === "totalPrice") {
+                              const householdTotal =
+                                nonRevenueStatuses.includes(
+                                  householdStatus
+                                )
+                                  ? 0
+                                  : parseAmount(
+                                      extraClient.serviceAmount
+                                    ) +
+                                    parseAmount(
+                                      extraClient.transportation
+                                    );
+
+                              return (
+                                <td
+                                  key={field}
+                                  style={getHouseholdClientCellStyle(
+                                    row,
+                                    index,
+                                    field,
+                                    extraIndex,
+                                    extraClients.length,
+                                    {
+                                      textAlign: "center",
+                                      fontWeight: "bold",
+                                      color: "#111",
+                                    }
+                                  )}
+                                >
+                                  {formatCurrency(householdTotal)}
+                                </td>
+                              );
+                            }
+
+                            if (field === "paymentMethod") {
+                              return (
+                                <td
+                                  key={field}
+                                  style={getHouseholdClientCellStyle(
+                                    row,
+                                    index,
+                                    field,
+                                    extraIndex,
+                                    extraClients.length
+                                  )}
+                                >
+                                                                    <select
+                                    value={
+                                      extraClient.paymentMethod || ""
+                                    }
+                                    onChange={(event) =>
+                                      updateAdditionalClientField(
+                                        index,
+                                        extraIndex,
+                                        "paymentMethod",
+                                        event.target.value
+                                      )
+                                    }
+                                    style={getScheduleInputStyle(
+                                      index,
+                                      field
+                                    )}
+                                  >
+                                    {paymentOptions.map((option) => (
+                                      <option
+                                        key={option}
+                                        value={option}
+                                      >
+                                        {option}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </td>
+                              );
+                            }
+
+                            if (field === "cashReceivedBy") {
+                              return (
+                                <td
+                                  key={field}
+                                  style={getHouseholdClientCellStyle(
+                                    row,
+                                    index,
+                                    field,
+                                    extraIndex,
+                                    extraClients.length
+                                  )}
+                                >
+                                  <input
+                                    value={
+                                      extraClient.cashReceivedBy ??
+                                      row.cashReceivedBy ??
+                                      ""
+                                    }
+                                    onChange={(event) =>
+                                      updateAdditionalClientField(
+                                        index,
+                                        extraIndex,
+                                        "cashReceivedBy",
+                                        event.target.value
+                                      )
+                                    }
+                                    style={getScheduleInputStyle(
+                                      index,
+                                      field
+                                    )}
+                                  />
+                                </td>
+                              );
+                            }
+
+                            if (field === "sendTo") {
+                              return (
+                                <td
+                                  key={field}
+                                  style={getHouseholdClientCellStyle(
+                                    row,
+                                    index,
+                                    field,
+                                    extraIndex,
+                                    extraClients.length
+                                  )}
+                                >
+                                  <select
+                                    value={extraClient.sendTo || ""}
+                                    onChange={async (event) => {
+                                      const selectedTarget =
+                                        event.target.value;
+
+                                      await updateAdditionalClientField(
+                                        index,
+                                        extraIndex,
+                                        "sendTo",
+                                        selectedTarget
+                                      );
+
+                                      if (!selectedTarget) return;
+
+                                      const updatedHouseholdClient = {
+                                        ...extraClient,
+                                        sendTo: selectedTarget,
+                                      };
+
+                                      await copyAdditionalClientToSelectedList(
+                                        row,
+                                        updatedHouseholdClient
+                                      );
+                                    }}
+                                    style={getScheduleInputStyle(
+                                      index,
+                                      field
+                                    )}
+                                  >
+                                    {sendToOptions.map((option) => (
+                                      <option
+                                        key={option}
+                                        value={option}
+                                      >
+                                        {option}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </td>
+                              );
+                            }
+
+                            if (field === "note") {
+                              return (
+                                <td
+                                  key={field}
+                                  style={getHouseholdClientCellStyle(
+                                    row,
+                                    index,
+                                    field,
+                                    extraIndex,
+                                    extraClients.length
+                                  )}
+                                >
+                                  <input
+                                    value={extraClient.note || ""}
+                                    onChange={(event) =>
+                                      updateAdditionalClientField(
+                                        index,
+                                        extraIndex,
+                                        "note",
+                                        event.target.value
+                                      )
+                                    }
+                                    style={getScheduleInputStyle(
+                                      index,
+                                      field
+                                    )}
+                                  />
+                                </td>
+                              );
+                            }
+
+                            if (field === "giftFrom") {
+                              return (
+                                <td
+                                  key={field}
+                                  style={getHouseholdClientCellStyle(
+                                    row,
+                                    index,
+                                    field,
+                                    extraIndex,
+                                    extraClients.length
+                                  )}
+                                >
+                                  <input
+                                    value={extraClient.giftFrom || ""}
+                                    onChange={(event) =>
+                                      updateAdditionalClientField(
+                                        index,
+                                        extraIndex,
+                                        "giftFrom",
+                                        event.target.value
+                                      )
+                                    }
+                                    style={getScheduleInputStyle(
+                                      index,
+                                      field
+                                    )}
+                                  />
+                                </td>
+                              );
+                            }
+
+                            if (field === "giftPhone") {
+                              return (
+                                <td
+                                  key={field}
+                                  style={getHouseholdClientCellStyle(
+                                    row,
+                                    index,
+                                    field,
+                                    extraIndex,
+                                    extraClients.length
+                                  )}
+                                >
+                                  <input
+                                    value={extraClient.giftPhone || ""}
+                                    onChange={(event) =>
+                                      updateAdditionalClientField(
+                                        index,
+                                        extraIndex,
+                                        "giftPhone",
+                                        event.target.value
+                                      )
+                                    }
+                                    onBlur={(event) =>
+                                      updateAdditionalClientField(
+                                        index,
+                                        extraIndex,
+                                        "giftPhone",
+                                        formatSaudiPhoneForStorage(
+                                          event.target.value
+                                        )
+                                      )
+                                    }
+                                    style={getScheduleInputStyle(
+                                      index,
+                                      field
+                                    )}
+                                  />
+                                </td>
+                              );
+                            }
+
+                            return (
+                              <td
+                                key={field}
+                                style={getHouseholdClientCellStyle(
+                                  row,
+                                  index,
+                                  field,
+                                  extraIndex,
+                                  extraClients.length
+                                )}
+                              />
+                            );
+                          })}
+                        </tr>
+                      );
+                    }
+                  ),
+                ])}
               </tbody>
             </table>
           </div>
@@ -12708,6 +15062,14 @@ marginRight: "auto",
               )}
             </tbody>
           </table>
+        </div>
+
+        <div style={{ marginTop: "18px" }}>
+          {renderLoadMoreButtons(
+            giftVisibleCount,
+            setGiftVisibleCount,
+            filteredGiftClients.length
+          )}
         </div>
       </div>
     );
