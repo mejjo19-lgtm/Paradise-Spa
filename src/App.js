@@ -9431,11 +9431,12 @@ const appointmentServicesText = (() => {
     .join("\n");
 })();
     const message =
-      messageType === "reminder"
-        ? [
-            "مساء الخير",
-            `كنت حابه اذكرك بموعد استاذه ${appointment.displayName || ""} ${appointmentDate} ان شاءالله مابين الساعه ${appointmentServiceTime} 💗`,
-          ].join("\n")
+messageType === "reminder"
+  ? [
+      "صباح الخير",
+      `كيف حالك أستاذة ${appointment.displayName || ""}💗`,
+      `كنت حابه أذكرك بموعدك اليوم إن شاء الله ما بين الساعة ${appointmentServiceTime}💗`,
+    ].join("\n")
         : [
             `تم تأكيد موعدك يوم ${appointmentDate}`,
             "",
