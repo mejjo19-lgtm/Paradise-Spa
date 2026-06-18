@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import html2canvas from "html2canvas";
+import { jsPDF } from "jspdf";
 import logo from "./logo.png";
 
 // 🖼️ CARDS
@@ -914,6 +915,11 @@ function fetchSharedClientLists() {
   const [invoicesVisibleCount, setInvoicesVisibleCount] = useState(20);
 
   const [selectedInvoice, setSelectedInvoice] = useState(null);
+
+  const [
+    selectedInvoiceIds,
+    setSelectedInvoiceIds,
+  ] = useState([]);
 
   const [invoicesPdfBusy, setInvoicesPdfBusy] = useState(false);
 
@@ -7579,6 +7585,9 @@ const normalizeOrderLabelForStats = (orderValue) =>
       parseAmount(manual.governmentFees) +
       totalCommission;
 
+    const vatAmount =
+      totalIncome * 15 / 115;
+
     return {
       rows,
       manual,
@@ -7599,7 +7608,11 @@ const normalizeOrderLabelForStats = (orderValue) =>
         : 0,
       totalCommission,
       dailyCost,
-      netProfit: totalIncome - dailyCost,
+      vatAmount,
+      netProfit:
+        totalIncome -
+        dailyCost -
+        vatAmount,
     };
   };
 
@@ -7847,7 +7860,12 @@ const normalizeOrderLabelForStats = (orderValue) =>
       variableExpenses,
       fixedDailyExpenses,
       expenses: variableExpenses + fixedDailyExpenses,
-      netProfit: income - variableExpenses - fixedDailyExpenses,
+      vatAmount: income * 15 / 115,
+      netProfit:
+        income -
+        variableExpenses -
+        fixedDailyExpenses -
+        income * 15 / 115,
       servicesTotals,
       totalServices,
       newClients: getClientCountItemsFromRows(activeRows).filter((item) => isNewClientOrder(item.order)).length,
@@ -7909,6 +7927,7 @@ const normalizeOrderLabelForStats = (orderValue) =>
       dayStats,
       totalIncome,
       totalExpenses: sum((day) => day.expenses),
+      totalVat: sum((day) => day.vatAmount),
       totalNetProfit: sum((day) => day.netProfit),
       averageDailyIncome: totalIncome / calculationDaysCount,
       averageDailyExpenses: sum((day) => day.expenses) / calculationDaysCount,
@@ -8971,7 +8990,8 @@ const sendWhatsApp = async (client) => {
       const rows = dayData?.rows || [];
 
       rows.forEach((row) => {
-        getAdditionalClientsForRow(row).forEach((extraClient) => {
+        getAdditionalClientsForRow(row).forEach(
+  (extraClient, extraClientIndex) => {
           const extraStatus =
             extraClient.status || row.status || "";
 
@@ -8999,6 +9019,27 @@ const sendWhatsApp = async (client) => {
 
           const totalPrice =
             serviceAmount + transportation;
+
+          const additionalClientIdentity =
+            String(
+              extraClient.id ||
+              extraClient.clientId ||
+              normalizeDigits(
+                extraClient.phone
+              ) ||
+              String(
+                extraClient.name || ""
+              )
+                .trim()
+                .toLowerCase()
+                .replace(/\s+/g, "-") ||
+              `extra-${extraClientIndex}`
+            );
+
+          const additionalInvoiceLink =
+            row.invoiceLinks?.[
+              `additional:${additionalClientIdentity}`
+            ] || null;
 
           totalPaid += totalPrice;
 
@@ -9030,6 +9071,8 @@ const sendWhatsApp = async (client) => {
               extraClient.cashReceivedBy || "",
             status: extraStatus,
             householdClient: true,
+            invoiceLink:
+              additionalInvoiceLink,
           });
         });
 
@@ -9084,6 +9127,9 @@ const sendWhatsApp = async (client) => {
           cashReceivedBy: row.cashReceivedBy || "",
           status: row.status || "",
           householdClient: false,
+          invoiceLink:
+            row.invoiceLinks?.primary ||
+            null,
         });
       });
     });
@@ -9107,6 +9153,67 @@ const sendWhatsApp = async (client) => {
   const selectedClientServiceSummary = selectedClient
     ? getClientServiceSummary(selectedClient)
     : { serviceHistory: [], totalPaid: 0, lastVisitDate: "" };
+
+  const openServiceHistoryInvoice = async (
+    invoiceLink
+  ) => {
+    const invoiceId =
+      invoiceLink?.invoiceId;
+
+    if (!invoiceId) return;
+
+    const invoiceAlreadyLoaded =
+      invoices.find(
+        (invoice) =>
+          String(invoice.id) ===
+          String(invoiceId)
+      );
+
+    if (invoiceAlreadyLoaded) {
+      setSelectedInvoice(
+        invoiceAlreadyLoaded
+      );
+
+      return;
+    }
+
+    const {
+      data,
+      error,
+    } = await supabase
+      .from("invoices")
+      .select("*")
+      .eq("id", invoiceId)
+      .maybeSingle();
+
+    if (error || !data) {
+      console.error(
+        "Service history invoice load error:",
+        error
+      );
+
+      alert(
+        "تعذر تحميل الفاتورة. تأكد من الاتصال وحاول مرة أخرى."
+      );
+
+      return;
+    }
+
+    const normalizedInvoice =
+      normalizeInvoiceRecord(data);
+
+    setInvoices(
+      (previousInvoices) =>
+        mergeInvoicesById(
+          previousInvoices,
+          [normalizedInvoice]
+        )
+    );
+
+    setSelectedInvoice(
+      normalizedInvoice
+    );
+  };
 
   const getDateOffset = (offset) => {
     const date = new Date(`${currentDate}T12:00:00`);
@@ -17472,6 +17579,10 @@ margin: "0 auto",
                 <strong>{formatCurrency(appointmentStats.dailyCost)}</strong>
               </div>
               <div style={scheduleSummaryRowStyle}>
+                <strong>VAT 15%</strong>
+                <strong>{formatCurrency(appointmentStats.vatAmount)}</strong>
+              </div>
+              <div style={scheduleSummaryRowStyle}>
                 <strong>Net Profit</strong>
                 <strong>{formatCurrency(appointmentStats.netProfit)}</strong>
               </div>
@@ -17976,6 +18087,532 @@ if (screen === "invoices") {
         : cleanDate;
     };
 
+    const toggleInvoiceSelection = (
+      invoiceId
+    ) => {
+      const normalizedInvoiceId =
+        String(invoiceId || "");
+
+      if (!normalizedInvoiceId) return;
+
+      setSelectedInvoiceIds(
+        (currentInvoiceIds) =>
+          currentInvoiceIds.includes(
+            normalizedInvoiceId
+          )
+            ? currentInvoiceIds.filter(
+                (currentInvoiceId) =>
+                  currentInvoiceId !==
+                  normalizedInvoiceId
+              )
+            : [
+                ...currentInvoiceIds,
+                normalizedInvoiceId,
+              ]
+      );
+    };
+
+    const escapeInvoiceHtml = (value) =>
+      String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+
+    const createInvoicePdfElement = (
+      invoice
+    ) => {
+      const invoiceElement =
+        document.createElement("div");
+
+      invoiceElement.style.position =
+        "fixed";
+      invoiceElement.style.left =
+        "-10000px";
+      invoiceElement.style.top = "0";
+      invoiceElement.style.width =
+        "794px";
+      invoiceElement.style.minHeight =
+        "1123px";
+      invoiceElement.style.padding =
+        "58px";
+      invoiceElement.style.boxSizing =
+        "border-box";
+      invoiceElement.style.background =
+        "#ffffff";
+      invoiceElement.style.color =
+        "#4b2e1f";
+      invoiceElement.style.direction =
+        "rtl";
+      invoiceElement.style.fontFamily =
+        "Arial, sans-serif";
+
+      const invoiceCode =
+        invoice.invoiceCode ||
+        `PS-${invoice.invoiceNumber || ""}`;
+
+      const transportationAmount =
+        Number(
+          invoice.transportationAmountIncludingVat ||
+            0
+        );
+
+      invoiceElement.innerHTML = `
+        <div
+          style="
+            width: 100%;
+            min-height: 1000px;
+            border: 2px solid #d9c4af;
+            border-radius: 22px;
+            padding: 38px;
+            box-sizing: border-box;
+            background: #fffdf9;
+          "
+        >
+          <div
+            style="
+              text-align: center;
+              border-bottom: 2px solid #ead9c7;
+              padding-bottom: 24px;
+              margin-bottom: 28px;
+            "
+          >
+            <div
+              style="
+                font-size: 34px;
+                font-weight: 900;
+                color: #4b2e1f;
+              "
+            >
+              Paradise Home Spa
+            </div>
+
+            <div
+              style="
+                margin-top: 12px;
+                font-size: 25px;
+                font-weight: 900;
+              "
+            >
+              فاتورة ضريبية مبسطة
+            </div>
+
+            <div
+              style="
+                margin-top: 10px;
+                font-size: 18px;
+                font-weight: 900;
+                color: #9b6b3f;
+                direction: ltr;
+              "
+            >
+              ${escapeInvoiceHtml(
+                invoiceCode
+              )}
+            </div>
+          </div>
+
+          <div
+            style="
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 14px;
+              margin-bottom: 28px;
+            "
+          >
+            <div style="background:#f7efe6;border:1px solid #ead9c7;border-radius:14px;padding:16px;">
+              <div style="font-size:14px;color:#92745d;font-weight:900;margin-bottom:7px;">
+                تاريخ الخدمة
+              </div>
+              <div style="font-size:18px;font-weight:900;">
+                ${escapeInvoiceHtml(
+                  formatInvoiceDate(
+                    invoice.scheduleDate
+                  )
+                )}
+              </div>
+            </div>
+
+            <div style="background:#f7efe6;border:1px solid #ead9c7;border-radius:14px;padding:16px;">
+              <div style="font-size:14px;color:#92745d;font-weight:900;margin-bottom:7px;">
+                اسم العميلة
+              </div>
+              <div style="font-size:18px;font-weight:900;">
+                ${escapeInvoiceHtml(
+                  invoice.clientName || "-"
+                )}
+              </div>
+            </div>
+
+            <div style="background:#f7efe6;border:1px solid #ead9c7;border-radius:14px;padding:16px;">
+              <div style="font-size:14px;color:#92745d;font-weight:900;margin-bottom:7px;">
+                رقم الجوال
+              </div>
+              <div style="font-size:18px;font-weight:900;direction:ltr;text-align:right;">
+                ${escapeInvoiceHtml(
+                  invoice.clientPhone || "-"
+                )}
+              </div>
+            </div>
+
+            <div style="background:#f7efe6;border:1px solid #ead9c7;border-radius:14px;padding:16px;">
+              <div style="font-size:14px;color:#92745d;font-weight:900;margin-bottom:7px;">
+                طريقة الدفع
+              </div>
+              <div style="font-size:18px;font-weight:900;">
+                ${escapeInvoiceHtml(
+                  invoice.paymentMethod || "-"
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div
+            style="
+              border: 1px solid #e4d4c4;
+              border-radius: 16px;
+              overflow: hidden;
+              margin-bottom: 28px;
+            "
+          >
+            <div
+              style="
+                display: grid;
+                grid-template-columns: 1fr 170px;
+                background: #4b2e1f;
+                color: white;
+                padding: 16px 18px;
+                font-size: 17px;
+                font-weight: 900;
+              "
+            >
+              <div>الخدمة</div>
+              <div style="text-align:center;">
+                المبلغ
+              </div>
+            </div>
+
+            <div
+              style="
+                display: grid;
+                grid-template-columns: 1fr 170px;
+                padding: 19px 18px;
+                border-bottom: 1px solid #eadfd5;
+                font-size: 17px;
+                font-weight: 900;
+              "
+            >
+              <div>
+                ${escapeInvoiceHtml(
+                  invoice.serviceName || "-"
+                )}
+              </div>
+
+              <div style="text-align:center;">
+                ${escapeInvoiceHtml(
+                  formatInvoiceAmount(
+                    invoice.serviceAmountIncludingVat
+                  )
+                )} ر.س
+              </div>
+            </div>
+
+            ${
+              transportationAmount > 0
+                ? `
+                  <div
+                    style="
+                      display: grid;
+                      grid-template-columns: 1fr 170px;
+                      padding: 19px 18px;
+                      border-bottom: 1px solid #eadfd5;
+                      font-size: 17px;
+                      font-weight: 900;
+                    "
+                  >
+                    <div>المواصلات</div>
+
+                    <div style="text-align:center;">
+                      ${escapeInvoiceHtml(
+                        formatInvoiceAmount(
+                          transportationAmount
+                        )
+                      )} ر.س
+                    </div>
+                  </div>
+                `
+                : ""
+            }
+          </div>
+
+          <div
+            style="
+              width: 440px;
+              max-width: 100%;
+              margin-right: auto;
+              display: grid;
+              gap: 12px;
+            "
+          >
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                padding: 14px 16px;
+                background: #f7efe6;
+                border-radius: 12px;
+                font-size: 16px;
+                font-weight: 900;
+              "
+            >
+              <span>الإجمالي قبل الضريبة</span>
+              <span>
+                ${escapeInvoiceHtml(
+                  formatInvoiceAmount(
+                    invoice.subtotalExcludingVat
+                  )
+                )} ر.س
+              </span>
+            </div>
+
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                padding: 14px 16px;
+                background: #f7efe6;
+                border-radius: 12px;
+                font-size: 16px;
+                font-weight: 900;
+              "
+            >
+              <span>
+                ضريبة القيمة المضافة
+                ${escapeInvoiceHtml(
+                  invoice.vatRate || 15
+                )}%
+              </span>
+
+              <span>
+                ${escapeInvoiceHtml(
+                  formatInvoiceAmount(
+                    invoice.vatAmount
+                  )
+                )} ر.س
+              </span>
+            </div>
+
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                padding: 18px;
+                background: #287746;
+                color: white;
+                border-radius: 14px;
+                font-size: 19px;
+                font-weight: 900;
+              "
+            >
+              <span>
+                الإجمالي شامل الضريبة
+              </span>
+
+              <span>
+                ${escapeInvoiceHtml(
+                  formatInvoiceAmount(
+                    invoice.totalIncludingVat
+                  )
+                )} ر.س
+              </span>
+            </div>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(
+        invoiceElement
+      );
+
+      return invoiceElement;
+    };
+
+    const downloadInvoicesPdf = async (
+      invoicesToDownload,
+      fileName
+    ) => {
+      if (
+        invoicesPdfBusy ||
+        !Array.isArray(invoicesToDownload) ||
+        invoicesToDownload.length === 0
+      ) {
+        return;
+      }
+
+      setInvoicesPdfBusy(true);
+
+      let activeInvoiceElement = null;
+
+      try {
+        const pdf = new jsPDF({
+          orientation: "portrait",
+          unit: "mm",
+          format: "a4",
+          compress: true,
+        });
+
+        for (
+          let invoiceIndex = 0;
+          invoiceIndex <
+          invoicesToDownload.length;
+          invoiceIndex += 1
+        ) {
+          const invoice =
+            invoicesToDownload[
+              invoiceIndex
+            ];
+
+          activeInvoiceElement =
+            createInvoicePdfElement(
+              invoice
+            );
+
+          if (document.fonts?.ready) {
+            await document.fonts.ready;
+          }
+
+          const canvas =
+            await html2canvas(
+              activeInvoiceElement,
+              {
+                scale: 2,
+                useCORS: true,
+                backgroundColor:
+                  "#ffffff",
+                logging: false,
+                windowWidth: 794,
+                windowHeight: 1123,
+              }
+            );
+
+          activeInvoiceElement.remove();
+          activeInvoiceElement = null;
+
+          if (invoiceIndex > 0) {
+            pdf.addPage();
+          }
+
+          const pageWidth =
+            pdf.internal.pageSize.getWidth();
+
+          const pageHeight =
+            pdf.internal.pageSize.getHeight();
+
+          const imageData =
+            canvas.toDataURL(
+              "image/jpeg",
+              0.96
+            );
+
+          pdf.addImage(
+            imageData,
+            "JPEG",
+            0,
+            0,
+            pageWidth,
+            pageHeight,
+            undefined,
+            "FAST"
+          );
+        }
+
+        pdf.save(
+          fileName ||
+            "Paradise-Invoices.pdf"
+        );
+      } catch (error) {
+        console.error(
+          "Invoices PDF error:",
+          error
+        );
+
+        alert(
+          "تعذر إنشاء ملف PDF. حاول مرة أخرى."
+        );
+      } finally {
+        if (activeInvoiceElement) {
+          activeInvoiceElement.remove();
+        }
+
+        setInvoicesPdfBusy(false);
+      }
+    };
+
+    const openInvoiceWhatsApp = (
+      invoice
+    ) => {
+      if (!invoice) return;
+
+      let whatsappPhone = String(
+        invoice.clientPhone || ""
+      ).replace(/\D/g, "");
+
+      if (
+        whatsappPhone.startsWith("00966")
+      ) {
+        whatsappPhone =
+          whatsappPhone.slice(2);
+      } else if (
+        whatsappPhone.startsWith("0")
+      ) {
+        whatsappPhone =
+          `966${whatsappPhone.slice(1)}`;
+      } else if (
+        whatsappPhone.startsWith("5")
+      ) {
+        whatsappPhone =
+          `966${whatsappPhone}`;
+      }
+
+      if (!whatsappPhone) {
+        alert(
+          "لا يوجد رقم جوال مسجل لهذه العميلة."
+        );
+        return;
+      }
+
+      const invoiceCode =
+        invoice.invoiceCode ||
+        `PS-${invoice.invoiceNumber || ""}`;
+
+      const whatsappMessage = [
+        `مرحباً ${
+          invoice.clientName || ""
+        } 💗`,
+        "",
+        "هذه تفاصيل فاتورتك من Paradise Home Spa:",
+        `رقم الفاتورة: ${invoiceCode}`,
+        `الخدمة: ${
+          invoice.serviceName || "-"
+        }`,
+        `تاريخ الخدمة: ${formatInvoiceDate(
+          invoice.scheduleDate
+        )}`,
+        `الإجمالي شامل الضريبة: ${formatInvoiceAmount(
+          invoice.totalIncludingVat
+        )} ر.س`,
+      ].join("\n");
+
+      window.open(
+        `https://wa.me/${whatsappPhone}?text=${encodeURIComponent(
+          whatsappMessage
+        )}`,
+        "_blank",
+        "noopener,noreferrer"
+      );
+    };
+
     return withGreeting(
       <div
         style={{
@@ -18268,6 +18905,141 @@ if (screen === "invoices") {
 
           <div
             style={{
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "10px",
+              marginBottom: "14px",
+            }}
+          >
+            {filteredInvoices.length > 0 && (
+              <button
+                type="button"
+                disabled={invoicesPdfBusy}
+                onClick={() => {
+                  const filteredInvoiceIds =
+                    filteredInvoices.map(
+                      (invoice) =>
+                        String(invoice.id)
+                    );
+
+                  const allFilteredSelected =
+                    filteredInvoiceIds.every(
+                      (invoiceId) =>
+                        selectedInvoiceIds.includes(
+                          invoiceId
+                        )
+                    );
+
+                  setSelectedInvoiceIds(
+                    (currentInvoiceIds) =>
+                      allFilteredSelected
+                        ? currentInvoiceIds.filter(
+                            (invoiceId) =>
+                              !filteredInvoiceIds.includes(
+                                invoiceId
+                              )
+                          )
+                        : Array.from(
+                            new Set([
+                              ...currentInvoiceIds,
+                              ...filteredInvoiceIds,
+                            ])
+                          )
+                  );
+                }}
+                style={{
+                  ...buttonStyle,
+                  padding: "12px 18px",
+                  borderRadius: "15px",
+                  background: "#d9c3ad",
+                  color: "#4b2e1f",
+                  fontWeight: 950,
+                  cursor: invoicesPdfBusy
+                    ? "not-allowed"
+                    : "pointer",
+                }}
+              >
+                {filteredInvoices.every(
+                  (invoice) =>
+                    selectedInvoiceIds.includes(
+                      String(invoice.id)
+                    )
+                )
+                  ? "إلغاء تحديد الكل"
+                  : `تحديد الكل (${filteredInvoices.length})`}
+              </button>
+            )}
+
+            <button
+              type="button"
+              disabled={
+                selectedInvoiceIds.length === 0 ||
+                invoicesPdfBusy
+              }
+              onClick={() => {
+                const selectedInvoices =
+                  invoices.filter((invoice) =>
+                    selectedInvoiceIds.includes(
+                      String(invoice.id)
+                    )
+                  );
+
+                downloadInvoicesPdf(
+                  selectedInvoices,
+                  `Paradise-Invoices-${invoicesFromDate}-to-${invoicesToDate}.pdf`
+                );
+              }}
+              style={{
+                ...buttonStyle,
+                padding: "12px 22px",
+                borderRadius: "15px",
+                background:
+                  selectedInvoiceIds.length === 0 ||
+                  invoicesPdfBusy
+                    ? "#a99889"
+                    : "#4b2e1f",
+                color: "white",
+                fontWeight: 950,
+                cursor:
+                  selectedInvoiceIds.length === 0 ||
+                  invoicesPdfBusy
+                    ? "not-allowed"
+                    : "pointer",
+              }}
+            >
+              {invoicesPdfBusy
+                ? "جاري إنشاء ملف PDF..."
+                : `تحميل الفواتير المحددة PDF (${selectedInvoiceIds.length})`}
+            </button>
+
+            {selectedInvoiceIds.length > 0 && (
+              <button
+                type="button"
+                disabled={invoicesPdfBusy}
+                onClick={() =>
+                  setSelectedInvoiceIds([])
+                }
+                style={{
+                  ...buttonStyle,
+                  padding: "12px 18px",
+                  borderRadius: "15px",
+                  background: "#f3e7dc",
+                  color: "#4b2e1f",
+                  fontWeight: 950,
+                  cursor: invoicesPdfBusy
+                    ? "not-allowed"
+                    : "pointer",
+                }}
+              >
+                إلغاء التحديد
+              </button>
+            )}
+          </div>
+
+          <div
+            style={{
               background:
                 "rgba(255,255,255,0.92)",
               border:
@@ -18325,6 +19097,7 @@ if (screen === "invoices") {
                       }}
                     >
                       {[
+                        "تحديد",
                         "رقم الفاتورة",
                         "تاريخ الخدمة",
                         "اسم العميلة",
@@ -18354,7 +19127,12 @@ if (screen === "invoices") {
                       (invoice, index) => (
                         <tr
                           key={invoice.id}
+                          onClick={() =>
+                            setSelectedInvoice(invoice)
+                          }
+                          title="فتح الفاتورة"
                           style={{
+                            cursor: "pointer",
                             background:
                               index % 2 ===
                               0
@@ -18364,6 +19142,41 @@ if (screen === "invoices") {
                               "1px solid #eadfd5",
                           }}
                         >
+                          <td
+                            onClick={(event) =>
+                              event.stopPropagation()
+                            }
+                            style={{
+                              padding:
+                                "13px 11px",
+                              textAlign:
+                                "center",
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedInvoiceIds.includes(
+                                String(invoice.id)
+                              )}
+                              onChange={() =>
+                                toggleInvoiceSelection(
+                                  invoice.id
+                                )
+                              }
+                              aria-label={`تحديد الفاتورة ${
+                                invoice.invoiceCode ||
+                                invoice.invoiceNumber ||
+                                ""
+                              }`}
+                              style={{
+                                width: "18px",
+                                height: "18px",
+                                cursor: "pointer",
+                                accentColor: "#4b2e1f",
+                              }}
+                            />
+                          </td>
+
                           <td
                             style={{
                               padding:
@@ -18480,7 +19293,7 @@ if (screen === "invoices") {
                         0 && (
                         <tr>
                           <td
-                            colSpan="8"
+                            colSpan="9"
                             style={{
                               padding:
                                 "45px 20px",
@@ -18532,6 +19345,407 @@ if (screen === "invoices") {
               </button>
             </div>
           )}
+
+          {selectedInvoice &&
+            createPortal(
+              <div
+                onClick={() =>
+                  setSelectedInvoice(null)
+                }
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  zIndex: 99999,
+                  background:
+                    "rgba(35, 22, 15, 0.72)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "18px",
+                  boxSizing: "border-box",
+                }}
+              >
+                <div
+                  onClick={(event) =>
+                    event.stopPropagation()
+                  }
+                  style={{
+                    position: "relative",
+                    width: "min(720px, 100%)",
+                    maxHeight: "92vh",
+                    overflowY: "auto",
+                    background: "#fffdf9",
+                    borderRadius: "24px",
+                    boxShadow:
+                      "0 25px 70px rgba(0, 0, 0, 0.35)",
+                    padding: "28px",
+                    boxSizing: "border-box",
+                    color: "#4b2e1f",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSelectedInvoice(null)
+                    }
+                    aria-label="إغلاق الفاتورة"
+                    style={{
+                      position: "absolute",
+                      top: "14px",
+                      left: "14px",
+                      width: "38px",
+                      height: "38px",
+                      border: "none",
+                      borderRadius: "50%",
+                      background: "#4b2e1f",
+                      color: "white",
+                      fontSize: "23px",
+                      fontWeight: "bold",
+                      cursor: "pointer",
+                    }}
+                  >
+                    ×
+                  </button>
+
+                  <div
+                    style={{
+                      textAlign: "center",
+                      marginBottom: "25px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "27px",
+                        fontWeight: 950,
+                      }}
+                    >
+                      فاتورة ضريبية مبسطة
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: "7px",
+                        fontSize: "16px",
+                        fontWeight: 900,
+                        color: "#9b6b3f",
+                      }}
+                    >
+                      {selectedInvoice.invoiceCode ||
+                        `PS-${selectedInvoice.invoiceNumber}`}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "repeat(auto-fit, minmax(210px, 1fr))",
+                      gap: "12px",
+                      marginBottom: "20px",
+                    }}
+                  >
+                    {[
+                      [
+                        "تاريخ الخدمة",
+                        formatInvoiceDate(
+                          selectedInvoice.scheduleDate
+                        ),
+                      ],
+                      [
+                        "اسم العميلة",
+                        selectedInvoice.clientName ||
+                          "-",
+                      ],
+                      [
+                        "رقم الجوال",
+                        selectedInvoice.clientPhone ||
+                          "-",
+                      ],
+                      [
+                        "طريقة الدفع",
+                        selectedInvoice.paymentMethod ||
+                          "-",
+                      ],
+                    ].map(([label, value]) => (
+                      <div
+                        key={label}
+                        style={{
+                          background: "#f7efe6",
+                          border:
+                            "1px solid #ead9c7",
+                          borderRadius: "15px",
+                          padding: "14px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: "12px",
+                            color: "#92745d",
+                            fontWeight: 900,
+                            marginBottom: "6px",
+                          }}
+                        >
+                          {label}
+                        </div>
+
+                        <div
+                          style={{
+                            fontSize: "15px",
+                            fontWeight: 950,
+                          }}
+                        >
+                          {value}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div
+                    style={{
+                      border:
+                        "1px solid #e4d4c4",
+                      borderRadius: "17px",
+                      overflow: "hidden",
+                      marginBottom: "20px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns:
+                          "1fr 130px",
+                        background: "#4b2e1f",
+                        color: "white",
+                        padding: "13px 15px",
+                        fontWeight: 950,
+                      }}
+                    >
+                      <div>الخدمة</div>
+                      <div
+                        style={{
+                          textAlign: "center",
+                        }}
+                      >
+                        المبلغ
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns:
+                          "1fr 130px",
+                        padding: "16px 15px",
+                        borderBottom:
+                          "1px solid #eadfd5",
+                        fontWeight: 900,
+                      }}
+                    >
+                      <div>
+                        {selectedInvoice.serviceName ||
+                          "-"}
+                      </div>
+
+                      <div
+                        style={{
+                          textAlign: "center",
+                        }}
+                      >
+                        {formatInvoiceAmount(
+                          selectedInvoice.serviceAmountIncludingVat
+                        )}{" "}
+                        ر.س
+                      </div>
+                    </div>
+
+                    {Number(
+                      selectedInvoice.transportationAmountIncludingVat ||
+                        0
+                    ) > 0 && (
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns:
+                            "1fr 130px",
+                          padding: "16px 15px",
+                          borderBottom:
+                            "1px solid #eadfd5",
+                          fontWeight: 900,
+                        }}
+                      >
+                        <div>المواصلات</div>
+
+                        <div
+                          style={{
+                            textAlign: "center",
+                          }}
+                        >
+                          {formatInvoiceAmount(
+                            selectedInvoice.transportationAmountIncludingVat
+                          )}{" "}
+                          ر.س
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div
+                    style={{
+                      marginRight: "auto",
+                      width: "min(340px, 100%)",
+                      display: "grid",
+                      gap: "10px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent:
+                          "space-between",
+                        padding: "11px 13px",
+                        background: "#f7efe6",
+                        borderRadius: "12px",
+                        fontWeight: 900,
+                      }}
+                    >
+                      <span>
+                        الإجمالي قبل الضريبة
+                      </span>
+
+                      <span>
+                        {formatInvoiceAmount(
+                          selectedInvoice.subtotalExcludingVat
+                        )}{" "}
+                        ر.س
+                      </span>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent:
+                          "space-between",
+                        padding: "11px 13px",
+                        background: "#f7efe6",
+                        borderRadius: "12px",
+                        fontWeight: 900,
+                      }}
+                    >
+                      <span>
+                        ضريبة القيمة المضافة{" "}
+                        {selectedInvoice.vatRate}%
+                      </span>
+
+                      <span>
+                        {formatInvoiceAmount(
+                          selectedInvoice.vatAmount
+                        )}{" "}
+                        ر.س
+                      </span>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent:
+                          "space-between",
+                        padding: "14px",
+                        background: "#287746",
+                        color: "white",
+                        borderRadius: "14px",
+                        fontSize: "17px",
+                        fontWeight: 950,
+                      }}
+                    >
+                      <span>
+                        الإجمالي شامل الضريبة
+                      </span>
+
+                      <span>
+                        {formatInvoiceAmount(
+                          selectedInvoice.totalIncludingVat
+                        )}{" "}
+                        ر.س
+                      </span>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: "10px",
+                      width: "100%",
+                      maxWidth: "100%",
+                      marginTop: "22px",
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      disabled={invoicesPdfBusy}
+                      onClick={() =>
+                        downloadInvoicesPdf(
+                          [selectedInvoice],
+                          `${
+                            selectedInvoice.invoiceCode ||
+                            `PS-${selectedInvoice.invoiceNumber || ""}`
+                          }.pdf`
+                        )
+                      }
+                      style={{
+                        ...buttonStyle,
+                        flex: "1 1 220px",
+                        minWidth: 0,
+                        maxWidth: "100%",
+                        padding: "14px",
+                        borderRadius: "15px",
+                        background: invoicesPdfBusy
+                          ? "#a99889"
+                          : "#4b2e1f",
+                        color: "white",
+                        fontSize: "16px",
+                        fontWeight: 950,
+                        cursor: invoicesPdfBusy
+                          ? "wait"
+                          : "pointer",
+                        boxSizing: "border-box",
+                      }}
+                    >
+                      {invoicesPdfBusy
+                        ? "جاري إنشاء الفاتورة..."
+                        : "تحميل الفاتورة PDF"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        openInvoiceWhatsApp(
+                          selectedInvoice
+                        )
+                      }
+                      style={{
+                        ...buttonStyle,
+                        flex: "1 1 220px",
+                        minWidth: 0,
+                        maxWidth: "100%",
+                        padding: "14px",
+                        borderRadius: "15px",
+                        background: "#247b4b",
+                        color: "white",
+                        fontSize: "16px",
+                        fontWeight: 950,
+                        cursor: "pointer",
+                        boxSizing: "border-box",
+                      }}
+                    >
+                      إرسال عبر واتساب
+                    </button>
+                  </div>
+                </div>
+              </div>,
+              document.body
+            )}
         </div>
       </div>
     );
@@ -18551,16 +19765,16 @@ if (screen === "finance") {
       boxShadow: "0 14px 34px rgba(75,46,31,0.08)",
     };
     const financeSummaryCardStyle = {
-      ...financeCardStyle,
-      minHeight: "94px",
-      padding: "14px 10px",
-      display: "flex",
-      flexDirection: "column",
-      justifyContent: "center",
-      alignItems: "center",
-      textAlign: "center",
-      boxSizing: "border-box",
-    };
+  ...financeCardStyle,
+  minHeight: "76px",
+  padding: "9px 8px",
+  display: "flex",
+  flexDirection: "column",
+  justifyContent: "center",
+  alignItems: "center",
+  textAlign: "center",
+  boxSizing: "border-box",
+};
     const financeHeaderStyle = {
       margin: "0 0 14px",
       color: "#4b2e1f",
@@ -18707,31 +19921,65 @@ if (screen === "finance") {
             <div style={{ height: "116px", flexShrink: 0 }} />
 
             <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(6, minmax(120px, 1fr))",
-                gap: "10px",
-                marginBottom: "22px",
-              }}
-            >
-              {[
-                ["Total Income", financeStats.totalIncome],
-                ["Total Expenses", financeStats.totalExpenses],
-                ["Total Net Profit", financeStats.totalNetProfit],
-                ["AVG Daily Income", financeStats.averageDailyIncome],
-                ["AVG Daily Expenses", financeStats.averageDailyExpenses],
-                ["AVG Daily Net Income", financeStats.averageDailyNetIncome],
-              ].map(([label, value]) => (
-                <div key={label} style={financeSummaryCardStyle}>
-                  <div style={{ width: "100%", color: "#8a7a68", fontSize: "11px", fontWeight: "800", whiteSpace: "nowrap", textAlign: "center" }}>
-                    {label}
-                  </div>
-                  <strong style={{ display: "block", width: "100%", fontSize: "22px", marginTop: "7px", textAlign: "center" }}>
-                    {formatCurrency(value)}
-                  </strong>
-                </div>
-              ))}
-            </div>
+  style={{
+    width: "100%",
+    maxWidth: "100%",
+    overflowX: "auto",
+    overflowY: "hidden",
+    marginBottom: "22px",
+    boxSizing: "border-box",
+  }}
+>
+  <div
+    style={{
+      display: "grid",
+      gridTemplateColumns:
+        "repeat(7, minmax(112px, 1fr))",
+      gap: "10px",
+      minWidth: "844px",
+    }}
+  >
+    {[
+      ["Total Income", financeStats.totalIncome],
+      ["Total Expenses", financeStats.totalExpenses],
+      ["VAT 15%", financeStats.totalVat],
+      ["Total Net Profit", financeStats.totalNetProfit],
+      ["AVG Daily Income", financeStats.averageDailyIncome],
+      ["AVG Daily Expenses", financeStats.averageDailyExpenses],
+      ["AVG Daily Net Income", financeStats.averageDailyNetIncome],
+    ].map(([label, value]) => (
+      <div
+        key={label}
+        style={financeSummaryCardStyle}
+      >
+        <div
+          style={{
+            width: "100%",
+            color: "#8a7a68",
+            fontSize: "10px",
+            fontWeight: "800",
+            whiteSpace: "nowrap",
+            textAlign: "center",
+          }}
+        >
+          {label}
+        </div>
+
+        <strong
+          style={{
+            display: "block",
+            width: "100%",
+            fontSize: "19px",
+            marginTop: "4px",
+            textAlign: "center",
+          }}
+        >
+          {formatCurrency(value)}
+        </strong>
+      </div>
+    ))}
+  </div>
+</div>
 
             <div
               style={{
@@ -18895,7 +20143,7 @@ if (screen === "finance") {
                 >
                   <thead>
                     <tr style={{ background: "#cbb7a4", color: "#111" }}>
-                      {["Date", "Income", "Expenses", "Net Profit"].map((heading) => (
+                      {["Date", "Income", "Expenses", "VAT 15%", "Net Profit"].map((heading) => (
                         <th
                           key={heading}
                           style={{
@@ -18923,6 +20171,9 @@ if (screen === "finance") {
                         <td style={{ padding: "12px 10px", textAlign: "center", border: "1px solid #eadfd5" }}>
                           {formatCurrency(day.expenses)}
                         </td>
+                        <td style={{ padding: "12px 10px", textAlign: "center", border: "1px solid #eadfd5" }}>
+  {formatCurrency(day.vatAmount)}
+</td>
                         <td style={{ padding: "12px 10px", textAlign: "center", border: "1px solid #eadfd5", fontWeight: "900" }}>
                           {formatCurrency(day.netProfit)}
                         </td>
@@ -18932,6 +20183,7 @@ if (screen === "finance") {
                       <td style={{ padding: "12px 10px", textAlign: "center", border: "1px solid #d6c7b8" }}>Total</td>
                       <td style={{ padding: "12px 10px", textAlign: "center", border: "1px solid #d6c7b8" }}>{formatCurrency(financeStats.totalIncome)}</td>
                       <td style={{ padding: "12px 10px", textAlign: "center", border: "1px solid #d6c7b8" }}>{formatCurrency(financeStats.totalExpenses)}</td>
+                      <td style={{ padding: "12px 10px", textAlign: "center", border: "1px solid #d6c7b8" }}>{formatCurrency(financeStats.totalVat)}</td>
                       <td style={{ padding: "12px 10px", textAlign: "center", border: "1px solid #d6c7b8" }}>{formatCurrency(financeStats.totalNetProfit)}</td>
                     </tr>
                   </tbody>
@@ -21454,13 +22706,59 @@ if (screen === "availableAppointments") {
 
                       <div
                         style={{
-                          padding: "12px 10px",
+                          padding: "10px 8px",
                           fontWeight: "bold",
                           textAlign: "center",
                           overflowWrap: "anywhere",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexWrap: "wrap",
+                          gap: "7px",
+                          minWidth: 0,
+                          boxSizing: "border-box",
                         }}
                       >
-                        {service.services || "-"}
+                        <span
+                          style={{
+                            minWidth: 0,
+                            overflowWrap: "anywhere",
+                          }}
+                        >
+                          {service.services || "-"}
+                        </span>
+
+                        {service.invoiceLink?.invoiceId && (
+                          <button
+                            type="button"
+                            title="فتح الفاتورة"
+                            aria-label="فتح الفاتورة"
+                            onClick={() =>
+                              openServiceHistoryInvoice(
+                                service.invoiceLink
+                              )
+                            }
+                            style={{
+                              width: "32px",
+                              height: "32px",
+                              minWidth: "32px",
+                              padding: 0,
+                              border: "1px solid #d7bea7",
+                              borderRadius: "10px",
+                              background: "#f3e7dc",
+                              color: "#4b2e1f",
+                              fontSize: "17px",
+                              cursor: "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              flexShrink: 0,
+                              boxSizing: "border-box",
+                            }}
+                          >
+                            🧾
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -21750,6 +23048,518 @@ width: "100%",
             </button>
           </div>
         </div>
+
+        {selectedInvoice &&
+          createPortal(
+            <div
+              onClick={() =>
+                setSelectedInvoice(null)
+              }
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 999999,
+                width: "100vw",
+                height: "100dvh",
+                background:
+                  "rgba(35, 22, 15, 0.72)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "16px",
+                boxSizing: "border-box",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                onClick={(event) =>
+                  event.stopPropagation()
+                }
+                style={{
+                  position: "relative",
+                  width: "min(720px, 100%)",
+                  maxWidth: "100%",
+                  maxHeight: "92dvh",
+                  overflowY: "auto",
+                  overflowX: "hidden",
+                  background: "#fffdf9",
+                  borderRadius: "24px",
+                  boxShadow:
+                    "0 25px 70px rgba(0, 0, 0, 0.35)",
+                  padding: "28px",
+                  boxSizing: "border-box",
+                  color: "#4b2e1f",
+                  direction: "rtl",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSelectedInvoice(null)
+                  }
+                  aria-label="إغلاق الفاتورة"
+                  style={{
+                    position: "absolute",
+                    top: "14px",
+                    left: "14px",
+                    width: "38px",
+                    height: "38px",
+                    padding: 0,
+                    border: "none",
+                    borderRadius: "50%",
+                    background: "#4b2e1f",
+                    color: "white",
+                    fontSize: "23px",
+                    fontWeight: "bold",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    boxSizing: "border-box",
+                  }}
+                >
+                  ×
+                </button>
+
+                <div
+                  style={{
+                    textAlign: "center",
+                    marginBottom: "25px",
+                    paddingLeft: "42px",
+                    paddingRight: "42px",
+                    boxSizing: "border-box",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: "27px",
+                      fontWeight: 950,
+                    }}
+                  >
+                    فاتورة ضريبية مبسطة
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: "7px",
+                      fontSize: "16px",
+                      fontWeight: 900,
+                      color: "#9b6b3f",
+                      direction: "ltr",
+                    }}
+                  >
+                    {selectedInvoice.invoiceCode ||
+                      `PS-${selectedInvoice.invoiceNumber || ""}`}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      "repeat(auto-fit, minmax(180px, 1fr))",
+                    gap: "12px",
+                    width: "100%",
+                    maxWidth: "100%",
+                    marginBottom: "20px",
+                    boxSizing: "border-box",
+                  }}
+                >
+                  <div
+                    style={{
+                      minWidth: 0,
+                      background: "#f7efe6",
+                      border:
+                        "1px solid #ead9c7",
+                      borderRadius: "15px",
+                      padding: "14px",
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        color: "#92745d",
+                        fontWeight: 900,
+                        marginBottom: "6px",
+                      }}
+                    >
+                      تاريخ الخدمة
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: "15px",
+                        fontWeight: 950,
+                      }}
+                    >
+                      {(() => {
+                        const cleanDate =
+                          String(
+                            selectedInvoice.scheduleDate ||
+                              ""
+                          ).slice(0, 10);
+
+                        if (!cleanDate) return "-";
+
+                        const [
+                          year,
+                          month,
+                          day,
+                        ] = cleanDate.split("-");
+
+                        return year &&
+                          month &&
+                          day
+                          ? `${day}-${month}-${year}`
+                          : cleanDate;
+                      })()}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      minWidth: 0,
+                      background: "#f7efe6",
+                      border:
+                        "1px solid #ead9c7",
+                      borderRadius: "15px",
+                      padding: "14px",
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        color: "#92745d",
+                        fontWeight: 900,
+                        marginBottom: "6px",
+                      }}
+                    >
+                      اسم العميلة
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: "15px",
+                        fontWeight: 950,
+                        overflowWrap: "anywhere",
+                      }}
+                    >
+                      {selectedInvoice.clientName ||
+                        "-"}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      minWidth: 0,
+                      background: "#f7efe6",
+                      border:
+                        "1px solid #ead9c7",
+                      borderRadius: "15px",
+                      padding: "14px",
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        color: "#92745d",
+                        fontWeight: 900,
+                        marginBottom: "6px",
+                      }}
+                    >
+                      رقم الجوال
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: "15px",
+                        fontWeight: 950,
+                        direction: "ltr",
+                        overflowWrap: "anywhere",
+                      }}
+                    >
+                      {selectedInvoice.clientPhone ||
+                        "-"}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      minWidth: 0,
+                      background: "#f7efe6",
+                      border:
+                        "1px solid #ead9c7",
+                      borderRadius: "15px",
+                      padding: "14px",
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        color: "#92745d",
+                        fontWeight: 900,
+                        marginBottom: "6px",
+                      }}
+                    >
+                      طريقة الدفع
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: "15px",
+                        fontWeight: 950,
+                        overflowWrap: "anywhere",
+                      }}
+                    >
+                      {selectedInvoice.paymentMethod ||
+                        "-"}
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    width: "100%",
+                    maxWidth: "100%",
+                    border:
+                      "1px solid #e4d4c4",
+                    borderRadius: "17px",
+                    overflow: "hidden",
+                    marginBottom: "20px",
+                    boxSizing: "border-box",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "minmax(0, 1fr) minmax(90px, 130px)",
+                      background: "#4b2e1f",
+                      color: "white",
+                      padding: "13px 15px",
+                      fontWeight: 950,
+                    }}
+                  >
+                    <div>الخدمة</div>
+
+                    <div
+                      style={{
+                        textAlign: "center",
+                      }}
+                    >
+                      المبلغ
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "minmax(0, 1fr) minmax(90px, 130px)",
+                      padding: "16px 15px",
+                      borderBottom:
+                        "1px solid #eadfd5",
+                      fontWeight: 900,
+                    }}
+                  >
+                    <div
+                      style={{
+                        minWidth: 0,
+                        overflowWrap: "anywhere",
+                      }}
+                    >
+                      {selectedInvoice.serviceName ||
+                        "-"}
+                    </div>
+
+                    <div
+                      style={{
+                        textAlign: "center",
+                      }}
+                    >
+                      {Number(
+                        selectedInvoice.serviceAmountIncludingVat ||
+                          0
+                      ).toLocaleString(
+                        "en-US",
+                        {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        }
+                      )}{" "}
+                      ر.س
+                    </div>
+                  </div>
+
+                  {Number(
+                    selectedInvoice.transportationAmountIncludingVat ||
+                      0
+                  ) > 0 && (
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns:
+                          "minmax(0, 1fr) minmax(90px, 130px)",
+                        padding: "16px 15px",
+                        borderBottom:
+                          "1px solid #eadfd5",
+                        fontWeight: 900,
+                      }}
+                    >
+                      <div>المواصلات</div>
+
+                      <div
+                        style={{
+                          textAlign: "center",
+                        }}
+                      >
+                        {Number(
+                          selectedInvoice.transportationAmountIncludingVat ||
+                            0
+                        ).toLocaleString(
+                          "en-US",
+                          {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          }
+                        )}{" "}
+                        ر.س
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div
+                  style={{
+                    width: "min(340px, 100%)",
+                    maxWidth: "100%",
+                    marginRight: "auto",
+                    display: "grid",
+                    gap: "10px",
+                    boxSizing: "border-box",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent:
+                        "space-between",
+                      gap: "12px",
+                      padding: "11px 13px",
+                      background: "#f7efe6",
+                      borderRadius: "12px",
+                      fontWeight: 900,
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    <span>
+                      الإجمالي قبل الضريبة
+                    </span>
+
+                    <span
+                      style={{
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {Number(
+                        selectedInvoice.subtotalExcludingVat ||
+                          0
+                      ).toLocaleString(
+                        "en-US",
+                        {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        }
+                      )}{" "}
+                      ر.س
+                    </span>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent:
+                        "space-between",
+                      gap: "12px",
+                      padding: "11px 13px",
+                      background: "#f7efe6",
+                      borderRadius: "12px",
+                      fontWeight: 900,
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    <span>
+                      ضريبة القيمة المضافة{" "}
+                      {selectedInvoice.vatRate ||
+                        15}
+                      %
+                    </span>
+
+                    <span
+                      style={{
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {Number(
+                        selectedInvoice.vatAmount ||
+                          0
+                      ).toLocaleString(
+                        "en-US",
+                        {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        }
+                      )}{" "}
+                      ر.س
+                    </span>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent:
+                        "space-between",
+                      gap: "12px",
+                      padding: "14px",
+                      background: "#287746",
+                      color: "white",
+                      borderRadius: "14px",
+                      fontSize: "17px",
+                      fontWeight: 950,
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    <span>
+                      الإجمالي شامل الضريبة
+                    </span>
+
+                    <span
+                      style={{
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {Number(
+                        selectedInvoice.totalIncludingVat ||
+                          0
+                      ).toLocaleString(
+                        "en-US",
+                        {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        }
+                      )}{" "}
+                      ر.س
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )}
       </div>
     );
   }
