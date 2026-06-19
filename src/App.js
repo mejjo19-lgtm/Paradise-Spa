@@ -533,6 +533,23 @@ async function fetchClientsWithSupabaseClient() {
 }
 
 async function fetchClientsWithRestApi() {
+  const {
+    data: sessionData,
+    error: sessionError,
+  } = await supabase.auth.getSession();
+
+  const accessToken =
+    sessionData?.session?.access_token;
+
+  if (
+    sessionError ||
+    !accessToken
+  ) {
+    throw new Error(
+      "Authenticated session is required for clients REST fetch"
+    );
+  }
+
   const pageSize = 1000;
   let allClients = [];
   let offset = 0;
@@ -544,18 +561,29 @@ async function fetchClientsWithRestApi() {
       {
         headers: {
           apikey: supabaseKey,
-          Authorization: `Bearer ${supabaseKey}`,
+          Authorization: `Bearer ${accessToken}`,
         },
       }
     );
 
     if (!response.ok) {
-      throw new Error(`REST clients fetch failed: ${response.status}`);
+      throw new Error(
+        `REST clients fetch failed: ${response.status}`
+      );
     }
 
-    const pageData = await response.json();
-    allClients = [...allClients, ...(pageData || [])];
-    hasMore = Array.isArray(pageData) && pageData.length === pageSize;
+    const pageData =
+      await response.json();
+
+    allClients = [
+      ...allClients,
+      ...(pageData || []),
+    ];
+
+    hasMore =
+      Array.isArray(pageData) &&
+      pageData.length === pageSize;
+
     offset += pageSize;
   }
 
@@ -1623,17 +1651,80 @@ const normalizeInvoiceRecord = (invoice) => ({
 });
 
 
+const getInvoiceDateInRiyadh = (
+  invoice
+) => {
+  const issuedAt =
+    String(
+      invoice?.issuedAt || ""
+    ).trim();
+
+  if (!issuedAt) {
+    return "";
+  }
+
+  const issuedDate =
+    new Date(issuedAt);
+
+  if (
+    Number.isNaN(
+      issuedDate.getTime()
+    )
+  ) {
+    return "";
+  }
+
+  const dateParts =
+    new Intl.DateTimeFormat(
+      "en-US",
+      {
+        timeZone:
+          "Asia/Riyadh",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }
+    ).formatToParts(
+      issuedDate
+    );
+
+  const datePartMap =
+    dateParts.reduce(
+      (result, part) => {
+        if (
+          part.type !==
+          "literal"
+        ) {
+          result[part.type] =
+            part.value;
+        }
+
+        return result;
+      },
+      {}
+    );
+
+  return [
+    datePartMap.year,
+    datePartMap.month,
+    datePartMap.day,
+  ].join("-");
+};
+
+
 const isInvoiceInsideDateRange = (
   invoice,
   fromDate,
   toDate
 ) => {
   const invoiceDate =
-    String(
-      invoice?.scheduleDate || ""
-    ).slice(0, 10);
+    getInvoiceDateInRiyadh(
+      invoice
+    );
 
-  if (!invoiceDate) return false;
+  if (!invoiceDate) {
+    return false;
+  }
 
   if (
     fromDate &&
@@ -1752,12 +1843,17 @@ useEffect(() => {
               ].join(",")
             )
             .gte(
-              "schedule_date",
-              invoicesFromDate
+              "issued_at",
+              `${invoicesFromDate}T00:00:00+03:00`
             )
-            .lte(
-              "schedule_date",
-              invoicesToDate
+            .lt(
+              "issued_at",
+              new Date(
+                new Date(
+                  `${invoicesToDate}T00:00:00+03:00`
+                ).getTime() +
+                  24 * 60 * 60 * 1000
+              ).toISOString()
             )
             .order(
               "invoice_number",
@@ -2533,9 +2629,9 @@ const updateClientLastActivity = async (id) => {
 
 
   // 📅 SCHEDULE OPTIONS
+  // تمت الخدمة أصبحت مستقلة عن Status وعن لون الصف.
   const appointmentStatuses = [
     "",
-    "تمت الخدمة",
     "Gift Giver",
     "Gift Done",
     "Not Sure",
@@ -2555,7 +2651,6 @@ const updateClientLastActivity = async (id) => {
   ];
 
   const statusColors = {
-    "تمت الخدمة": "#bfe3c8",
     "Gift Giver": "#e6b8df",
     "Gift Done": "#b7e4f2",
     "Not Sure": "#d8c5b3",
@@ -3750,6 +3845,12 @@ const getScheduleClientBadges = (row) => {
 
   const scheduleColumns = [
   { field: "rowAction", label: "Actions", width: 54, readOnly: true },
+  {
+    field: "serviceCompleted",
+    label: "Completed",
+    width: 78,
+    readOnly: true,
+  },
   { field: "status", label: "Status", width: 96 },
     { field: "clientBy", label: "Client By", width: 92 },
     { field: "serviceTime", label: "Service Time", width: 88 },
@@ -4973,6 +5074,8 @@ const getScheduleClientBadges = (row) => {
       };
     }
 
+    // إصدار الفاتورة لا يغيّر Status ولا لون الصف.
+    // اكتمال الخدمة يُعرف من invoiceLinks فقط.
     const completedRowData =
       isAdditionalClient
         ? {
@@ -4989,16 +5092,12 @@ const getScheduleClientBadges = (row) => {
                     ? {
                         ...client,
                         ...invoiceClient,
-                        status:
-                          "تمت الخدمة",
                       }
                     : client
               ),
           }
         : {
             ...originalRowSnapshot,
-            status:
-              "تمت الخدمة",
           };
 
     const scheduleRowId =
@@ -5288,6 +5387,235 @@ const getScheduleClientBadges = (row) => {
         completedRow: null,
       };
     }
+  };
+
+  const getAdditionalClientInvoiceLink = (
+    row,
+    extraClient,
+    extraClientIndex
+  ) => {
+    const additionalClientIdentity =
+      String(
+        extraClient?.id ||
+          extraClient?.clientId ||
+          normalizeDigits(
+            extraClient?.phone
+          ) ||
+          String(
+            extraClient?.name || ""
+          )
+            .trim()
+            .toLowerCase()
+            .replace(/\s+/g, "-") ||
+          `extra-${extraClientIndex}`
+      );
+
+    return (
+      row?.invoiceLinks?.[
+        `additional:${additionalClientIdentity}`
+      ] || null
+    );
+  };
+
+  const renderServiceCompletedButton = ({
+    row,
+    rowIndex,
+    householdRole = "primary",
+    extraClientIndex = null,
+    extraClient = null,
+  }) => {
+    const isAdditionalClient =
+      householdRole === "additional";
+
+    const invoiceClient =
+      isAdditionalClient
+        ? extraClient || {}
+        : row || {};
+
+    const serviceName =
+      String(
+        isAdditionalClient
+          ? invoiceClient.service || ""
+          : invoiceClient.services || ""
+      ).trim();
+
+    const clientPhone =
+      String(
+        isAdditionalClient
+          ? invoiceClient.phone || ""
+          : invoiceClient.number || ""
+      ).trim();
+
+    const invoiceLink =
+      isAdditionalClient
+        ? getAdditionalClientInvoiceLink(
+            row,
+            invoiceClient,
+            extraClientIndex
+          )
+        : row?.invoiceLinks?.primary ||
+          null;
+
+    const shouldShowButton =
+      Boolean(
+        serviceName ||
+          normalizeDigits(clientPhone) ||
+          invoiceLink
+      );
+
+    if (!shouldShowButton) {
+      return null;
+    }
+
+    const clientName =
+      String(
+        isAdditionalClient
+          ? invoiceClient.name || ""
+          : invoiceClient.client || ""
+      ).trim();
+
+    const serviceAmount =
+      parseAmount(
+        invoiceClient.serviceAmount
+      );
+
+    const transportationAmount =
+      parseAmount(
+        invoiceClient.transportation
+      );
+
+    const invoiceTotal =
+      serviceAmount +
+      transportationAmount;
+
+    const invoiceIssued =
+      Boolean(invoiceLink);
+
+    return (
+      <button
+        type="button"
+        disabled={invoiceIssued}
+        title={
+          invoiceIssued
+            ? `تم إصدار الفاتورة ${
+                invoiceLink?.invoiceCode ||
+                ""
+              }`
+            : "اعتماد تمت الخدمة وإصدار الفاتورة"
+        }
+        onClick={async (event) => {
+          const completionButton =
+            event.currentTarget;
+
+          if (invoiceIssued) {
+            return;
+          }
+
+          if (
+            !ensureSystemWritable() ||
+            !canEditData
+          ) {
+            return;
+          }
+
+          const confirmed =
+            window.confirm(
+              [
+                isAdditionalClient
+                  ? "تأكيد تمت الخدمة وإصدار فاتورة مستقلة؟"
+                  : "تأكيد تمت الخدمة وإصدار الفاتورة النهائية؟",
+                "",
+                `العميلة: ${
+                  clientName ||
+                  "غير محددة"
+                }`,
+                `الخدمة: ${
+                  serviceName ||
+                  "غير محددة"
+                }`,
+                `مبلغ الخدمة: ${serviceAmount.toFixed(
+                  2
+                )} ر.س`,
+                `المواصلات: ${transportationAmount.toFixed(
+                  2
+                )} ر.س`,
+                `الإجمالي شامل الضريبة: ${invoiceTotal.toFixed(
+                  2
+                )} ر.س`,
+                "",
+                "لن يتغير Status أو لون الصف عند إصدار الفاتورة.",
+              ].join("\n")
+            );
+
+          if (!confirmed) {
+            return;
+          }
+
+          completionButton.disabled =
+            true;
+
+          const result =
+            await issueCompletedServiceInvoice(
+              {
+                rowIndex,
+                rowSnapshot: row,
+                householdRole,
+                extraClientIndex:
+                  isAdditionalClient
+                    ? extraClientIndex
+                    : null,
+                extraClientSnapshot:
+                  isAdditionalClient
+                    ? invoiceClient
+                    : null,
+              }
+            );
+
+          if (
+            !result?.success &&
+            completionButton?.isConnected
+          ) {
+            completionButton.disabled =
+              false;
+          }
+        }}
+        style={{
+          width: "38px",
+          height: "23px",
+          minWidth: "38px",
+          padding: 0,
+          borderRadius: "8px",
+
+          border: invoiceIssued
+            ? "1px solid #4f8a60"
+            : "1px solid #b89f88",
+
+          background: invoiceIssued
+            ? "linear-gradient(135deg, #79b98a, #4f8a60)"
+            : "linear-gradient(135deg, #eadfd3, #d3bda7)",
+
+          color: invoiceIssued
+            ? "#ffffff"
+            : "#5f4635",
+
+          boxShadow: invoiceIssued
+            ? "0 3px 8px rgba(79,138,96,0.28)"
+            : "0 3px 8px rgba(75,46,31,0.14)",
+
+          fontSize: "15px",
+          fontWeight: "950",
+          lineHeight: 1,
+
+          cursor: invoiceIssued
+            ? "default"
+            : "pointer",
+
+          opacity: 1,
+        }}
+      >
+        ✓
+      </button>
+    );
   };
 
   const updateAdditionalClientField = async (
@@ -15582,142 +15910,37 @@ transform: "translate(-50%, -50%)",
 <option value="clear">Clear</option>
   </select>
 </td>
+
+                    <td
+                      style={getScheduleCellStyle(
+                        index,
+                        "serviceCompleted",
+                        {
+                          textAlign: "center",
+                          padding: "2px 4px",
+                        }
+                      )}
+                    >
+                      {renderServiceCompletedButton({
+                        row,
+                        rowIndex: index,
+                        householdRole: "primary",
+                      })}
+                    </td>
+
                     <td
                       style={getScheduleCellStyle(index, "status")}
                       {...getScheduleCellHandlers(index, "status")}
                     >
                       <select
-                        value={row.status}
-                        onChange={async (event) => {
-                          const statusSelect =
-                            event.currentTarget;
-
-                          const previousStatus =
-                            row.status || "";
-
-                          const nextStatus =
-                            event.target.value;
-
-                          const primaryInvoiceLink =
-                            row.invoiceLinks?.primary;
-
-                          if (
-                            primaryInvoiceLink &&
-                            nextStatus !==
-                              "تمت الخدمة"
-                          ) {
-                            statusSelect.value =
-                              previousStatus;
-
-                            alert(
-                              "تم إصدار فاتورة نهائية لهذه الخدمة، لذلك لا يمكن تغيير حالتها مباشرة. أي إلغاء أو تصحيح يجب أن يتم من خلال إشعار دائن أو إشعار مدين."
-                            );
-
-                            return;
-                          }
-
-                          if (
-                            nextStatus !==
-                            "تمت الخدمة"
-                          ) {
-                            updateScheduleRow(
-                              index,
-                              "status",
-                              nextStatus
-                            );
-
-                            return;
-                          }
-
-                          if (
-                            previousStatus ===
-                              "تمت الخدمة" &&
-                            primaryInvoiceLink
-                          ) {
-                            return;
-                          }
-
-                          const serviceAmount =
-                            parseAmount(
-                              row.serviceAmount
-                            );
-
-                          const transportationAmount =
-                            parseAmount(
-                              row.transportation
-                            );
-
-                          const invoiceTotal =
-                            serviceAmount +
-                            transportationAmount;
-
-                          const confirmed =
-                            window.confirm(
-                              [
-                                "تأكيد اكتمال الخدمة وإصدار الفاتورة النهائية؟",
-                                "",
-                                `العميلة: ${
-                                  row.client ||
-                                  "غير محددة"
-                                }`,
-                                `الخدمة: ${
-                                  row.services ||
-                                  "غير محددة"
-                                }`,
-                                `مبلغ الخدمة: ${serviceAmount.toFixed(
-                                  2
-                                )} ر.س`,
-                                `المواصلات: ${transportationAmount.toFixed(
-                                  2
-                                )} ر.س`,
-                                `الإجمالي شامل الضريبة: ${invoiceTotal.toFixed(
-                                  2
-                                )} ر.س`,
-                                "",
-                                "بعد الإصدار لا يمكن تعديل الفاتورة أو إلغاؤها مباشرة.",
-                              ].join("\n")
-                            );
-
-                          if (!confirmed) {
-                            statusSelect.value =
-                              previousStatus;
-
-                            return;
-                          }
-
-                          statusSelect.disabled =
-                            true;
-
-                          try {
-                            const result =
-                              await issueCompletedServiceInvoice(
-                                {
-                                  rowIndex:
-                                    index,
-
-                                  rowSnapshot:
-                                    row,
-
-                                  householdRole:
-                                    "primary",
-                                }
-                              );
-
-                            if (
-                              !result?.success
-                            ) {
-                              statusSelect.value =
-                                previousStatus;
-                            }
-                          } finally {
-                            if (
-                              statusSelect?.isConnected
-                            ) {
-                              statusSelect.disabled =
-                                false;
-                            }
-                          }
-                        }}
+                        value={row.status || ""}
+                        onChange={(event) =>
+                          updateScheduleRow(
+                            index,
+                            "status",
+                            event.target.value
+                          )
+                        }
                         {...getScheduleEditableProps(
                           index,
                           "status"
@@ -16348,6 +16571,33 @@ margin: "0 auto",
                               );
                             }
 
+                            if (field === "serviceCompleted") {
+                              return (
+                                <td
+                                  key={field}
+                                  style={getHouseholdClientCellStyle(
+                                    row,
+                                    index,
+                                    field,
+                                    extraIndex,
+                                    extraClients.length,
+                                    {
+                                      textAlign: "center",
+                                      padding: "2px 4px",
+                                    }
+                                  )}
+                                >
+                                  {renderServiceCompletedButton({
+                                    row,
+                                    rowIndex: index,
+                                    householdRole: "additional",
+                                    extraClientIndex: extraIndex,
+                                    extraClient,
+                                  })}
+                                </td>
+                              );
+                            }
+
                             if (field === "status") {
                               return (
                                 <td
@@ -16362,169 +16612,14 @@ margin: "0 auto",
                                 >
                                   <select
                                     value={householdStatus}
-                                    onChange={async (event) => {
-                                      const statusSelect =
-                                        event.currentTarget;
-
-                                      const previousStatus =
-                                        extraClient.status || "";
-
-                                      const nextStatus =
-                                        event.target.value;
-
-                                      const additionalClientIdentity =
-                                        String(
-                                          extraClient.id ||
-                                            extraClient.clientId ||
-                                            normalizeDigits(
-                                              extraClient.phone
-                                            ) ||
-                                            String(
-                                              extraClient.name ||
-                                                ""
-                                            )
-                                              .trim()
-                                              .toLowerCase()
-                                              .replace(
-                                                /\s+/g,
-                                                "-"
-                                              ) ||
-                                            `extra-${extraIndex}`
-                                        );
-
-                                      const invoiceLinkKey =
-                                        `additional:${additionalClientIdentity}`;
-
-                                      const additionalInvoiceLink =
-                                        row.invoiceLinks?.[
-                                          invoiceLinkKey
-                                        ];
-
-                                      if (
-                                        additionalInvoiceLink &&
-                                        nextStatus !==
-                                          "تمت الخدمة"
-                                      ) {
-                                        statusSelect.value =
-                                          previousStatus;
-
-                                        alert(
-                                          "تم إصدار فاتورة نهائية لخدمة هذه العميلة، لذلك لا يمكن تغيير حالتها مباشرة. أي إلغاء أو تصحيح يجب أن يتم من صفحة الفواتير."
-                                        );
-
-                                        return;
-                                      }
-
-                                      if (
-                                        nextStatus !==
-                                        "تمت الخدمة"
-                                      ) {
-                                        await updateAdditionalClientField(
-                                          index,
-                                          extraIndex,
-                                          "status",
-                                          nextStatus
-                                        );
-
-                                        return;
-                                      }
-
-                                      if (
-                                        previousStatus ===
-                                          "تمت الخدمة" &&
-                                        additionalInvoiceLink
-                                      ) {
-                                        return;
-                                      }
-
-                                      const serviceAmount =
-                                        parseAmount(
-                                          extraClient.serviceAmount
-                                        );
-
-                                      const transportationAmount =
-                                        parseAmount(
-                                          extraClient.transportation
-                                        );
-
-                                      const invoiceTotal =
-                                        serviceAmount +
-                                        transportationAmount;
-
-                                      const confirmed =
-                                        window.confirm(
-                                          [
-                                            "تأكيد اكتمال الخدمة وإصدار الفاتورة النهائية؟",
-                                            "",
-                                            `العميلة: ${
-                                              extraClient.name ||
-                                              "غير محددة"
-                                            }`,
-                                            `الخدمة: ${
-                                              extraClient.service ||
-                                              "غير محددة"
-                                            }`,
-                                            `مبلغ الخدمة: ${serviceAmount.toFixed(
-                                              2
-                                            )} ر.س`,
-                                            `المواصلات: ${transportationAmount.toFixed(
-                                              2
-                                            )} ر.س`,
-                                            `الإجمالي شامل الضريبة: ${invoiceTotal.toFixed(
-                                              2
-                                            )} ر.س`,
-                                            "",
-                                            "سيتم إصدار فاتورة مستقلة لهذه العميلة.",
-                                            "بعد الإصدار لا يمكن تعديل الفاتورة أو إلغاؤها مباشرة.",
-                                          ].join("\n")
-                                        );
-
-                                      if (!confirmed) {
-                                        statusSelect.value =
-                                          previousStatus;
-
-                                        return;
-                                      }
-
-                                      statusSelect.disabled =
-                                        true;
-
-                                      try {
-                                        const result =
-                                          await issueCompletedServiceInvoice(
-                                            {
-                                              rowIndex:
-                                                index,
-
-                                              rowSnapshot:
-                                                row,
-
-                                              householdRole:
-                                                "additional",
-
-                                              extraClientIndex:
-                                                extraIndex,
-
-                                              extraClientSnapshot:
-                                                extraClient,
-                                            }
-                                          );
-
-                                        if (
-                                          !result?.success
-                                        ) {
-                                          statusSelect.value =
-                                            previousStatus;
-                                        }
-                                      } finally {
-                                        if (
-                                          statusSelect?.isConnected
-                                        ) {
-                                          statusSelect.disabled =
-                                            false;
-                                        }
-                                      }
-                                    }}
+                                    onChange={(event) =>
+                                      updateAdditionalClientField(
+                                        index,
+                                        extraIndex,
+                                        "status",
+                                        event.target.value
+                                      )
+                                    }
                                     style={getScheduleInputStyle(
                                       index,
                                       field
@@ -18224,12 +18319,14 @@ if (screen === "invoices") {
           >
             <div style="background:#f7efe6;border:1px solid #ead9c7;border-radius:14px;padding:16px;">
               <div style="font-size:14px;color:#92745d;font-weight:900;margin-bottom:7px;">
-                تاريخ الخدمة
+                تاريخ الفاتورة
               </div>
               <div style="font-size:18px;font-weight:900;">
                 ${escapeInvoiceHtml(
                   formatInvoiceDate(
-                    invoice.scheduleDate
+                    getInvoiceDateInRiyadh(
+                      invoice
+                    )
                   )
                 )}
               </div>
@@ -18597,8 +18694,10 @@ if (screen === "invoices") {
         `الخدمة: ${
           invoice.serviceName || "-"
         }`,
-        `تاريخ الخدمة: ${formatInvoiceDate(
-          invoice.scheduleDate
+        `تاريخ الفاتورة: ${formatInvoiceDate(
+          getInvoiceDateInRiyadh(
+            invoice
+          )
         )}`,
         `الإجمالي شامل الضريبة: ${formatInvoiceAmount(
           invoice.totalIncludingVat
@@ -19100,7 +19199,7 @@ if (screen === "invoices") {
                       {[
                         "تحديد",
                         "رقم الفاتورة",
-                        "تاريخ الخدمة",
+                        "تاريخ الفاتورة",
                         "اسم العميلة",
                         "رقم الجوال",
                         "الخدمة",
@@ -19202,7 +19301,9 @@ if (screen === "invoices") {
                             }}
                           >
                             {formatInvoiceDate(
-                              invoice.scheduleDate
+                              getInvoiceDateInRiyadh(
+                                invoice
+                              )
                             )}
                           </td>
 
@@ -19447,10 +19548,32 @@ if (screen === "invoices") {
                   >
                     {[
                       [
-                        "تاريخ الخدمة",
-                        formatInvoiceDate(
-                          selectedInvoice.scheduleDate
-                        ),
+                        "تاريخ الفاتورة",
+                        (() => {
+                          const invoiceDate =
+                            getInvoiceDateInRiyadh(
+                              selectedInvoice
+                            );
+
+                          if (!invoiceDate) {
+                            return "-";
+                          }
+
+                          const [
+                            year,
+                            month,
+                            day,
+                          ] =
+                            invoiceDate.split(
+                              "-"
+                            );
+
+                          return year &&
+                            month &&
+                            day
+                            ? `${day}-${month}-${year}`
+                            : invoiceDate;
+                        })(),
                       ],
                       [
                         "اسم العميلة",
@@ -23185,7 +23308,7 @@ width: "100%",
                         marginBottom: "6px",
                       }}
                     >
-                      تاريخ الخدمة
+                      تاريخ الفاتورة
                     </div>
 
                     <div
@@ -23195,25 +23318,29 @@ width: "100%",
                       }}
                     >
                       {(() => {
-                        const cleanDate =
-                          String(
-                            selectedInvoice.scheduleDate ||
-                              ""
-                          ).slice(0, 10);
+                        const invoiceDate =
+                          getInvoiceDateInRiyadh(
+                            selectedInvoice
+                          );
 
-                        if (!cleanDate) return "-";
+                        if (!invoiceDate) {
+                          return "-";
+                        }
 
                         const [
                           year,
                           month,
                           day,
-                        ] = cleanDate.split("-");
+                        ] =
+                          invoiceDate.split(
+                            "-"
+                          );
 
                         return year &&
                           month &&
                           day
                           ? `${day}-${month}-${year}`
-                          : cleanDate;
+                          : invoiceDate;
                       })()}
                     </div>
                   </div>
