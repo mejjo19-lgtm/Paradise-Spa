@@ -30,13 +30,66 @@ import availableAppointmentsTemplate from "./available-appointments/available-te
 import { supabase, supabaseKey, supabaseUrl } from "./supabase";
 
 function App() {
-  const [screen, setScreen] = useState("welcome");
+  const restorableScreensRef = useRef([
+    "welcome",
+    "menu",
+    "dashboard",
+    "appointments",
+    "loyalty",
+    "clients",
+    "referrals",
+    "invoices",
+    "finance",
+    "incomeExpenses",
+    "giftClients",
+    "inactiveClients",
+    "potentialClients",
+    "availableAppointments",
+    "printFrame",
+    "settings",
+  ]);
+
+  const [screen, setScreen] = useState(() => {
+    try {
+      const savedScreen = sessionStorage.getItem(
+        "paradise-current-screen"
+      );
+
+      return restorableScreensRef.current.includes(savedScreen)
+        ? savedScreen
+        : "welcome";
+    } catch {
+      return "welcome";
+    }
+  });
+
   const previousScreenRef = useRef("clients");
 
 const goToScreen = (nextScreen) => {
   previousScreenRef.current = screen;
   setScreen(nextScreen);
 };
+
+useEffect(() => {
+  if (
+    !restorableScreensRef.current.includes(screen)
+  ) {
+    return;
+  }
+
+  try {
+    sessionStorage.setItem(
+      "paradise-current-screen",
+      screen
+    );
+  } catch (error) {
+    console.log(
+      "Current screen save error:",
+      error
+    );
+  }
+}, [screen]);
+
   const [selectedClientId, setSelectedClientId] = useState(null);
   const [selectedLoyaltyClientId, setSelectedLoyaltyClientId] = useState(null);
 const [username, setUsername] = useState("");
@@ -4924,6 +4977,29 @@ const getScheduleClientBadges = (row) => {
           matches: duplicateMatches,
         });
       }
+
+      if (
+        rowToSave?.status === "Gift Done" &&
+        normalizeDigits(
+          formatSaudiPhoneForStorage(
+            rowToSave?.number || ""
+          )
+        ).length >= 9
+      ) {
+        const giftMatchResult =
+          findGiftDoneMatchForScheduleRow(
+            rowToSave
+          );
+
+        if (
+          giftMatchResult.status ===
+          "not-found"
+        ) {
+          alert(
+            "لا توجد هدية غير مأخوذة بهذا الرقم في عملاء الإهداء."
+          );
+        }
+      }
     }, 0);
   };
 
@@ -6474,13 +6550,125 @@ const getScheduleClientBadges = (row) => {
     return matchResult;
   };
 
+
+
+  const findTakenGiftMatchesForScheduleRow = (row) => {
+    const recipientPhone = normalizeDigits(
+      formatSaudiPhoneForStorage(
+        row?.number || ""
+      )
+    );
+
+    if (recipientPhone.length < 9) {
+      return {
+        status: "missing-phone",
+        gift: null,
+        matches: [],
+      };
+    }
+
+    const matchingGifts = giftClients.filter(
+      (gift) => {
+        const giftRecipientPhone =
+          normalizeDigits(
+            formatSaudiPhoneForStorage(
+              gift.toPhone || ""
+            )
+          );
+
+        return (
+          gift.giftTaken &&
+          giftRecipientPhone ===
+            recipientPhone
+        );
+      }
+    );
+
+    if (matchingGifts.length === 1) {
+      return {
+        status: "matched",
+        gift: matchingGifts[0],
+        matches: matchingGifts,
+      };
+    }
+
+    if (matchingGifts.length > 1) {
+      return {
+        status: "multiple",
+        gift: null,
+        matches: matchingGifts,
+      };
+    }
+
+    return {
+      status: "not-found",
+      gift: null,
+      matches: [],
+    };
+  };
+
   const selectGiftDoneLink = async (gift) => {
     if (!giftDoneLinkModal || !gift) return;
     if (!ensureSystemWritable() || !canEditData) return;
 
-    const rowIndex = giftDoneLinkModal.rowIndex;
+    const rowIndex =
+      giftDoneLinkModal.rowIndex;
+
     const currentRow =
       giftDoneLinkModal.rowSnapshot || {};
+
+    const isRemovingGiftTaken =
+      giftDoneLinkModal.mode ===
+      "remove-gift-taken";
+
+    if (isRemovingGiftTaken) {
+      const linkedCancelledRowSnapshot = {
+        ...currentRow,
+        giftClientId: String(gift.id),
+      };
+
+      setScheduleData((prev) => {
+        const dayData =
+          prev[selectedScheduleDate] || {};
+
+        const rowsForDate =
+          dayData.rows ||
+          timeSlots.map(
+            createEmptyAppointmentRow
+          );
+
+        const rows = rowsForDate.map(
+          (row, index) =>
+            index === rowIndex
+              ? linkedCancelledRowSnapshot
+              : row
+        );
+
+        return {
+          ...prev,
+          [selectedScheduleDate]: {
+            ...dayData,
+            rows,
+          },
+        };
+      });
+
+      queueScheduleRowSave(
+        selectedScheduleDate,
+        rowIndex,
+        linkedCancelledRowSnapshot,
+        giftDoneLinkModal.cellStyles || {}
+      );
+
+      await updateGiftTaken(
+        gift,
+        false
+      );
+
+      setGiftDoneLinkModal(null);
+      setGiftDoneLinkSearch("");
+      return;
+    }
 
     const linkedGiftRowSnapshot = {
       ...currentRow,
@@ -7840,24 +8028,136 @@ if (field === "frame") {
           matches: giftMatchResult.matches,
         });
       }
+
+      if (
+        field === "status" &&
+        value === "Gift Done" &&
+        giftMatchResult?.status ===
+          "not-found" &&
+        normalizeDigits(
+          formatSaudiPhoneForStorage(
+            updatedRowSnapshot.number || ""
+          )
+        ).length >= 9
+      ) {
+        alert(
+          "لا توجد هدية غير مأخوذة بهذا الرقم في عملاء الإهداء."
+        );
+      }
     }
 
     if (
       field === "status" &&
       subtractVisitStatuses.includes(value) &&
-      updatedRowSnapshot.giftClientId
+      originalRow.status === "Gift Done"
     ) {
-      const linkedGift = giftClients.find(
-        (gift) =>
-          String(gift.id) ===
-          String(updatedRowSnapshot.giftClientId)
-      );
+      const savedGiftClientId = String(
+        originalRow.giftClientId || ""
+      ).trim();
 
-      if (linkedGift?.giftTaken) {
-        await updateGiftTaken(
-          linkedGift,
-          false
-        );
+      const directlyLinkedGift =
+        savedGiftClientId
+          ? giftClients.find(
+              (gift) =>
+                String(gift.id) ===
+                savedGiftClientId
+            )
+          : null;
+
+      if (directlyLinkedGift) {
+        if (directlyLinkedGift.giftTaken) {
+          await updateGiftTaken(
+            directlyLinkedGift,
+            false
+          );
+        }
+      } else {
+        const giftMatchResult =
+          findTakenGiftMatchesForScheduleRow(
+            originalRow
+          );
+
+        if (
+          giftMatchResult.status ===
+            "matched" &&
+          giftMatchResult.gift
+        ) {
+          const linkedCancelledRowSnapshot = {
+            ...updatedRowSnapshot,
+            giftClientId: String(
+              giftMatchResult.gift.id
+            ),
+          };
+
+          setScheduleData((prev) => {
+            const dayData =
+              prev[selectedScheduleDate] || {};
+
+            const rowsForDate =
+              dayData.rows ||
+              timeSlots.map(
+                createEmptyAppointmentRow
+              );
+
+            const rows =
+              rowsForDate.map(
+                (row, index) =>
+                  index === rowIndex
+                    ? linkedCancelledRowSnapshot
+                    : row
+              );
+
+            return {
+              ...prev,
+              [selectedScheduleDate]: {
+                ...dayData,
+                rows,
+              },
+            };
+          });
+
+          queueScheduleRowSave(
+            selectedScheduleDate,
+            rowIndex,
+            linkedCancelledRowSnapshot,
+            nextCellStyles
+          );
+
+          await updateGiftTaken(
+            giftMatchResult.gift,
+            false
+          );
+        }
+
+        if (
+          giftMatchResult.status ===
+            "multiple" &&
+          giftMatchResult.matches.length > 1
+        ) {
+          setGiftDoneLinkSearch("");
+
+          setGiftDoneLinkModal({
+            mode: "remove-gift-taken",
+            rowIndex,
+            rowSnapshot:
+              updatedRowSnapshot,
+            cellStyles:
+              nextCellStyles,
+            matches:
+              giftMatchResult.matches,
+          });
+        }
+
+        if (
+          giftMatchResult.status ===
+            "missing-phone" ||
+          giftMatchResult.status ===
+            "not-found"
+        ) {
+          alert(
+            "تم تغيير حالة الموعد، لكن لم يتم العثور على سجل هدية مأخوذة مطابق لرقم جوال المستفيدة."
+          );
+        }
       }
     }
 
@@ -9730,20 +10030,24 @@ const sendWhatsApp = async (client) => {
       .replace(/[۰-۹]/g, (digit) => "۰۱۲۳۴۵۶۷۸۹".indexOf(digit));
 
   const formatAppointmentMessageDate = (dateString) => {
-  const date = new Date(`${dateString}T12:00:00`);
+    const date = new Date(
+      `${dateString}T12:00:00`
+    );
 
-  const weekday = date.toLocaleDateString("ar-SA", {
-    weekday: "long",
-  });
+    const day = formatEnglishDigits(
+      date.getDate()
+    );
 
-  const month = date.toLocaleDateString("ar-SA", {
-    month: "long",
-  });
+    const month =
+      date.toLocaleDateString(
+        "ar-SA-u-ca-gregory",
+        {
+          month: "long",
+        }
+      );
 
-  const day = formatEnglishDigits(date.getDate());
-
-  return `${weekday} ${day} ${month}`;
-};
+    return `${day} ${month}`;
+  };
 
   const formatNumericDate = (dateString) => {
     const date = new Date(`${dateString}T12:00:00`);
@@ -11799,40 +12103,136 @@ const leavingTime = addMinutesToDisplayTime(
   });
 
   const scheduleSummaryCardStyle = {
-    border: "1px solid rgba(214,199,184,0.92)",
+    border: "1px solid rgba(169,132,103,0.24)",
     borderRadius: "24px",
     overflow: "hidden",
-    background: "linear-gradient(145deg, rgba(255,255,255,0.92), rgba(250,247,242,0.84))",
-    boxShadow: "0 16px 36px rgba(75,46,31,0.08)",
+    background:
+      "linear-gradient(145deg, #fffdf9 0%, #f8f0e8 100%)",
+    boxShadow:
+      "0 14px 32px rgba(105,77,56,0.08)",
+    alignSelf: "stretch",
+    height: "100%",
+    boxSizing: "border-box",
   };
 
   const scheduleSummaryHeaderStyle = {
-    background: "linear-gradient(135deg, #4b2e1f, #7a5a43)",
-    color: "white",
+    background:
+      "linear-gradient(135deg, #a9876c 0%, #c3a287 100%)",
+    color: "#fffdf9",
     margin: 0,
-    padding: "12px",
+    padding: "14px 18px",
     textAlign: "center",
+    fontSize: "17px",
+    fontWeight: "800",
+    letterSpacing: "0.2px",
+    boxShadow:
+      "inset 0 -1px 0 rgba(255,255,255,0.22)",
   };
 
   const scheduleSummaryRowStyle = {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: "10px 14px",
-    borderTop: "1px solid rgba(234,223,213,0.95)",
-    color: "#4b2e1f",
-    gap: "10px",
+    padding: "12px 16px",
+    borderTop:
+      "1px solid rgba(190,157,128,0.18)",
+    color: "#513a2b",
+    gap: "12px",
+    minHeight: "46px",
+    boxSizing: "border-box",
   };
 
   const scheduleSummaryInputStyle = {
-    width: "90px",
-    padding: "7px",
-    borderRadius: "12px",
-    border: "1px solid #d6c7b8",
+    width: "110px",
+    maxWidth: "48%",
+    padding: "9px 10px",
+    borderRadius: "14px",
+    border:
+      "1px solid rgba(159,125,98,0.32)",
     textAlign: "center",
-    background: "#fffaf3",
-    color: "#4b2e1f",
+    background: "#fffaf5",
+    color: "#513a2b",
     fontWeight: "700",
+    fontSize: "14px",
+    outline: "none",
+    boxShadow:
+      "inset 0 2px 5px rgba(105,77,56,0.05)",
+  };
+
+  const scheduleSummaryMetricGridStyle = {
+    display: "grid",
+    gridTemplateColumns:
+      "repeat(auto-fit, minmax(135px, 1fr))",
+    gap: "0",
+    overflow: "hidden",
+    borderRadius: "22px",
+    border:
+      "1px solid rgba(169,132,103,0.22)",
+    background:
+      "linear-gradient(135deg, #fffdf9 0%, #f5e8dc 100%)",
+    boxShadow:
+      "0 10px 26px rgba(105,77,56,0.07)",
+  };
+
+  const scheduleSummaryMetricCardStyle = {
+    minHeight: "82px",
+    padding: "12px 10px",
+    boxSizing: "border-box",
+    background: "transparent",
+    border: "none",
+    borderRadius: "0",
+    boxShadow:
+      "inset -1px 0 0 rgba(169,132,103,0.16)",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    textAlign: "center",
+    gap: "7px",
+  };
+
+  const scheduleSummaryMetricLabelStyle = {
+    color: "#866b57",
+    fontSize: "12px",
+    fontWeight: "700",
+    letterSpacing: "0.1px",
+  };
+
+  const scheduleSummaryMetricValueStyle = {
+    color: "#4b3426",
+    fontSize: "20px",
+    fontWeight: "700",
+    lineHeight: 1,
+  };
+
+  const scheduleSummarySectionGridStyle = {
+    display: "grid",
+    gridTemplateColumns:
+      "repeat(auto-fit, minmax(280px, 1fr))",
+    gap: "18px",
+    alignItems: "stretch",
+    gridAutoRows: "1fr",
+  };
+
+  const scheduleSummaryWideCardStyle = {
+    ...scheduleSummaryCardStyle,
+    width: "100%",
+    height: "auto",
+  };
+
+  const scheduleSummaryFieldsGridStyle = {
+    display: "flex",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    alignItems: "stretch",
+    gap: "0",
+  };
+
+  const scheduleSummaryTotalRowStyle = {
+    ...scheduleSummaryRowStyle,
+    background:
+      "linear-gradient(135deg, rgba(226,207,190,0.48), rgba(248,240,232,0.92))",
+    fontWeight: "800",
   };
 
   const luxuryPageStyle = {
@@ -13065,6 +13465,7 @@ backdropFilter: "none",
     setPassword("");
     localStorage.removeItem("paradise-is-logged-in");
     localStorage.removeItem("paradise-logged-in-user");
+    sessionStorage.removeItem("paradise-current-screen");
     setScreen("welcome");
   };
 
@@ -16773,10 +17174,19 @@ if (!isLoggedIn) {
       const isToday = date === todayDate;
       const isFutureDate = date > todayDate;
 
+      const weekday =
+        new Date(
+          `${date}T12:00:00`
+        ).toLocaleDateString(
+          "ar-SA-u-ca-gregory",
+          {
+            weekday: "long",
+          }
+        );
+
       return {
-        title: isToday
-          ? `مواعيد اليوم ${formatNumericDate(date)}`
-          : `مواعيد يوم ${formatNumericDate(date)}`,
+        title:
+          `مواعيد ${weekday} ${formatNumericDate(date)}`,
         empty: isToday
           ? "لا توجد مواعيد اليوم"
           : "لا توجد مواعيد لهذا اليوم",
@@ -19706,162 +20116,319 @@ margin: "0 auto",
 
           <div
             style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-              gap: "18px",
-              marginTop: "-4px",
+              marginTop: "30px",
+              padding: "24px",
+              borderRadius: "34px",
+              background:
+                "linear-gradient(145deg, #f5e9dd 0%, #e2cdb9 100%)",
+              border:
+                "1px solid rgba(159,125,98,0.24)",
+              boxShadow:
+                "0 22px 55px rgba(105,77,56,0.12), inset 0 1px 0 rgba(255,255,255,0.75)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "22px",
             }}
           >
-            <div style={scheduleSummaryCardStyle}>
-              <h3 style={scheduleSummaryHeaderStyle}>
-                Payment Method
-              </h3>
-              {Object.entries(appointmentStats.paymentTotals).map(([key, value]) => (
-                <div key={key} style={scheduleSummaryRowStyle}>
-                  <strong>{key}</strong>
-                  <span>{formatCurrency(value)}</span>
+
+
+            <div style={scheduleSummaryMetricGridStyle}>
+              {[
+                [
+                  "Total Income",
+                  formatCurrency(
+                    appointmentStats.totalIncome
+                  ),
+                ],
+                [
+                  "Daily Cost",
+                  formatCurrency(
+                    appointmentStats.dailyCost
+                  ),
+                ],
+                [
+                  "VAT 15%",
+                  formatCurrency(
+                    appointmentStats.vatAmount
+                  ),
+                ],
+                [
+                  "Net Profit",
+                  formatCurrency(
+                    appointmentStats.netProfit
+                  ),
+                ],
+                [
+                  "Transportation",
+                  formatCurrency(
+                    appointmentStats.totalTransportation
+                  ),
+                ],
+                [
+                  "Commission",
+                  formatCurrency(
+                    appointmentStats.totalCommission
+                  ),
+                ],
+              ].map(([label, value]) => (
+                <div
+                  key={label}
+                  style={scheduleSummaryMetricCardStyle}
+                >
+                  <span
+                    style={
+                      scheduleSummaryMetricLabelStyle
+                    }
+                  >
+                    {label}
+                  </span>
+
+                  <strong
+                    style={
+                      scheduleSummaryMetricValueStyle
+                    }
+                  >
+                    {value}
+                  </strong>
                 </div>
               ))}
-              <div style={scheduleSummaryRowStyle}>
-                <strong>Total</strong>
-                <strong>{formatCurrency(appointmentStats.totalIncome)}</strong>
-              </div>
             </div>
 
-            <div style={scheduleSummaryCardStyle}>
-              <h3 style={scheduleSummaryHeaderStyle}>
-                Services
-              </h3>
-              {[
-                ["serviceMassage", "Massage"],
-                ["serviceManiPedi", "Mani & Pedi"],
-                ["serviceMoroccanBath", "Moroccan Bath"],
-                ["servicePackage", "Package"],
-              ].map(([field, label]) => (
-                <div key={field} style={scheduleSummaryRowStyle}>
-                  <strong>{label}</strong>
+            <div style={scheduleSummarySectionGridStyle}>
+              <div
+                style={{
+                  ...scheduleSummaryCardStyle,
+                  order: 2,
+                }}
+              >
+                <h3 style={scheduleSummaryHeaderStyle}>
+                  Payment Method
+                </h3>
+
+                {Object.entries(
+                  appointmentStats.paymentTotals
+                ).map(([key, value]) => (
+                  <div
+                    key={key}
+                    style={scheduleSummaryRowStyle}
+                  >
+                    <strong>{key}</strong>
+
+                    <span>
+                      {formatCurrency(value)}
+                    </span>
+                  </div>
+                ))}
+
+                <div style={scheduleSummaryTotalRowStyle}>
+                  <strong>Total</strong>
+
+                  <strong>
+                    {formatCurrency(
+                      appointmentStats.totalIncome
+                    )}
+                  </strong>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  ...scheduleSummaryCardStyle,
+                  order: 3,
+                }}
+              >
+                <h3 style={scheduleSummaryHeaderStyle}>
+                  Services
+                </h3>
+
+                {[
+                  [
+                    "serviceMassage",
+                    "Massage",
+                  ],
+                  [
+                    "serviceManiPedi",
+                    "Mani & Pedi",
+                  ],
+                  [
+                    "serviceMoroccanBath",
+                    "Moroccan Bath",
+                  ],
+                  [
+                    "servicePackage",
+                    "Package",
+                  ],
+                ].map(([field, label]) => (
+                  <div
+                    key={field}
+                    style={scheduleSummaryRowStyle}
+                  >
+                    <strong>{label}</strong>
+
+                    <input
+                      value={
+                        appointmentStats.manual[
+                          field
+                        ]
+                      }
+                      onChange={(e) =>
+                        updateManualForDate(
+                          field,
+                          e.target.value
+                        )
+                      }
+                      style={
+                        scheduleSummaryInputStyle
+                      }
+                    />
+                  </div>
+                ))}
+
+                <div style={scheduleSummaryTotalRowStyle}>
+                  <strong>Total Services</strong>
+
+                  <strong>
+                    {appointmentStats.totalServices}
+                  </strong>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  ...scheduleSummaryCardStyle,
+                  order: 1,
+                }}
+              >
+                <h3 style={scheduleSummaryHeaderStyle}>
+                  Clients & Gifts
+                </h3>
+
+                {[
+                  [
+                    "New Clients",
+                    appointmentStats.newClients,
+                  ],
+                  [
+                    "Loyal Clients",
+                    appointmentStats.loyalClients,
+                  ],
+                  [
+                    "Gifts Added",
+                    appointmentStats.giftsAdded,
+                  ],
+                  [
+                    "Gifts Received",
+                    appointmentStats.giftsReceived,
+                  ],
+                  [
+                    "Free",
+                    appointmentStats.freeGifts,
+                  ],
+                  [
+                    "2 Free",
+                    appointmentStats.twoFreeGifts,
+                  ],
+                  [
+                    "Avg Services Price",
+                    formatCurrency(
+                      appointmentStats.averageServicePrice
+                    ),
+                  ],
+                ].map(([key, value]) => (
+                  <div
+                    key={key}
+                    style={scheduleSummaryRowStyle}
+                  >
+                    <strong>{key}</strong>
+
+                    <span>
+                      {formatCurrency(value)}
+                    </span>
+                  </div>
+                ))}
+
+                <div style={scheduleSummaryTotalRowStyle}>
+                  <strong>
+                    Clients Turned Away
+                  </strong>
+
                   <input
-                    value={appointmentStats.manual[field]}
-                    onChange={(e) => updateManualForDate(field, e.target.value)}
+                    value={
+                      appointmentStats.manual
+                        .clientsTurnedAway
+                    }
+                    onChange={(e) =>
+                      updateManualForDate(
+                        "clientsTurnedAway",
+                        e.target.value
+                      )
+                    }
                     style={scheduleSummaryInputStyle}
                   />
                 </div>
-              ))}
-              <div style={scheduleSummaryRowStyle}>
-                <strong>Total Services</strong>
-                <strong>{appointmentStats.totalServices}</strong>
               </div>
             </div>
 
-            <div style={scheduleSummaryCardStyle}>
+            <div style={scheduleSummaryWideCardStyle}>
               <h3 style={scheduleSummaryHeaderStyle}>
-                Clients & Gifts
+                Daily Expenses & Commission
               </h3>
-              {[
-                ["New Clients", appointmentStats.newClients],
-                ["Loyal Clients", appointmentStats.loyalClients],
-                ["Gifts Added", appointmentStats.giftsAdded],
-                ["Gifts Received", appointmentStats.giftsReceived],
-                ["Free", appointmentStats.freeGifts],
-                ["2 Free", appointmentStats.twoFreeGifts],
-                ["Avg Services Price", formatCurrency(appointmentStats.averageServicePrice)],
-              ].map(([key, value]) => (
-                <div key={key} style={scheduleSummaryRowStyle}>
-                  <strong>{key}</strong>
-                  <span>{formatCurrency(value)}</span>
-                </div>
-              ))}
-              <div style={scheduleSummaryRowStyle}>
-                <strong>Clients Turned Away</strong>
-                <input
-                  value={appointmentStats.manual.clientsTurnedAway}
-                  onChange={(e) => updateManualForDate("clientsTurnedAway", e.target.value)}
-                  style={scheduleSummaryInputStyle}
-                />
-              </div>
-            </div>
 
-            <div style={scheduleSummaryCardStyle}>
-              <h3 style={scheduleSummaryHeaderStyle}>
-                Daily Collection
-              </h3>
-              <div style={scheduleSummaryRowStyle}>
-                <strong>Total Income</strong>
-                <span>{formatCurrency(appointmentStats.totalIncome)}</span>
-              </div>
-              {[
-                ["naft", "Naft"],
-                ["uber", "Uber"],
-                ["purchase", "Purchase"],
-                ["staffSalary", "Staff Salary"],
-                ["houseRent", "House Rent"],
-                ["carRent", "Car Rent"],
-                ["governmentFees", "Government Fees"],
-              ].map(([field, label]) => (
-                <div key={field} style={scheduleSummaryRowStyle}>
-                  <strong>{label}</strong>
-                  <input
-                    value={appointmentStats.manual[field]}
-                    onChange={(e) => updateManualForDate(field, e.target.value)}
-                    style={scheduleSummaryInputStyle}
-                  />
-                </div>
-              ))}
-              <div style={scheduleSummaryRowStyle}>
-                <strong>Commission</strong>
-                <strong>{formatCurrency(appointmentStats.totalCommission)}</strong>
-              </div>
-              <div style={scheduleSummaryRowStyle}>
-                <strong>Daily Cost</strong>
-                <strong>{formatCurrency(appointmentStats.dailyCost)}</strong>
-              </div>
-              <div style={scheduleSummaryRowStyle}>
-                <strong>VAT 15%</strong>
-                <strong>{formatCurrency(appointmentStats.vatAmount)}</strong>
-              </div>
-              <div style={scheduleSummaryRowStyle}>
-                <strong>Net Profit</strong>
-                <strong>{formatCurrency(appointmentStats.netProfit)}</strong>
-              </div>
-              <div style={scheduleSummaryRowStyle}>
-                <strong>Total Transportation</strong>
-                <strong>{formatCurrency(appointmentStats.totalTransportation)}</strong>
-              </div>
-            </div>
+              <div style={scheduleSummaryFieldsGridStyle}>
+                {[
+                  ["naft", "Naft"],
+                  ["uber", "Uber"],
+                  ["purchase", "Purchase"],
+                  [
+                    "staffSalary",
+                    "Staff Salary",
+                  ],
+                  ["houseRent", "House Rent"],
+                  ["carRent", "Car Rent"],
+                  [
+                    "governmentFees",
+                    "Government Fees",
+                  ],
+                  [
+                    "commissionJoce",
+                    "Joce Commission",
+                  ],
+                  [
+                    "commissionCaren",
+                    "Caren Commission",
+                  ],
+                ].map(([field, label]) => (
+                  <div
+                    key={field}
+                    style={{
+                      ...scheduleSummaryRowStyle,
+                      flex: "1 1 230px",
+                      maxWidth: "280px",
+                      width: "100%",
+                      borderTop: "none",
+                    }}
+                  >
+                    <strong>{label}</strong>
 
-            <div style={scheduleSummaryCardStyle}>
-              <h3 style={scheduleSummaryHeaderStyle}>
-                Commission
-              </h3>
-              {[
-                ["commissionJoce", "Joce"],
-                ["commissionCaren", "Caren"],
-              ].map(([field, label]) => (
-                <div key={field} style={scheduleSummaryRowStyle}>
-                  <strong>{label}</strong>
-                  <input
-                    value={appointmentStats.manual[field]}
-                    onChange={(e) => updateManualForDate(field, e.target.value)}
-                    style={scheduleSummaryInputStyle}
-                  />
-                </div>
-              ))}
-            </div>
-
-            <div style={scheduleSummaryCardStyle}>
-              <h3 style={scheduleSummaryHeaderStyle}>
-                Availability
-              </h3>
-              {therapistOptions.map((name) => (
-                <div key={name} style={{
-                    ...scheduleSummaryRowStyle,
-                    justifyContent: "center",
-                    background: "linear-gradient(135deg, rgba(214,199,184,0.45), rgba(250,247,242,0.92))",
-                    fontWeight: "bold",
-                  }}>
-                  {name}
-                </div>
-              ))}
+                    <input
+                      value={
+                        appointmentStats.manual[
+                          field
+                        ]
+                      }
+                      onChange={(e) =>
+                        updateManualForDate(
+                          field,
+                          e.target.value
+                        )
+                      }
+                      style={
+                        scheduleSummaryInputStyle
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
