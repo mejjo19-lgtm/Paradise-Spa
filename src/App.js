@@ -932,6 +932,11 @@ function fetchSharedClientLists() {
 
   const [invoicesSearch, setInvoicesSearch] = useState("");
 
+  const [
+    invoicesDocumentTypeFilter,
+    setInvoicesDocumentTypeFilter,
+  ] = useState("all");
+
   const [invoicesFromDate, setInvoicesFromDate] = useState(
     () => `${getCurrentLocalDate().slice(0, 7)}-01`
   );
@@ -943,6 +948,32 @@ function fetchSharedClientLists() {
   const [invoicesVisibleCount, setInvoicesVisibleCount] = useState(20);
 
   const [selectedInvoice, setSelectedInvoice] = useState(null);
+
+  const [
+    invoiceNoteModal,
+    setInvoiceNoteModal,
+  ] = useState(null);
+
+  const [
+    invoiceNoteDraft,
+    setInvoiceNoteDraft,
+  ] = useState({
+    sourceNoteKey: "",
+    documentType: "credit_note",
+    correctionReason: "",
+    serviceAmountIncludingVat: "",
+    transportationAmountIncludingVat: "",
+  });
+
+  const [
+    invoiceNoteSaving,
+    setInvoiceNoteSaving,
+  ] = useState(false);
+
+  const [
+    invoiceNoteError,
+    setInvoiceNoteError,
+  ] = useState("");
 
   const [
     selectedInvoiceIds,
@@ -976,6 +1007,134 @@ function fetchSharedClientLists() {
   });
   const [systemHealth, setSystemHealth] = useState(null);
   const [serverHealth, setServerHealth] = useState(null);
+
+  const [
+    zatcaSafeStatus,
+    setZatcaSafeStatus,
+  ] = useState(null);
+
+  const [
+    zatcaSafeStatusLoading,
+    setZatcaSafeStatusLoading,
+  ] = useState(false);
+
+  const [
+    zatcaSafeStatusError,
+    setZatcaSafeStatusError,
+  ] = useState("");
+
+  const [
+    invoiceSellerProfile,
+    setInvoiceSellerProfile,
+  ] = useState({
+    configurationStatus: "draft",
+    legalName: "",
+    vatRegistrationNumber: "",
+    legalRegistrationId: "",
+    legalRegistrationSchemeId: "CRN",
+    taxSchemeId: "VAT",
+    streetName: "",
+    additionalStreetName: "",
+    buildingNumber: "",
+    plotIdentification: "",
+    citySubdivisionName: "",
+    cityName: "",
+    postalZone: "",
+    countrySubentity: "",
+    countryCode: "SA",
+    updatedAt: "",
+  });
+
+  const [
+    invoiceSellerProfileLoading,
+    setInvoiceSellerProfileLoading,
+  ] = useState(false);
+
+  const [
+    invoiceSellerProfileError,
+    setInvoiceSellerProfileError,
+  ] = useState("");
+
+  const [
+    invoiceSellerProfileSaving,
+    setInvoiceSellerProfileSaving,
+  ] = useState(false);
+
+  const [
+    invoiceSellerProfileSaveMessage,
+    setInvoiceSellerProfileSaveMessage,
+  ] = useState("");
+
+  const [
+    invoiceSellerValidation,
+    setInvoiceSellerValidation,
+  ] = useState(null);
+
+  const [
+    invoiceSellerValidationLoading,
+    setInvoiceSellerValidationLoading,
+  ] = useState(false);
+
+  const [
+    invoiceSellerValidationError,
+    setInvoiceSellerValidationError,
+  ] = useState("");
+
+  const [
+    invoiceSellerReadySaving,
+    setInvoiceSellerReadySaving,
+  ] = useState(false);
+
+  const [
+    invoiceSellerReadyMessage,
+    setInvoiceSellerReadyMessage,
+  ] = useState("");
+
+  const [
+    zatcaPreActivationChecklist,
+    setZatcaPreActivationChecklist,
+  ] = useState(null);
+
+  const [
+    zatcaPreActivationChecklistLoading,
+    setZatcaPreActivationChecklistLoading,
+  ] = useState(false);
+
+  const [
+    zatcaPreActivationChecklistError,
+    setZatcaPreActivationChecklistError,
+  ] = useState("");
+
+  const [
+    invoicePreparationSummary,
+    setInvoicePreparationSummary,
+  ] = useState(null);
+
+  const [
+    invoicePreparationSummaryLoading,
+    setInvoicePreparationSummaryLoading,
+  ] = useState(false);
+
+  const [
+    invoicePreparationSummaryError,
+    setInvoicePreparationSummaryError,
+  ] = useState("");
+
+  const [
+    invoicePreparationControl,
+    setInvoicePreparationControl,
+  ] = useState(null);
+
+  const [
+    invoicePreparationControlLoading,
+    setInvoicePreparationControlLoading,
+  ] = useState(false);
+
+  const [
+    invoicePreparationControlError,
+    setInvoicePreparationControlError,
+  ] = useState("");
+
   const [backupBusy, setBackupBusy] = useState(false);
   const [restoreBusy, setRestoreBusy] = useState(false);
   const [restoreFileName, setRestoreFileName] = useState("");
@@ -1643,6 +1802,9 @@ const normalizeInvoiceRecord = (invoice) => ({
   originalInvoiceId:
     invoice.original_invoice_id || "",
 
+  correctionReason:
+    invoice.correction_reason || "",
+
   createdAt:
     invoice.created_at || "",
 
@@ -1838,6 +2000,7 @@ useEffect(() => {
                 "vat_amount",
                 "issued_at",
                 "original_invoice_id",
+                "correction_reason",
                 "created_at",
                 "updated_at",
               ].join(",")
@@ -1915,7 +2078,7 @@ useEffect(() => {
 
         if (effectActive) {
           setInvoicesError(
-            "تعذر تحميل الفواتير. تأكد من الاتصال وحاول مرة أخرى."
+            "تعذر تحميل المستندات. تأكد من الاتصال وحاول مرة أخرى."
           );
         }
       } finally {
@@ -2702,7 +2865,7 @@ const stepScheduleOrder = (rowIndex, currentOrder, direction) => {
 
   updateScheduleRow(rowIndex, "order", nextOrder);
 };
-  const paymentOptions = ["", "Cash", "Debit", "Credit", "Paid", "Bank Transfer"];
+  const paymentOptions = ["", "Cash", "Debit", "Credit", "Bank Transfer", "Tabby", "Tamara"];
   const serviceOptions = [
     "",
     
@@ -5172,7 +5335,7 @@ const getScheduleClientBadges = (row) => {
         data,
         error,
       } = await supabase.rpc(
-        "issue_paradise_invoice",
+        "issue_paradise_invoice_safe",
         {
           p_source_service_key:
             sourceServiceKey,
@@ -7827,8 +7990,9 @@ const normalizeOrderLabelForStats = (orderValue) =>
       Cash: 0,
       Debit: 0,
       Credit: 0,
+      Tabby: 0,
+      Tamara: 0,
       "Bank Transfer": 0,
-      Paid: 0,
     };
 
     rows.forEach((row) => {
@@ -8132,7 +8296,6 @@ const normalizeOrderLabelForStats = (orderValue) =>
       Tabby: 0,
       Tamara: 0,
       "Bank Transfer": 0,
-      Paid: 0,
     };
 
     activeRows.forEach((row) => {
@@ -8233,7 +8396,6 @@ const normalizeOrderLabelForStats = (orderValue) =>
       Tabby: sum((day) => day.paymentTotals.Tabby),
       Tamara: sum((day) => day.paymentTotals.Tamara),
       "Bank Transfer": sum((day) => day.paymentTotals["Bank Transfer"]),
-      Paid: sum((day) => day.paymentTotals.Paid),
     };
     const servicesTotals = {
       Massage: sum((day) => day.servicesTotals.Massage),
@@ -8531,7 +8693,7 @@ const normalizeOrderLabelForStats = (orderValue) =>
     labelValueRow("Cash", stats.paymentTotals?.Cash, "Debit", stats.paymentTotals?.Debit),
     labelValueRow("Credit", stats.paymentTotals?.Credit, "Tabby", stats.paymentTotals?.Tabby),
     labelValueRow("Tamara", stats.paymentTotals?.Tamara, "Bank Transfer", stats.paymentTotals?.["Bank Transfer"]),
-    labelValueRow("Paid", stats.paymentTotals?.Paid, "Payment Total", stats.paymentTotal, "Number", "TotalValue"),
+    labelValueRow("Payment Total", stats.paymentTotal, "", "", "TotalValue"),
     blankRow(),
 
     sectionTitle("Clients & Gifts"),
@@ -8646,7 +8808,11 @@ const normalizeOrderLabelForStats = (orderValue) =>
           numberCell(dayStats.paymentTotals?.Debit),
           textCell("Credit", "Label"),
           numberCell(dayStats.paymentTotals?.Credit),
-          ...emptyCells(9),
+          textCell("Tabby", "Label"),
+          numberCell(dayStats.paymentTotals?.Tabby),
+          textCell("Tamara", "Label"),
+          numberCell(dayStats.paymentTotals?.Tamara),
+          ...emptyCells(5),
         ],
         24
       ),
@@ -13433,6 +13599,749 @@ const settingsFieldGridStyle = {
     }
   };
 
+  const loadZatcaSafeStatus = async () => {
+    setZatcaSafeStatusLoading(true);
+    setZatcaSafeStatusError("");
+
+    try {
+      const { data, error } = await supabase.rpc(
+        "get_zatca_safe_status"
+      );
+
+      if (error) {
+        throw error;
+      }
+
+      const statusRecord = Array.isArray(data)
+        ? data[0]
+        : data;
+
+      if (!statusRecord) {
+        throw new Error(
+          "No electronic invoicing status returned"
+        );
+      }
+
+      setZatcaSafeStatus({
+        integrationEnabled: Boolean(
+          statusRecord.integration_enabled
+        ),
+
+        environment:
+          statusRecord.environment ||
+          "disabled",
+
+        gatewayStatus:
+          statusRecord.gateway_status ||
+          "offline",
+
+        onboardingStatus:
+          statusRecord.onboarding_status ||
+          "not_configured",
+
+        complianceCsidStatus:
+          statusRecord.compliance_csid_status ||
+          "not_configured",
+
+        productionCsidStatus:
+          statusRecord.production_csid_status ||
+          "not_configured",
+
+        queuedSubmissionCount: Number(
+          statusRecord.queued_submission_count ||
+            0
+        ),
+
+        processingSubmissionCount: Number(
+          statusRecord.processing_submission_count ||
+            0
+        ),
+
+        activeSubmissionCount: Number(
+          statusRecord.active_submission_count ||
+            0
+        ),
+
+        activationLockExists: Boolean(
+          statusRecord.activation_lock_exists
+        ),
+
+        queueKillSwitchExists: Boolean(
+          statusRecord.queue_kill_switch_exists
+        ),
+
+        checkedAt:
+          statusRecord.checked_at || "",
+      });
+    } catch (error) {
+      console.log(
+        "Electronic invoicing status load error:",
+        error
+      );
+
+      setZatcaSafeStatus(null);
+
+      setZatcaSafeStatusError(
+        "تعذر تحميل حالة الفوترة الإلكترونية."
+      );
+    } finally {
+      setZatcaSafeStatusLoading(false);
+    }
+  };
+
+
+  const loadInvoiceSellerProfile = async () => {
+    setInvoiceSellerProfileLoading(true);
+    setInvoiceSellerProfileError("");
+
+    try {
+      const { data, error } = await supabase.rpc(
+        "get_invoice_seller_profile_safe"
+      );
+
+      if (error) {
+        throw error;
+      }
+
+      const profileRecord = Array.isArray(data)
+        ? data[0]
+        : data;
+
+      if (!profileRecord) {
+        throw new Error(
+          "No seller profile returned"
+        );
+      }
+
+      setInvoiceSellerProfile({
+        configurationStatus:
+          profileRecord.configuration_status ||
+          "draft",
+
+        legalName:
+          profileRecord.legal_name || "",
+
+        vatRegistrationNumber:
+          profileRecord.vat_registration_number ||
+          "",
+
+        legalRegistrationId:
+          profileRecord.legal_registration_id ||
+          "",
+
+        legalRegistrationSchemeId:
+          profileRecord
+            .legal_registration_scheme_id ||
+          "CRN",
+
+        taxSchemeId:
+          profileRecord.tax_scheme_id ||
+          "VAT",
+
+        streetName:
+          profileRecord.street_name || "",
+
+        additionalStreetName:
+          profileRecord
+            .additional_street_name || "",
+
+        buildingNumber:
+          profileRecord.building_number || "",
+
+        plotIdentification:
+          profileRecord.plot_identification ||
+          "",
+
+        citySubdivisionName:
+          profileRecord
+            .city_subdivision_name || "",
+
+        cityName:
+          profileRecord.city_name || "",
+
+        postalZone:
+          profileRecord.postal_zone || "",
+
+        countrySubentity:
+          profileRecord.country_subentity ||
+          "",
+
+        countryCode:
+          profileRecord.country_code ||
+          "SA",
+
+        updatedAt:
+          profileRecord.updated_at || "",
+      });
+    } catch (error) {
+      console.log(
+        "Invoice seller profile load error:",
+        error
+      );
+
+      setInvoiceSellerProfileError(
+        "تعذر تحميل بيانات المنشأة."
+      );
+    } finally {
+      setInvoiceSellerProfileLoading(false);
+    }
+  };
+
+
+  const saveInvoiceSellerProfileDraft =
+    async () => {
+      setInvoiceSellerProfileSaving(true);
+      setInvoiceSellerProfileError("");
+      setInvoiceSellerProfileSaveMessage("");
+
+      try {
+        const { data, error } =
+          await supabase.rpc(
+            "save_invoice_seller_profile_draft",
+            {
+              p_legal_name:
+                invoiceSellerProfile.legalName,
+
+              p_vat_registration_number:
+                invoiceSellerProfile
+                  .vatRegistrationNumber,
+
+              p_legal_registration_id:
+                invoiceSellerProfile
+                  .legalRegistrationId,
+
+              p_legal_registration_scheme_id:
+                invoiceSellerProfile
+                  .legalRegistrationSchemeId,
+
+              p_tax_scheme_id:
+                invoiceSellerProfile.taxSchemeId,
+
+              p_street_name:
+                invoiceSellerProfile.streetName,
+
+              p_additional_street_name:
+                invoiceSellerProfile
+                  .additionalStreetName,
+
+              p_building_number:
+                invoiceSellerProfile
+                  .buildingNumber,
+
+              p_plot_identification:
+                invoiceSellerProfile
+                  .plotIdentification,
+
+              p_city_subdivision_name:
+                invoiceSellerProfile
+                  .citySubdivisionName,
+
+              p_city_name:
+                invoiceSellerProfile.cityName,
+
+              p_postal_zone:
+                invoiceSellerProfile.postalZone,
+
+              p_country_subentity:
+                invoiceSellerProfile
+                  .countrySubentity,
+
+              p_country_code:
+                invoiceSellerProfile.countryCode,
+            }
+          );
+
+        if (error) {
+          throw error;
+        }
+
+        const profileRecord =
+          Array.isArray(data)
+            ? data[0]
+            : data;
+
+        if (!profileRecord) {
+          throw new Error(
+            "No saved seller profile returned"
+          );
+        }
+
+        setInvoiceSellerProfile({
+          configurationStatus:
+            profileRecord.configuration_status ||
+            "draft",
+
+          legalName:
+            profileRecord.legal_name || "",
+
+          vatRegistrationNumber:
+            profileRecord
+              .vat_registration_number || "",
+
+          legalRegistrationId:
+            profileRecord
+              .legal_registration_id || "",
+
+          legalRegistrationSchemeId:
+            profileRecord
+              .legal_registration_scheme_id ||
+            "CRN",
+
+          taxSchemeId:
+            profileRecord.tax_scheme_id ||
+            "VAT",
+
+          streetName:
+            profileRecord.street_name || "",
+
+          additionalStreetName:
+            profileRecord
+              .additional_street_name || "",
+
+          buildingNumber:
+            profileRecord.building_number ||
+            "",
+
+          plotIdentification:
+            profileRecord
+              .plot_identification || "",
+
+          citySubdivisionName:
+            profileRecord
+              .city_subdivision_name || "",
+
+          cityName:
+            profileRecord.city_name || "",
+
+          postalZone:
+            profileRecord.postal_zone || "",
+
+          countrySubentity:
+            profileRecord.country_subentity ||
+            "",
+
+          countryCode:
+            profileRecord.country_code ||
+            "SA",
+
+          updatedAt:
+            profileRecord.updated_at || "",
+        });
+
+        setInvoiceSellerProfileSaveMessage(
+          "تم حفظ بيانات المنشأة كمسودة."
+        );
+
+        await loadInvoiceSellerValidation();
+        await loadZatcaPreActivationChecklist();
+      } catch (error) {
+        console.log(
+          "Invoice seller profile save error:",
+          error
+        );
+
+        setInvoiceSellerProfileError(
+          "تعذر حفظ بيانات المنشأة."
+        );
+    } finally {
+      setInvoiceSellerProfileSaving(false);
+    }
+  };
+
+
+  const loadInvoiceSellerValidation =
+    async () => {
+      setInvoiceSellerValidationLoading(true);
+      setInvoiceSellerValidationError("");
+
+      try {
+        const { data, error } =
+          await supabase.rpc(
+            "validate_invoice_seller_profile_safe"
+          );
+
+        if (error) {
+          throw error;
+        }
+
+        const validationRecord =
+          Array.isArray(data)
+            ? data[0]
+            : data;
+
+        if (!validationRecord) {
+          throw new Error(
+            "No seller validation returned"
+          );
+        }
+
+        setInvoiceSellerValidation({
+          isComplete: Boolean(
+            validationRecord.is_complete
+          ),
+
+          blockingErrors: Array.isArray(
+            validationRecord.blocking_errors
+          )
+            ? validationRecord.blocking_errors
+            : [],
+
+          warnings: Array.isArray(
+            validationRecord.warnings
+          )
+            ? validationRecord.warnings
+            : [],
+        });
+      } catch (error) {
+        console.log(
+          "Invoice seller validation load error:",
+          error
+        );
+
+        setInvoiceSellerValidation(null);
+
+        setInvoiceSellerValidationError(
+          "تعذر فحص اكتمال بيانات المنشأة."
+        );
+      } finally {
+        setInvoiceSellerValidationLoading(false);
+      }
+    };
+
+
+  const markInvoiceSellerProfileReady =
+    async () => {
+      setInvoiceSellerReadySaving(true);
+      setInvoiceSellerReadyMessage("");
+      setInvoiceSellerValidationError("");
+
+      try {
+        const { data, error } =
+          await supabase.rpc(
+            "mark_invoice_seller_profile_ready_safe"
+          );
+
+        if (error) {
+          throw error;
+        }
+
+        const readyResult =
+          Array.isArray(data)
+            ? data[0]
+            : data;
+
+        if (!readyResult) {
+          throw new Error(
+            "No seller readiness result returned"
+          );
+        }
+
+        setInvoiceSellerValidation({
+          isComplete: Boolean(
+            readyResult.is_complete
+          ),
+
+          blockingErrors: Array.isArray(
+            readyResult.blocking_errors
+          )
+            ? readyResult.blocking_errors
+            : [],
+
+          warnings: Array.isArray(
+            readyResult.warnings
+          )
+            ? readyResult.warnings
+            : [],
+        });
+
+        if (
+          readyResult.configuration_status ===
+            "ready" &&
+          readyResult.is_complete
+        ) {
+          setInvoiceSellerReadyMessage(
+            "تم اعتماد بيانات المنشأة داخليًا."
+          );
+
+          await loadInvoiceSellerProfile();
+          await loadZatcaPreActivationChecklist();
+        } else {
+          setInvoiceSellerReadyMessage(
+            "لا يمكن اعتماد البيانات قبل استكمال الحقول المطلوبة."
+          );
+        }
+      } catch (error) {
+        console.log(
+          "Invoice seller ready error:",
+          error
+        );
+
+        setInvoiceSellerReadyMessage(
+          "تعذر اعتماد بيانات المنشأة."
+        );
+      } finally {
+        setInvoiceSellerReadySaving(false);
+      }
+    };
+
+
+  const loadZatcaPreActivationChecklist =
+    async () => {
+      setZatcaPreActivationChecklistLoading(true);
+      setZatcaPreActivationChecklistError("");
+
+      try {
+        const { data, error } =
+          await supabase.rpc(
+            "get_zatca_pre_activation_checklist_safe"
+          );
+
+        if (error) {
+          throw error;
+        }
+
+        const checklistRecord =
+          Array.isArray(data)
+            ? data[0]
+            : data;
+
+        if (!checklistRecord) {
+          throw new Error(
+            "No ZATCA pre-activation checklist returned"
+          );
+        }
+
+        setZatcaPreActivationChecklist({
+          sellerProfileReady: Boolean(
+            checklistRecord.seller_profile_ready
+          ),
+
+          sellerProfileComplete: Boolean(
+            checklistRecord.seller_profile_complete
+          ),
+
+          sellerBlockingErrors: Array.isArray(
+            checklistRecord.seller_blocking_errors
+          )
+            ? checklistRecord.seller_blocking_errors
+            : [],
+
+          sellerWarnings: Array.isArray(
+            checklistRecord.seller_warnings
+          )
+            ? checklistRecord.seller_warnings
+            : [],
+
+          integrationEnabled: Boolean(
+            checklistRecord.integration_enabled
+          ),
+
+          environment:
+            checklistRecord.environment || "disabled",
+
+          gatewayStatus:
+            checklistRecord.gateway_status || "offline",
+
+          activeSubmissionCount: Number(
+            checklistRecord.active_submission_count || 0
+          ),
+
+          activationLockExists: Boolean(
+            checklistRecord.activation_lock_exists
+          ),
+
+          queueKillSwitchExists: Boolean(
+            checklistRecord.queue_kill_switch_exists
+          ),
+
+          safetyLockIntact: Boolean(
+            checklistRecord.safety_lock_intact
+          ),
+        });
+      } catch (error) {
+        console.log(
+          "ZATCA pre-activation checklist load error:",
+          error
+        );
+
+        setZatcaPreActivationChecklist(null);
+
+        setZatcaPreActivationChecklistError(
+          "تعذر تحميل قائمة فحص ما قبل الربط."
+        );
+      } finally {
+        setZatcaPreActivationChecklistLoading(false);
+      }
+    };
+
+
+  const loadInvoicePreparationSummary =
+    async () => {
+      setInvoicePreparationSummaryLoading(true);
+      setInvoicePreparationSummaryError("");
+
+      try {
+        const { data, error } =
+          await supabase.rpc(
+            "get_invoice_preparation_summary_safe"
+          );
+
+        if (error) {
+          throw error;
+        }
+
+        const summaryRecord =
+          Array.isArray(data)
+            ? data[0]
+            : data;
+
+        if (!summaryRecord) {
+          throw new Error(
+            "No invoice preparation summary returned"
+          );
+        }
+
+        setInvoicePreparationSummary({
+          totalJobCount: Number(
+            summaryRecord.total_job_count || 0
+          ),
+
+          waitingSellerProfileCount: Number(
+            summaryRecord
+              .waiting_seller_profile_count || 0
+          ),
+
+          pendingPreparationCount: Number(
+            summaryRecord
+              .pending_preparation_count || 0
+          ),
+
+          processingCount: Number(
+            summaryRecord.processing_count || 0
+          ),
+
+          preparedCount: Number(
+            summaryRecord.prepared_count || 0
+          ),
+
+          failedCount: Number(
+            summaryRecord.failed_count || 0
+          ),
+
+          cancelledCount: Number(
+            summaryRecord.cancelled_count || 0
+          ),
+
+          staleProcessingCount: Number(
+            summaryRecord
+              .stale_processing_count || 0
+          ),
+
+          latestJobUpdatedAt:
+            summaryRecord.latest_job_updated_at ||
+            "",
+        });
+      } catch (error) {
+        console.log(
+          "Invoice preparation summary load error:",
+          error
+        );
+
+        setInvoicePreparationSummary(null);
+
+        setInvoicePreparationSummaryError(
+          "تعذر تحميل ملخص تجهيز الفواتير."
+        );
+      } finally {
+        setInvoicePreparationSummaryLoading(false);
+      }
+    };
+
+
+  const loadInvoicePreparationControl =
+    async () => {
+      setInvoicePreparationControlLoading(true);
+      setInvoicePreparationControlError("");
+
+      try {
+        const { data, error } =
+          await supabase.rpc(
+            "get_invoice_preparation_control_safe"
+          );
+
+        if (error) {
+          throw error;
+        }
+
+        const controlRecord =
+          Array.isArray(data)
+            ? data[0]
+            : data;
+
+        if (!controlRecord) {
+          throw new Error(
+            "No invoice preparation control returned"
+          );
+        }
+
+        setInvoicePreparationControl({
+          processingEnabled: Boolean(
+            controlRecord.processing_enabled
+          ),
+
+          workerStatus:
+            controlRecord.worker_status ||
+            "offline",
+
+          lastWorkerSeenAt:
+            controlRecord.last_worker_seen_at ||
+            "",
+
+          updatedAt:
+            controlRecord.updated_at ||
+            "",
+        });
+      } catch (error) {
+        console.log(
+          "Invoice preparation control load error:",
+          error
+        );
+
+        setInvoicePreparationControl(null);
+
+        setInvoicePreparationControlError(
+          "تعذر تحميل حالة معالج تجهيز الفواتير."
+        );
+      } finally {
+        setInvoicePreparationControlLoading(false);
+      }
+    };
+
+
+  useEffect(() => {
+    if (
+      !isLoggedIn ||
+      screen !== "settings" ||
+      !settingsUnlocked ||
+      settingsActiveTab !== "zatca"
+    ) {
+      return;
+    }
+
+    loadZatcaSafeStatus();
+    loadInvoiceSellerProfile();
+    loadInvoiceSellerValidation();
+    loadZatcaPreActivationChecklist();
+    loadInvoicePreparationSummary();
+    loadInvoicePreparationControl();
+  }, [
+    isLoggedIn,
+    screen,
+    settingsUnlocked,
+    settingsActiveTab,
+  ]);
+
+
   const settingsTabButton = (key, label) => (
     <button
       onClick={() => setSettingsActiveTab(key)}
@@ -13682,6 +14591,1237 @@ const settingsFieldGridStyle = {
       );
     }
 
+    if (settingsActiveTab === "zatca") {
+      const statusCards = [
+        {
+          label: "حالة التكامل",
+          value: zatcaSafeStatus?.integrationEnabled
+            ? "مفعّل"
+            : "موقوف",
+          safe:
+            zatcaSafeStatus?.integrationEnabled ===
+            false,
+        },
+        {
+          label: "البيئة",
+          value:
+            zatcaSafeStatus?.environment ||
+            "disabled",
+          safe:
+            zatcaSafeStatus?.environment ===
+            "disabled",
+        },
+        {
+          label: "حالة البوابة",
+          value:
+            zatcaSafeStatus?.gatewayStatus ||
+            "offline",
+          safe:
+            zatcaSafeStatus?.gatewayStatus ===
+            "offline",
+        },
+        {
+          label: "المهام النشطة",
+          value: String(
+            zatcaSafeStatus?.activeSubmissionCount ||
+              0
+          ),
+          safe:
+            Number(
+              zatcaSafeStatus?.activeSubmissionCount ||
+                0
+            ) === 0,
+        },
+        {
+          label: "قفل التفعيل",
+          value:
+            zatcaSafeStatus?.activationLockExists
+              ? "مفعّل"
+              : "غير موجود",
+          safe: Boolean(
+            zatcaSafeStatus?.activationLockExists
+          ),
+        },
+        {
+          label: "قفل طابور الإرسال",
+          value:
+            zatcaSafeStatus?.queueKillSwitchExists
+              ? "مفعّل"
+              : "غير موجود",
+          safe: Boolean(
+            zatcaSafeStatus?.queueKillSwitchExists
+          ),
+        },
+      ];
+
+      return (
+        <div
+          style={{
+            display: "grid",
+            gap: "16px",
+          }}
+        >
+          <div
+            style={{
+              ...settingsRowStyle,
+              padding: "18px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent:
+                  "space-between",
+                alignItems: "center",
+                gap: "12px",
+                flexWrap: "wrap",
+              }}
+            >
+              <div>
+                <h3
+                  style={{
+                    ...settingsSectionTitleStyle,
+                    margin: 0,
+                  }}
+                >
+                  الفوترة الإلكترونية
+                </h3>
+
+                <div
+                  style={{
+                    marginTop: "8px",
+                    color: "#7a5a43",
+                    fontWeight: 800,
+                    fontSize: "13px",
+                    lineHeight: 1.8,
+                  }}
+                >
+                  البنية التحتية مجهزة، لكن
+                  الاتصال بزاتكا موقوف ومقفل.
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={loadZatcaSafeStatus}
+                disabled={
+                  zatcaSafeStatusLoading
+                }
+                style={{
+                  ...settingsPrimaryButtonStyle,
+                  opacity:
+                    zatcaSafeStatusLoading
+                      ? 0.65
+                      : 1,
+                  cursor:
+                    zatcaSafeStatusLoading
+                      ? "wait"
+                      : "pointer",
+                }}
+              >
+                {zatcaSafeStatusLoading
+                  ? "جاري التحديث..."
+                  : "تحديث الحالة"}
+              </button>
+            </div>
+          </div>
+
+          {zatcaSafeStatusError ? (
+            <div
+              style={{
+                ...settingsRowStyle,
+                padding: "16px",
+                color: "#9b4b3d",
+                fontWeight: 900,
+              }}
+            >
+              {zatcaSafeStatusError}
+            </div>
+          ) : null}
+
+          {!zatcaSafeStatusLoading &&
+          zatcaSafeStatus ? (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(190px, 1fr))",
+                gap: "12px",
+              }}
+            >
+              {statusCards.map((card) => (
+                <div
+                  key={card.label}
+                  style={{
+                    ...settingsRowStyle,
+                    padding: "16px",
+                    minHeight: "105px",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent:
+                      "space-between",
+                    gap: "12px",
+                  }}
+                >
+                  <div
+                    style={{
+                      color: "#7a5a43",
+                      fontWeight: 850,
+                      fontSize: "13px",
+                    }}
+                  >
+                    {card.label}
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      color: card.safe
+                        ? "#34734f"
+                        : "#9b4b3d",
+                      fontWeight: 950,
+                      fontSize: "18px",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: "9px",
+                        height: "9px",
+                        borderRadius: "50%",
+                        background: card.safe
+                          ? "#48ad43"
+                          : "#c1372c",
+                        display:
+                          "inline-block",
+                        flexShrink: 0,
+                      }}
+                    />
+
+                    <span>{card.value}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {!zatcaSafeStatusLoading &&
+          !zatcaSafeStatus &&
+          !zatcaSafeStatusError ? (
+            <div
+              style={{
+                ...settingsRowStyle,
+                padding: "18px",
+                color: "#7a5a43",
+                fontWeight: 850,
+              }}
+            >
+              لم يتم تحميل حالة الفوترة
+              الإلكترونية بعد.
+            </div>
+          ) : null}
+
+          <div
+            style={{
+              ...settingsRowStyle,
+              padding: "18px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent:
+                  "space-between",
+                alignItems: "center",
+                gap: "12px",
+                flexWrap: "wrap",
+                marginBottom: "16px",
+              }}
+            >
+              <div>
+                <h3
+                  style={{
+                    ...settingsSectionTitleStyle,
+                    margin: 0,
+                  }}
+                >
+                  بيانات المنشأة البائعة
+                </h3>
+
+                <div
+                  style={{
+                    marginTop: "7px",
+                    color: "#7a5a43",
+                    fontWeight: 800,
+                    fontSize: "13px",
+                  }}
+                >
+                  أدخل بيانات المنشأة واحفظها
+                  كمسودة للمراجعة.
+                </div>
+              </div>
+
+              <div
+                style={{
+                  padding: "7px 12px",
+                  borderRadius: "999px",
+                  background:
+                    invoiceSellerProfile
+                      ?.configurationStatus ===
+                    "ready"
+                      ? "#e5f4e7"
+                      : "#fff1d6",
+                  color:
+                    invoiceSellerProfile
+                      ?.configurationStatus ===
+                    "ready"
+                      ? "#34734f"
+                      : "#8a6224",
+                  fontWeight: 950,
+                  fontSize: "13px",
+                }}
+              >
+                {invoiceSellerProfile
+                  ?.configurationStatus ===
+                "ready"
+                  ? "جاهز"
+                  : "مسودة"}
+              </div>
+            </div>
+
+            {invoiceSellerProfileLoading ? (
+              <div
+                style={{
+                  color: "#7a5a43",
+                  fontWeight: 850,
+                }}
+              >
+                جاري تحميل بيانات المنشأة...
+              </div>
+            ) : invoiceSellerProfileError ? (
+              <div
+                style={{
+                  color: "#9b4b3d",
+                  fontWeight: 900,
+                }}
+              >
+                {invoiceSellerProfileError}
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gap: "16px",
+                }}
+              >
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      "repeat(auto-fit, minmax(220px, 1fr))",
+                    gap: "12px",
+                  }}
+                >
+                  {[
+                    {
+                      key: "legalName",
+                      label:
+                        "الاسم القانوني للمنشأة",
+                      placeholder:
+                        "أدخل الاسم القانوني",
+                    },
+                    {
+                      key: "vatRegistrationNumber",
+                      label: "الرقم الضريبي",
+                      placeholder:
+                        "أدخل الرقم الضريبي",
+                      inputMode: "numeric",
+                      direction: "ltr",
+                    },
+                    {
+                      key: "legalRegistrationId",
+                      label:
+                        "رقم السجل التجاري",
+                      placeholder:
+                        "أدخل رقم السجل التجاري",
+                      inputMode: "numeric",
+                      direction: "ltr",
+                    },
+                    {
+                      key: "streetName",
+                      label: "اسم الشارع",
+                      placeholder:
+                        "أدخل اسم الشارع",
+                    },
+                    {
+                      key: "additionalStreetName",
+                      label:
+                        "اسم الشارع الإضافي",
+                      placeholder:
+                        "اختياري",
+                    },
+                    {
+                      key: "buildingNumber",
+                      label: "رقم المبنى",
+                      placeholder:
+                        "أدخل رقم المبنى",
+                      inputMode: "numeric",
+                      direction: "ltr",
+                    },
+                    {
+                      key: "plotIdentification",
+                      label: "الرقم الفرعي",
+                      placeholder:
+                        "أدخل الرقم الفرعي",
+                      inputMode: "numeric",
+                      direction: "ltr",
+                    },
+                    {
+                      key: "citySubdivisionName",
+                      label: "الحي",
+                      placeholder:
+                        "أدخل اسم الحي",
+                    },
+                    {
+                      key: "cityName",
+                      label: "المدينة",
+                      placeholder:
+                        "أدخل اسم المدينة",
+                    },
+                    {
+                      key: "postalZone",
+                      label: "الرمز البريدي",
+                      placeholder:
+                        "أدخل الرمز البريدي",
+                      inputMode: "numeric",
+                      direction: "ltr",
+                    },
+                    {
+                      key: "countrySubentity",
+                      label: "المنطقة",
+                      placeholder:
+                        "مثال: مكة المكرمة",
+                    },
+                    {
+                      key: "countryCode",
+                      label: "رمز الدولة",
+                      placeholder: "SA",
+                      direction: "ltr",
+                    },
+                  ].map((field) => (
+                    <label
+                      key={field.key}
+                      style={{
+                        display: "grid",
+                        gap: "7px",
+                      }}
+                    >
+                      <span
+                        style={{
+                          color: "#7a5a43",
+                          fontWeight: 850,
+                          fontSize: "12px",
+                        }}
+                      >
+                        {field.label}
+                      </span>
+
+                      <input
+                        type="text"
+                        value={
+                          invoiceSellerProfile?.[
+                            field.key
+                          ] || ""
+                        }
+                        placeholder={
+                          field.placeholder
+                        }
+                        inputMode={
+                          field.inputMode
+                        }
+                        dir={
+                          field.direction ||
+                          "rtl"
+                        }
+                        onChange={(event) => {
+                          const nextValue =
+                            event.target.value;
+
+                          setInvoiceSellerProfile(
+                            (currentProfile) => ({
+                              ...currentProfile,
+                              [field.key]:
+                                nextValue,
+                            })
+                          );
+
+                          setInvoiceSellerProfileError(
+                            ""
+                          );
+
+                          setInvoiceSellerProfileSaveMessage(
+                            ""
+                          );
+                        }}
+                        style={{
+                          ...settingsInputStyle,
+                          width: "100%",
+                          boxSizing:
+                            "border-box",
+                          textAlign:
+                            field.direction ===
+                            "ltr"
+                              ? "left"
+                              : "right",
+                        }}
+                      />
+                    </label>
+                  ))}
+                </div>
+
+                {invoiceSellerProfileSaveMessage ? (
+                  <div
+                    style={{
+                      padding: "12px 14px",
+                      borderRadius: "12px",
+                      background: "#e5f4e7",
+                      color: "#34734f",
+                      fontWeight: 900,
+                    }}
+                  >
+                    {
+                      invoiceSellerProfileSaveMessage
+                    }
+                  </div>
+                ) : null}
+
+                {invoiceSellerValidationLoading ? (
+                  <div
+                    style={{
+                      padding: "14px",
+                      borderRadius: "12px",
+                      background: "#fff7e7",
+                      color: "#7a5a43",
+                      fontWeight: 900,
+                    }}
+                  >
+                    جاري فحص اكتمال بيانات
+                    المنشأة...
+                  </div>
+                ) : invoiceSellerValidationError ? (
+                  <div
+                    style={{
+                      padding: "14px",
+                      borderRadius: "12px",
+                      background: "#fde9e6",
+                      color: "#9b4b3d",
+                      fontWeight: 900,
+                    }}
+                  >
+                    {invoiceSellerValidationError}
+                  </div>
+                ) : invoiceSellerValidation ? (
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: "10px",
+                      padding: "14px",
+                      borderRadius: "14px",
+                      background:
+                        invoiceSellerValidation
+                          .isComplete
+                          ? "#e5f4e7"
+                          : "#fff1d6",
+                      border:
+                        invoiceSellerValidation
+                          .isComplete
+                          ? "1px solid rgba(52, 115, 79, 0.22)"
+                          : "1px solid rgba(138, 98, 36, 0.22)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        color:
+                          invoiceSellerValidation
+                            .isComplete
+                            ? "#34734f"
+                            : "#8a6224",
+                        fontWeight: 950,
+                        fontSize: "15px",
+                      }}
+                    >
+                      {invoiceSellerValidation
+                        .isComplete
+                        ? "بيانات المنشأة مكتملة"
+                        : "بيانات المنشأة غير مكتملة"}
+                    </div>
+
+                    {invoiceSellerValidation
+                      .blockingErrors.length >
+                    0 ? (
+                      <div
+                        style={{
+                          display: "grid",
+                          gap: "7px",
+                        }}
+                      >
+                        {invoiceSellerValidation.blockingErrors.map(
+                          (validationError) => (
+                            <div
+                              key={
+                                validationError.code
+                              }
+                              style={{
+                                color: "#8a6224",
+                                fontWeight: 850,
+                                fontSize: "13px",
+                              }}
+                            >
+                              •{" "}
+                              {
+                                validationError.message
+                              }
+                            </div>
+                          )
+                        )}
+                      </div>
+                    ) : null}
+
+                    {invoiceSellerValidation
+                      .warnings.length > 0 ? (
+                      <div
+                        style={{
+                          display: "grid",
+                          gap: "7px",
+                          paddingTop: "4px",
+                        }}
+                      >
+                        {invoiceSellerValidation.warnings.map(
+                          (warning) => (
+                            <div
+                              key={warning.code}
+                              style={{
+                                color: "#7a5a43",
+                                fontWeight: 800,
+                                fontSize: "13px",
+                              }}
+                            >
+                              تنبيه:{" "}
+                              {warning.message}
+                            </div>
+                          )
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {invoiceSellerReadyMessage ? (
+                  <div
+                    style={{
+                      padding: "12px 14px",
+                      borderRadius: "12px",
+                      background:
+                        invoiceSellerReadyMessage.includes(
+                          "تم اعتماد"
+                        )
+                          ? "#e5f4e7"
+                          : "#fff1d6",
+                      color:
+                        invoiceSellerReadyMessage.includes(
+                          "تم اعتماد"
+                        )
+                          ? "#34734f"
+                          : "#8a6224",
+                      fontWeight: 900,
+                    }}
+                  >
+                    {invoiceSellerReadyMessage}
+                  </div>
+                ) : null}
+
+                <div
+                  style={{
+                    display: "grid",
+                    gap: "12px",
+                    padding: "16px",
+                    borderRadius: "16px",
+                    background: "#fbf8f3",
+                    border:
+                      "1px solid rgba(122, 90, 67, 0.16)",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontWeight: 950,
+                      fontSize: "16px",
+                      color: "#5f4433",
+                    }}
+                  >
+                    قائمة فحص ما قبل الربط
+                  </div>
+
+                  {zatcaPreActivationChecklistLoading ? (
+                    <div
+                      style={{
+                        color: "#7a5a43",
+                        fontWeight: 850,
+                      }}
+                    >
+                      جاري تحميل حالة الأمان...
+                    </div>
+                  ) : zatcaPreActivationChecklistError ? (
+                    <div
+                      style={{
+                        color: "#9b4b3d",
+                        fontWeight: 850,
+                      }}
+                    >
+                      {
+                        zatcaPreActivationChecklistError
+                      }
+                    </div>
+                  ) : zatcaPreActivationChecklist ? (
+                    <>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns:
+                            "repeat(auto-fit, minmax(180px, 1fr))",
+                          gap: "10px",
+                        }}
+                      >
+                        {[
+                          {
+                            label:
+                              "اكتمال بيانات المنشأة",
+                            value:
+                              zatcaPreActivationChecklist
+                                .sellerProfileComplete
+                                ? "مكتملة"
+                                : "غير مكتملة",
+                            safe:
+                              zatcaPreActivationChecklist
+                                .sellerProfileComplete,
+                          },
+                          {
+                            label:
+                              "الاعتماد الداخلي",
+                            value:
+                              zatcaPreActivationChecklist
+                                .sellerProfileReady
+                                ? "معتمدة"
+                                : "مسودة",
+                            safe:
+                              zatcaPreActivationChecklist
+                                .sellerProfileReady,
+                          },
+                          {
+                            label: "التكامل",
+                            value:
+                              zatcaPreActivationChecklist
+                                .integrationEnabled
+                                ? "مفعّل"
+                                : "متوقف",
+                            safe:
+                              !zatcaPreActivationChecklist
+                                .integrationEnabled,
+                          },
+                          {
+                            label: "البيئة",
+                            value:
+                              zatcaPreActivationChecklist
+                                .environment ===
+                              "disabled"
+                                ? "معطّلة"
+                                : zatcaPreActivationChecklist
+                                    .environment,
+                            safe:
+                              zatcaPreActivationChecklist
+                                .environment ===
+                              "disabled",
+                          },
+                          {
+                            label: "البوابة",
+                            value:
+                              zatcaPreActivationChecklist
+                                .gatewayStatus ===
+                              "offline"
+                                ? "غير متصلة"
+                                : zatcaPreActivationChecklist
+                                    .gatewayStatus,
+                            safe:
+                              zatcaPreActivationChecklist
+                                .gatewayStatus ===
+                              "offline",
+                          },
+                          {
+                            label:
+                              "الطلبات النشطة",
+                            value: String(
+                              zatcaPreActivationChecklist
+                                .activeSubmissionCount
+                            ),
+                            safe:
+                              zatcaPreActivationChecklist
+                                .activeSubmissionCount ===
+                              0,
+                          },
+                          {
+                            label:
+                              "قفل التفعيل",
+                            value:
+                              zatcaPreActivationChecklist
+                                .activationLockExists
+                                ? "مفعّل"
+                                : "غير موجود",
+                            safe:
+                              zatcaPreActivationChecklist
+                                .activationLockExists,
+                          },
+                          {
+                            label:
+                              "قفل الطابور",
+                            value:
+                              zatcaPreActivationChecklist
+                                .queueKillSwitchExists
+                                ? "مفعّل"
+                                : "غير موجود",
+                            safe:
+                              zatcaPreActivationChecklist
+                                .queueKillSwitchExists,
+                          },
+                        ].map((checkItem) => (
+                          <div
+                            key={checkItem.label}
+                            style={{
+                              display: "grid",
+                              gap: "5px",
+                              padding: "12px",
+                              borderRadius: "12px",
+                              background: "#ffffff",
+                              border:
+                                "1px solid rgba(122, 90, 67, 0.12)",
+                            }}
+                          >
+                            <div
+                              style={{
+                                color: "#7a5a43",
+                                fontWeight: 800,
+                                fontSize: "12px",
+                              }}
+                            >
+                              {checkItem.label}
+                            </div>
+
+                            <div
+                              style={{
+                                color: checkItem.safe
+                                  ? "#34734f"
+                                  : "#8a6224",
+                                fontWeight: 950,
+                                fontSize: "14px",
+                              }}
+                            >
+                              {checkItem.value}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div
+                        style={{
+                          padding: "12px 14px",
+                          borderRadius: "12px",
+                          background:
+                            zatcaPreActivationChecklist
+                              .safetyLockIntact
+                              ? "#e5f4e7"
+                              : "#fde9e6",
+                          color:
+                            zatcaPreActivationChecklist
+                              .safetyLockIntact
+                              ? "#34734f"
+                              : "#9b4b3d",
+                          fontWeight: 950,
+                        }}
+                      >
+                        {zatcaPreActivationChecklist
+                          .safetyLockIntact
+                          ? "قفل الأمان سليم والربط متوقف بالكامل."
+                          : "تحذير: حالة قفل الأمان تحتاج مراجعة."}
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gap: "12px",
+                    padding: "16px",
+                    borderRadius: "16px",
+                    background: "#fbf8f3",
+                    border:
+                      "1px solid rgba(122, 90, 67, 0.16)",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontWeight: 950,
+                      fontSize: "16px",
+                      color: "#5f4433",
+                    }}
+                  >
+                    تجهيز الفواتير الإلكتروني الداخلي
+                  </div>
+
+                  {invoicePreparationControlLoading ? (
+                    <div
+                      style={{
+                        color: "#7a5a43",
+                        fontWeight: 850,
+                      }}
+                    >
+                      جاري تحميل حالة المعالج...
+                    </div>
+                  ) : invoicePreparationControlError ? (
+                    <div
+                      style={{
+                        color: "#9b4b3d",
+                        fontWeight: 850,
+                      }}
+                    >
+                      {invoicePreparationControlError}
+                    </div>
+                  ) : invoicePreparationControl ? (
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns:
+                          "repeat(auto-fit, minmax(180px, 1fr))",
+                        gap: "10px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "grid",
+                          gap: "5px",
+                          padding: "12px",
+                          borderRadius: "12px",
+                          background: "#ffffff",
+                          border:
+                            "1px solid rgba(122, 90, 67, 0.12)",
+                        }}
+                      >
+                        <div
+                          style={{
+                            color: "#7a5a43",
+                            fontWeight: 800,
+                            fontSize: "12px",
+                          }}
+                        >
+                          تشغيل التجهيز الداخلي
+                        </div>
+
+                        <div
+                          style={{
+                            color:
+                              invoicePreparationControl
+                                .processingEnabled
+                                ? "#8a6224"
+                                : "#34734f",
+                            fontWeight: 950,
+                            fontSize: "14px",
+                          }}
+                        >
+                          {invoicePreparationControl
+                            .processingEnabled
+                            ? "مفعّل"
+                            : "متوقف"}
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          display: "grid",
+                          gap: "5px",
+                          padding: "12px",
+                          borderRadius: "12px",
+                          background: "#ffffff",
+                          border:
+                            "1px solid rgba(122, 90, 67, 0.12)",
+                        }}
+                      >
+                        <div
+                          style={{
+                            color: "#7a5a43",
+                            fontWeight: 800,
+                            fontSize: "12px",
+                          }}
+                        >
+                          حالة المعالج
+                        </div>
+
+                        <div
+                          style={{
+                            color:
+                              invoicePreparationControl
+                                .workerStatus ===
+                              "offline"
+                                ? "#34734f"
+                                : "#8a6224",
+                            fontWeight: 950,
+                            fontSize: "14px",
+                          }}
+                        >
+                          {invoicePreparationControl
+                            .workerStatus ===
+                          "offline"
+                            ? "غير متصل"
+                            : invoicePreparationControl
+                                .workerStatus}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {invoicePreparationSummaryLoading ? (
+                    <div
+                      style={{
+                        color: "#7a5a43",
+                        fontWeight: 850,
+                      }}
+                    >
+                      جاري تحميل ملخص التجهيز...
+                    </div>
+                  ) : invoicePreparationSummaryError ? (
+                    <div
+                      style={{
+                        color: "#9b4b3d",
+                        fontWeight: 850,
+                      }}
+                    >
+                      {invoicePreparationSummaryError}
+                    </div>
+                  ) : invoicePreparationSummary ? (
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns:
+                          "repeat(auto-fit, minmax(150px, 1fr))",
+                        gap: "10px",
+                      }}
+                    >
+                      {[
+                        {
+                          label: "إجمالي المهام",
+                          value:
+                            invoicePreparationSummary
+                              .totalJobCount,
+                        },
+                        {
+                          label: "بانتظار بيانات المنشأة",
+                          value:
+                            invoicePreparationSummary
+                              .waitingSellerProfileCount,
+                        },
+                        {
+                          label: "بانتظار التجهيز",
+                          value:
+                            invoicePreparationSummary
+                              .pendingPreparationCount,
+                        },
+                        {
+                          label: "قيد التجهيز",
+                          value:
+                            invoicePreparationSummary
+                              .processingCount,
+                        },
+                        {
+                          label: "تم تجهيزها",
+                          value:
+                            invoicePreparationSummary
+                              .preparedCount,
+                        },
+                        {
+                          label: "متعطلة",
+                          value:
+                            invoicePreparationSummary
+                              .failedCount,
+                        },
+                        {
+                          label: "ملغاة",
+                          value:
+                            invoicePreparationSummary
+                              .cancelledCount,
+                        },
+                        {
+                          label: "تجهيز متوقف طويلًا",
+                          value:
+                            invoicePreparationSummary
+                              .staleProcessingCount,
+                        },
+                      ].map((summaryItem) => (
+                        <div
+                          key={summaryItem.label}
+                          style={{
+                            display: "grid",
+                            gap: "5px",
+                            padding: "12px",
+                            borderRadius: "12px",
+                            background: "#ffffff",
+                            border:
+                              "1px solid rgba(122, 90, 67, 0.12)",
+                          }}
+                        >
+                          <div
+                            style={{
+                              color: "#7a5a43",
+                              fontWeight: 800,
+                              fontSize: "12px",
+                            }}
+                          >
+                            {summaryItem.label}
+                          </div>
+
+                          <div
+                            style={{
+                              color:
+                                summaryItem.label ===
+                                  "متعطلة" &&
+                                summaryItem.value > 0
+                                  ? "#9b4b3d"
+                                  : "#34734f",
+                              fontWeight: 950,
+                              fontSize: "18px",
+                            }}
+                          >
+                            {summaryItem.value}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent:
+                      "flex-end",
+                    alignItems: "center",
+                    gap: "10px",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={
+                      markInvoiceSellerProfileReady
+                    }
+                    disabled={
+                      invoiceSellerReadySaving ||
+                      !invoiceSellerValidation
+                        ?.isComplete ||
+                      invoiceSellerProfile
+                        .configurationStatus ===
+                        "ready"
+                    }
+                    style={{
+                      border: "none",
+                      borderRadius: "12px",
+                      padding: "12px 18px",
+                      background:
+                        invoiceSellerProfile
+                          .configurationStatus ===
+                        "ready"
+                          ? "#e5f4e7"
+                          : "#7a5a43",
+                      color:
+                        invoiceSellerProfile
+                          .configurationStatus ===
+                        "ready"
+                          ? "#34734f"
+                          : "#ffffff",
+                      fontWeight: 950,
+                      cursor:
+                        invoiceSellerReadySaving ||
+                        !invoiceSellerValidation
+                          ?.isComplete ||
+                        invoiceSellerProfile
+                          .configurationStatus ===
+                          "ready"
+                          ? "not-allowed"
+                          : "pointer",
+                      opacity:
+                        invoiceSellerReadySaving ||
+                        !invoiceSellerValidation
+                          ?.isComplete
+                          ? 0.55
+                          : 1,
+                    }}
+                  >
+                    {invoiceSellerReadySaving
+                      ? "جاري الاعتماد..."
+                      : invoiceSellerProfile
+                            .configurationStatus ===
+                          "ready"
+                        ? "البيانات معتمدة"
+                        : "اعتماد البيانات داخليًا"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={
+                      saveInvoiceSellerProfileDraft
+                    }
+                    disabled={
+                      invoiceSellerProfileSaving
+                    }
+                    style={{
+                      ...settingsPrimaryButtonStyle,
+                      opacity:
+                        invoiceSellerProfileSaving
+                          ? 0.65
+                          : 1,
+                      cursor:
+                        invoiceSellerProfileSaving
+                          ? "wait"
+                          : "pointer",
+                    }}
+                  >
+                    {invoiceSellerProfileSaving
+                      ? "جاري الحفظ..."
+                      : "حفظ كمسودة"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div
+            style={{
+              ...settingsRowStyle,
+              padding: "16px",
+              background:
+                "rgba(255, 247, 231, 0.92)",
+              border:
+                "1px solid rgba(190, 143, 67, 0.28)",
+              color: "#6f4a24",
+              fontWeight: 850,
+              lineHeight: 1.9,
+            }}
+          >
+            لا يوجد زر تفعيل أو اتصال في هذه
+            الصفحة. التفعيل الخارجي سيبقى
+            ممنوعًا حتى الموافقة الصريحة عليه
+            مستقبلًا.
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div style={settingsRowStyle}>
         <h3 style={settingsSectionTitleStyle}>تحميل الجدول يدوي</h3>
@@ -13745,6 +15885,7 @@ const settingsFieldGridStyle = {
               {settingsTabButton("security", "الأمان")}
               {settingsTabButton("system", "النظام")}
               {settingsTabButton("server", "السيرفر")}
+              {settingsTabButton("zatca", "الفوترة الإلكترونية")}
               {settingsTabButton("excel", "شهري Excel")}
             </div>
             {renderSettingsContent()}
@@ -18123,19 +20264,29 @@ if (screen === "invoices") {
       .toLowerCase();
 
     const filteredInvoices = invoices.filter((invoice) => {
-      if (!normalizedInvoiceSearch) return true;
+      const matchesDocumentType =
+        invoicesDocumentTypeFilter === "all" ||
+        invoice.documentType ===
+          invoicesDocumentTypeFilter;
 
-      return [
-        invoice.invoiceCode,
-        invoice.invoiceNumber,
-        invoice.clientName,
-        invoice.clientPhone,
-        invoice.serviceName,
-        invoice.paymentMethod,
-      ].some((value) =>
-        String(value || "")
-          .toLowerCase()
-          .includes(normalizedInvoiceSearch)
+      const matchesSearch =
+        !normalizedInvoiceSearch ||
+        [
+          invoice.invoiceCode,
+          invoice.invoiceNumber,
+          invoice.clientName,
+          invoice.clientPhone,
+          invoice.serviceName,
+          invoice.paymentMethod,
+        ].some((value) =>
+          String(value || "")
+            .toLowerCase()
+            .includes(normalizedInvoiceSearch)
+        );
+
+      return (
+        matchesDocumentType &&
+        matchesSearch
       );
     });
 
@@ -18144,17 +20295,24 @@ if (screen === "invoices") {
       invoicesVisibleCount
     );
 
+    const getInvoiceDocumentSign = (invoice) =>
+      invoice.documentType === "credit_note"
+        ? -1
+        : 1;
+
     const invoicesTotal = filteredInvoices.reduce(
       (total, invoice) =>
         total +
-        Number(invoice.totalIncludingVat || 0),
+        getInvoiceDocumentSign(invoice) *
+          Number(invoice.totalIncludingVat || 0),
       0
     );
 
     const invoicesVatTotal = filteredInvoices.reduce(
       (total, invoice) =>
         total +
-        Number(invoice.vatAmount || 0),
+        getInvoiceDocumentSign(invoice) *
+          Number(invoice.vatAmount || 0),
       0
     );
 
@@ -18248,6 +20406,20 @@ if (screen === "invoices") {
         invoice.invoiceCode ||
         `PS-${invoice.invoiceNumber || ""}`;
 
+      const originalInvoice =
+        invoices.find(
+          (currentInvoice) =>
+            String(currentInvoice.id) ===
+            String(
+              invoice.originalInvoiceId || ""
+            )
+        );
+
+      const originalInvoiceCode =
+        originalInvoice?.invoiceCode ||
+        invoice.originalInvoiceId ||
+        "-";
+
       const transportationAmount =
         Number(
           invoice.transportationAmountIncludingVat ||
@@ -18291,7 +20463,15 @@ if (screen === "invoices") {
                 font-weight: 900;
               "
             >
-              فاتورة ضريبية مبسطة
+              ${escapeInvoiceHtml(
+                invoice.documentType ===
+                  "credit_note"
+                  ? "إشعار دائن ضريبي مبسط"
+                  : invoice.documentType ===
+                    "debit_note"
+                  ? "إشعار مدين ضريبي مبسط"
+                  : "فاتورة ضريبية مبسطة"
+              )}
             </div>
 
             <div
@@ -18365,6 +20545,79 @@ if (screen === "invoices") {
               </div>
             </div>
           </div>
+
+          ${
+            invoice.documentType !== "invoice"
+              ? `
+                <div
+                  style="
+                    border: 1px solid #d8b7a4;
+                    border-radius: 16px;
+                    background: #fbf3ec;
+                    padding: 18px;
+                    margin-bottom: 28px;
+                  "
+                >
+                  <div
+                    style="
+                      display: grid;
+                      grid-template-columns: 160px 1fr;
+                      gap: 12px;
+                      align-items: start;
+                    "
+                  >
+                    <div
+                      style="
+                        color: #92745d;
+                        font-size: 14px;
+                        font-weight: 900;
+                      "
+                    >
+                      الفاتورة الأصلية
+                    </div>
+
+                    <div
+                      style="
+                        font-size: 16px;
+                        font-weight: 900;
+                        direction: ltr;
+                        text-align: right;
+                        word-break: break-word;
+                      "
+                    >
+                      ${escapeInvoiceHtml(
+                        originalInvoiceCode
+                      )}
+                    </div>
+
+                    <div
+                      style="
+                        color: #92745d;
+                        font-size: 14px;
+                        font-weight: 900;
+                      "
+                    >
+                      سبب التصحيح
+                    </div>
+
+                    <div
+                      style="
+                        font-size: 16px;
+                        font-weight: 900;
+                        line-height: 1.7;
+                        white-space: pre-wrap;
+                        word-break: break-word;
+                      "
+                    >
+                      ${escapeInvoiceHtml(
+                        invoice.correctionReason || "-"
+                      )}
+                    </div>
+                  </div>
+                </div>
+              `
+              : ""
+          }
 
           <div
             style="
@@ -18536,6 +20789,206 @@ if (screen === "invoices") {
       return invoiceElement;
     };
 
+    const previewInvoiceTemplate = () => {
+      const previewWindow =
+        window.open(
+          "",
+          "_blank",
+          "width=920,height=1000"
+        );
+
+      if (!previewWindow) {
+        alert(
+          "تعذر فتح المعاينة. اسمح بفتح النوافذ المنبثقة ثم حاول مرة أخرى."
+        );
+
+        return;
+      }
+
+      previewWindow.opener = null;
+
+      const previewInvoice = {
+        id: "invoice-template-preview",
+        invoiceNumber: 0,
+        invoiceCode: "معاينة فقط",
+        documentType: "invoice",
+        status: "issued",
+        scheduleDate:
+          getCurrentLocalDate(),
+        clientName: "اسم العميلة",
+        clientPhone: "0500000000",
+        serviceName:
+          "مساج استرخائي 60 دقيقة",
+        serviceTime: "5:00 م",
+        paymentMethod: "Cash",
+        serviceAmountIncludingVat: 230,
+        transportationAmountIncludingVat: 0,
+        totalIncludingVat: 230,
+        subtotalExcludingVat: 200,
+        vatRate: 15,
+        vatAmount: 30,
+        issuedAt:
+          new Date().toISOString(),
+      };
+
+      const previewElement =
+        createInvoicePdfElement(
+          previewInvoice
+        );
+
+      previewElement.style.position =
+        "relative";
+      previewElement.style.left =
+        "auto";
+      previewElement.style.top =
+        "auto";
+      previewElement.style.margin =
+        "0";
+      previewElement.style.boxShadow =
+        "0 20px 55px rgba(35, 22, 15, 0.25)";
+
+      const previewMarkup =
+        previewElement.outerHTML;
+
+      previewElement.remove();
+
+      previewWindow.document.open();
+
+      previewWindow.document.write(`
+        <!doctype html>
+        <html lang="ar" dir="rtl">
+          <head>
+            <meta charset="UTF-8" />
+
+            <meta
+              name="viewport"
+              content="width=device-width, initial-scale=1"
+            />
+
+            <title>
+              معاينة نموذج فاتورة Paradise Spa
+            </title>
+
+            <style>
+              * {
+                box-sizing: border-box;
+              }
+
+              html,
+              body {
+                margin: 0;
+                min-height: 100%;
+                background: #e4d8cb;
+                font-family: Arial, sans-serif;
+              }
+
+              body {
+                padding: 18px 12px 35px;
+              }
+
+              .preview-toolbar {
+                width: min(794px, 100%);
+                margin: 0 auto 14px;
+                padding: 12px 16px;
+                border: 1px solid #d5bfa9;
+                border-radius: 14px;
+                background: #fff8ef;
+                color: #4b2e1f;
+                text-align: center;
+                font-size: 14px;
+                font-weight: 900;
+                line-height: 1.6;
+              }
+
+              .preview-viewport {
+                position: relative;
+                margin: 0 auto;
+                overflow: visible;
+              }
+
+              .preview-scale {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 794px;
+                transform-origin: top left;
+              }
+            </style>
+          </head>
+
+          <body>
+            <div class="preview-toolbar">
+              معاينة فقط — لم يتم إصدار أو حفظ هذه الفاتورة
+            </div>
+
+            <div
+              id="previewViewport"
+              class="preview-viewport"
+            >
+              <div
+                id="previewScale"
+                class="preview-scale"
+              >
+                ${previewMarkup}
+              </div>
+            </div>
+
+            <script>
+              function fitInvoicePreview() {
+                const invoiceWidth = 794;
+                const invoiceHeight = 1123;
+
+                const availableWidth =
+                  Math.max(
+                    window.innerWidth - 24,
+                    280
+                  );
+
+                const scale =
+                  Math.min(
+                    1,
+                    availableWidth /
+                      invoiceWidth
+                  );
+
+                const viewport =
+                  document.getElementById(
+                    "previewViewport"
+                  );
+
+                const scaleElement =
+                  document.getElementById(
+                    "previewScale"
+                  );
+
+                scaleElement.style.transform =
+                  "scale(" + scale + ")";
+
+                viewport.style.width =
+                  invoiceWidth *
+                    scale +
+                  "px";
+
+                viewport.style.height =
+                  invoiceHeight *
+                    scale +
+                  "px";
+              }
+
+              fitInvoicePreview();
+
+              window.addEventListener(
+                "resize",
+                fitInvoicePreview
+              );
+            </script>
+          </body>
+        </html>
+      `);
+
+      previewWindow.document.close();
+    };
+
     const downloadInvoicesPdf = async (
       invoicesToDownload,
       fileName
@@ -18627,7 +21080,7 @@ if (screen === "invoices") {
 
         pdf.save(
           fileName ||
-            "Paradise-Invoices.pdf"
+            "Paradise-Documents.pdf"
         );
       } catch (error) {
         console.error(
@@ -18684,17 +21137,45 @@ if (screen === "invoices") {
         invoice.invoiceCode ||
         `PS-${invoice.invoiceNumber || ""}`;
 
+      const documentName =
+        invoice.documentType ===
+        "credit_note"
+          ? "الإشعار الدائن"
+          : invoice.documentType ===
+            "debit_note"
+          ? "الإشعار المدين"
+          : "الفاتورة";
+
+      const originalInvoice =
+        invoices.find(
+          (currentInvoice) =>
+            String(currentInvoice.id) ===
+            String(
+              invoice.originalInvoiceId || ""
+            )
+        );
+
+      const originalInvoiceCode =
+        originalInvoice?.invoiceCode ||
+        invoice.originalInvoiceId ||
+        "-";
+
       const whatsappMessage = [
         `مرحباً ${
           invoice.clientName || ""
         } 💗`,
         "",
-        "هذه تفاصيل فاتورتك من Paradise Home Spa:",
-        `رقم الفاتورة: ${invoiceCode}`,
+        `هذه تفاصيل ${documentName} من Paradise Home Spa:`,
+        `رقم المستند: ${invoiceCode}`,
         `الخدمة: ${
           invoice.serviceName || "-"
         }`,
-        `تاريخ الفاتورة: ${formatInvoiceDate(
+        `${
+          invoice.documentType ===
+          "invoice"
+            ? "تاريخ الفاتورة"
+            : "تاريخ الإشعار"
+        }: ${formatInvoiceDate(
           getInvoiceDateInRiyadh(
             invoice
           )
@@ -18702,6 +21183,16 @@ if (screen === "invoices") {
         `الإجمالي شامل الضريبة: ${formatInvoiceAmount(
           invoice.totalIncludingVat
         )} ر.س`,
+        ...(invoice.documentType !==
+        "invoice"
+          ? [
+              `الفاتورة الأصلية: ${originalInvoiceCode}`,
+              `سبب التصحيح: ${
+                invoice.correctionReason ||
+                "-"
+              }`,
+            ]
+          : []),
       ].join("\n");
 
       window.open(
@@ -18711,6 +21202,366 @@ if (screen === "invoices") {
         "_blank",
         "noopener,noreferrer"
       );
+    };
+
+    const openInvoiceNoteModal = (
+      invoice,
+      documentType
+    ) => {
+      if (
+        !invoice ||
+        invoice.documentType !== "invoice"
+      ) {
+        return;
+      }
+
+      setInvoiceNoteError("");
+
+      const sourceNoteKey =
+        typeof crypto !== "undefined" &&
+        typeof crypto.randomUUID === "function"
+          ? `invoice-note:${invoice.id}:${documentType}:${crypto.randomUUID()}`
+          : `invoice-note:${invoice.id}:${documentType}:${Date.now()}-${Math.random()
+              .toString(36)
+              .slice(2)}`;
+
+      setInvoiceNoteDraft({
+        sourceNoteKey,
+        documentType,
+        correctionReason: "",
+        serviceAmountIncludingVat:
+          documentType === "credit_note"
+            ? Number(
+                invoice.serviceAmountIncludingVat || 0
+              ).toFixed(2)
+            : "",
+        transportationAmountIncludingVat:
+          documentType === "credit_note"
+            ? Number(
+                invoice.transportationAmountIncludingVat || 0
+              ).toFixed(2)
+            : "",
+      });
+
+      setInvoiceNoteModal(invoice);
+      setSelectedInvoice(null);
+    };
+
+    const closeInvoiceNoteModal = () => {
+      if (invoiceNoteSaving) {
+        return;
+      }
+
+      setInvoiceNoteModal(null);
+      setInvoiceNoteError("");
+    };
+
+    const issueInvoiceNote = async () => {
+      if (
+        !invoiceNoteModal ||
+        invoiceNoteSaving ||
+        !ensureSystemWritable() ||
+        !canEditData
+      ) {
+        return;
+      }
+
+      const documentType =
+        invoiceNoteDraft.documentType;
+
+      const sourceNoteKey =
+        String(
+          invoiceNoteDraft.sourceNoteKey || ""
+        ).trim();
+
+      const correctionReason =
+        String(
+          invoiceNoteDraft.correctionReason || ""
+        ).trim();
+
+      const serviceAmount =
+        Number(
+          parseAmount(
+            invoiceNoteDraft
+              .serviceAmountIncludingVat
+          )
+        );
+
+      const transportationAmount =
+        Number(
+          parseAmount(
+            invoiceNoteDraft
+              .transportationAmountIncludingVat
+          )
+        );
+
+      const noteTotal =
+        Number(
+          (
+            serviceAmount +
+            transportationAmount
+          ).toFixed(2)
+        );
+
+      if (
+        ![
+          "credit_note",
+          "debit_note",
+        ].includes(documentType)
+      ) {
+        setInvoiceNoteError(
+          "نوع الإشعار غير صحيح."
+        );
+
+        return;
+      }
+
+      if (!sourceNoteKey) {
+        setInvoiceNoteError(
+          "تعذر تجهيز مفتاح الإشعار. أغلقي النافذة وافتحيها مرة أخرى."
+        );
+
+        return;
+      }
+
+      if (!correctionReason) {
+        setInvoiceNoteError(
+          "اكتبي سبب إصدار الإشعار."
+        );
+
+        return;
+      }
+
+      if (
+        !Number.isFinite(serviceAmount) ||
+        !Number.isFinite(
+          transportationAmount
+        ) ||
+        serviceAmount < 0 ||
+        transportationAmount < 0
+      ) {
+        setInvoiceNoteError(
+          "مبالغ الإشعار غير صحيحة."
+        );
+
+        return;
+      }
+
+      if (noteTotal <= 0) {
+        setInvoiceNoteError(
+          "يجب أن يكون إجمالي الإشعار أكبر من صفر."
+        );
+
+        return;
+      }
+
+      const documentLabel =
+        documentType === "credit_note"
+          ? "إشعار دائن"
+          : "إشعار مدين";
+
+      const confirmed =
+        window.confirm(
+          [
+            `تأكيد إصدار ${documentLabel}؟`,
+            "",
+            `الفاتورة الأصلية: ${
+              invoiceNoteModal.invoiceCode ||
+              invoiceNoteModal.invoiceNumber ||
+              "-"
+            }`,
+            `العميلة: ${
+              invoiceNoteModal.clientName ||
+              "-"
+            }`,
+            `مبلغ الخدمة: ${serviceAmount.toFixed(
+              2
+            )} ر.س`,
+            `المواصلات: ${transportationAmount.toFixed(
+              2
+            )} ر.س`,
+            `الإجمالي: ${noteTotal.toFixed(
+              2
+            )} ر.س`,
+            `السبب: ${correctionReason}`,
+            "",
+            "بعد الإصدار لا يمكن تعديل المستند.",
+          ].join("\n")
+        );
+
+      if (!confirmed) {
+        return;
+      }
+
+      setInvoiceNoteSaving(true);
+      setInvoiceNoteError("");
+
+      try {
+        const {
+          data,
+          error,
+        } = await supabase.rpc(
+          "issue_paradise_invoice_note",
+          {
+            p_original_invoice_id:
+              invoiceNoteModal.id,
+
+            p_document_type:
+              documentType,
+
+            p_source_note_key:
+              sourceNoteKey,
+
+            p_correction_reason:
+              correctionReason,
+
+            p_service_amount_including_vat:
+              serviceAmount,
+
+            p_transportation_amount_including_vat:
+              transportationAmount,
+          }
+        );
+
+        if (error) {
+          throw error;
+        }
+
+        const issuedNoteRecord =
+          Array.isArray(data)
+            ? data[0] || null
+            : data || null;
+
+        if (!issuedNoteRecord?.id) {
+          throw new Error(
+            "Invoice note data was not returned"
+          );
+        }
+
+        const issuedNote =
+          normalizeInvoiceRecord(
+            issuedNoteRecord
+          );
+
+        setInvoices(
+          (previousInvoices) => {
+            const withoutIssuedNote =
+              previousInvoices.filter(
+                (invoice) =>
+                  String(invoice.id) !==
+                  String(issuedNote.id)
+              );
+
+            if (
+              !isInvoiceInsideDateRange(
+                issuedNote,
+                invoicesFromDate,
+                invoicesToDate
+              )
+            ) {
+              return withoutIssuedNote;
+            }
+
+            return mergeInvoicesById(
+              withoutIssuedNote,
+              [issuedNote]
+            );
+          }
+        );
+
+        const {
+          data: refreshedOriginalInvoice,
+        } = await supabase
+          .from("invoices")
+          .select(
+            "id,status,updated_at"
+          )
+          .eq(
+            "id",
+            invoiceNoteModal.id
+          )
+          .maybeSingle();
+
+        if (
+          refreshedOriginalInvoice?.id
+        ) {
+          setInvoices(
+            (previousInvoices) =>
+              previousInvoices.map(
+                (invoice) =>
+                  String(invoice.id) ===
+                  String(
+                    refreshedOriginalInvoice.id
+                  )
+                    ? {
+                        ...invoice,
+                        status:
+                          refreshedOriginalInvoice
+                            .status ||
+                          invoice.status,
+
+                        updatedAt:
+                          refreshedOriginalInvoice
+                            .updated_at ||
+                          invoice.updatedAt,
+                      }
+                    : invoice
+              )
+          );
+        }
+
+        setInvoiceNoteModal(null);
+        setInvoiceNoteError("");
+
+        window.alert(
+          `تم إصدار ${documentLabel} رقم ${
+            issuedNote.invoiceCode ||
+            issuedNote.invoiceNumber
+          } بنجاح.`
+        );
+      } catch (error) {
+        console.error(
+          "Invoice note issue error:",
+          error
+        );
+
+        const errorMessage =
+          String(
+            error?.message || ""
+          );
+
+        if (
+          errorMessage.includes(
+            "Credit note total exceeds"
+          )
+        ) {
+          setInvoiceNoteError(
+            "مبلغ الإشعار الدائن أكبر من الرصيد المتبقي في الفاتورة."
+          );
+        } else if (
+          errorMessage.includes(
+            "Source note key is already used"
+          )
+        ) {
+          setInvoiceNoteError(
+            "تعذر إعادة استخدام مفتاح الإشعار لبيانات مختلفة. أغلقي النافذة وافتحيها مرة أخرى."
+          );
+        } else if (
+          errorMessage.includes(
+            "Original invoice was not found"
+          )
+        ) {
+          setInvoiceNoteError(
+            "الفاتورة الأصلية غير موجودة."
+          );
+        } else {
+          setInvoiceNoteError(
+            "لم يتم إصدار الإشعار. تأكدي من الاتصال والبيانات ثم حاولي مرة أخرى."
+          );
+        }
+      } finally {
+        setInvoiceNoteSaving(false);
+      }
     };
 
     return withGreeting(
@@ -18778,7 +21629,7 @@ if (screen === "invoices") {
                   fontWeight: 950,
                 }}
               >
-                الفواتير
+                الفواتير والإشعارات
               </h1>
 
               <div
@@ -18788,29 +21639,57 @@ if (screen === "invoices") {
                   fontWeight: 800,
                 }}
               >
-                سجل الفواتير الضريبية
+                سجل المستندات الضريبية
                 للخدمات المكتملة
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() =>
-                setScreen("welcome")
-              }
+            <div
               style={{
-                ...buttonStyle,
-                padding: "11px 20px",
-                borderRadius: "15px",
-                background: "#fffaf3",
-                color: "#4b2e1f",
-                border:
-                  "1px solid #d6c7b8",
-                fontWeight: 900,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "10px",
+                flexWrap: "wrap",
               }}
             >
-              رجوع
-            </button>
+              <button
+                type="button"
+                onClick={previewInvoiceTemplate}
+                style={{
+                  ...buttonStyle,
+                  padding: "11px 20px",
+                  borderRadius: "15px",
+                  background: "#9b6b3f",
+                  color: "white",
+                  border:
+                    "1px solid #9b6b3f",
+                  fontWeight: 950,
+                  cursor: "pointer",
+                }}
+              >
+                معاينة نموذج الفاتورة
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setScreen("welcome")
+                }
+                style={{
+                  ...buttonStyle,
+                  padding: "11px 20px",
+                  borderRadius: "15px",
+                  background: "#fffaf3",
+                  color: "#4b2e1f",
+                  border:
+                    "1px solid #d6c7b8",
+                  fontWeight: 900,
+                }}
+              >
+                رجوع
+              </button>
+            </div>
           </div>
 
           <div
@@ -18847,7 +21726,7 @@ if (screen === "invoices") {
                       20
                     );
                   }}
-                  placeholder="رقم الفاتورة، العميلة، الجوال أو الخدمة"
+                  placeholder="رقم المستند، العميلة، الجوال أو الخدمة"
                   style={{
                     ...inputStyle,
                     width: "100%",
@@ -18950,17 +21829,17 @@ if (screen === "invoices") {
           >
             {[
               [
-                "عدد الفواتير",
+                "عدد المستندات",
                 filteredInvoices.length,
               ],
               [
-                "إجمالي الضريبة",
+                "صافي الضريبة",
                 `${formatInvoiceAmount(
                   invoicesVatTotal
                 )} ر.س`,
               ],
               [
-                "الإجمالي شامل الضريبة",
+                "الصافي شامل الضريبة",
                 `${formatInvoiceAmount(
                   invoicesTotal
                 )} ر.س`,
@@ -19088,7 +21967,7 @@ if (screen === "invoices") {
 
                 downloadInvoicesPdf(
                   selectedInvoices,
-                  `Paradise-Invoices-${invoicesFromDate}-to-${invoicesToDate}.pdf`
+                  `Paradise-Documents-${invoicesFromDate}-to-${invoicesToDate}.pdf`
                 );
               }}
               style={{
@@ -19111,7 +21990,7 @@ if (screen === "invoices") {
             >
               {invoicesPdfBusy
                 ? "جاري إنشاء ملف PDF..."
-                : `تحميل الفواتير المحددة PDF (${selectedInvoiceIds.length})`}
+                : `تحميل المستندات المحددة PDF (${selectedInvoiceIds.length})`}
             </button>
 
             {selectedInvoiceIds.length > 0 && (
@@ -19170,7 +22049,7 @@ if (screen === "invoices") {
                   fontWeight: 900,
                 }}
               >
-                جاري تحميل الفواتير...
+                جاري تحميل المستندات...
               </div>
             ) : (
               <div
@@ -19198,8 +22077,9 @@ if (screen === "invoices") {
                     >
                       {[
                         "تحديد",
-                        "رقم الفاتورة",
-                        "تاريخ الفاتورة",
+                        "رقم المستند",
+                        "نوع المستند",
+                        "تاريخ المستند",
                         "اسم العميلة",
                         "رقم الجوال",
                         "الخدمة",
@@ -19230,7 +22110,7 @@ if (screen === "invoices") {
                           onClick={() =>
                             setSelectedInvoice(invoice)
                           }
-                          title="فتح الفاتورة"
+                          title="فتح المستند"
                           style={{
                             cursor: "pointer",
                             background:
@@ -19263,7 +22143,7 @@ if (screen === "invoices") {
                                   invoice.id
                                 )
                               }
-                              aria-label={`تحديد الفاتورة ${
+                              aria-label={`تحديد المستند ${
                                 invoice.invoiceCode ||
                                 invoice.invoiceNumber ||
                                 ""
@@ -19290,6 +22170,62 @@ if (screen === "invoices") {
                             {invoice.invoiceCode ||
                               invoice.invoiceNumber ||
                               "-"}
+                          </td>
+
+                          <td
+                            style={{
+                              padding:
+                                "13px 11px",
+                              textAlign:
+                                "center",
+                            }}
+                          >
+                            <span
+                              style={{
+                                display:
+                                  "inline-flex",
+                                alignItems:
+                                  "center",
+                                justifyContent:
+                                  "center",
+                                minWidth:
+                                  "92px",
+                                padding:
+                                  "7px 10px",
+                                borderRadius:
+                                  "999px",
+                                background:
+                                  invoice.documentType ===
+                                  "credit_note"
+                                    ? "#f7e2de"
+                                    : invoice.documentType ===
+                                      "debit_note"
+                                    ? "#f3e8d8"
+                                    : "#e6f2e9",
+                                color:
+                                  invoice.documentType ===
+                                  "credit_note"
+                                    ? "#9b3528"
+                                    : invoice.documentType ===
+                                      "debit_note"
+                                    ? "#8a5b2f"
+                                    : "#287746",
+                                fontSize:
+                                  "12px",
+                                fontWeight:
+                                  950,
+                                whiteSpace:
+                                  "nowrap",
+                              }}
+                            >
+                              {invoice.documentType ===
+                              "credit_note"
+                                ? "إشعار دائن"
+                                : invoice.documentType ===
+                                  "debit_note"
+                                ? "إشعار مدين"
+                                : "فاتورة"}
+                            </span>
                           </td>
 
                           <td
@@ -19364,10 +22300,26 @@ if (screen === "invoices") {
                                 "13px 11px",
                               textAlign:
                                 "center",
+                              color:
+                                invoice.documentType ===
+                                "credit_note"
+                                  ? "#9b3528"
+                                  : "#4b2e1f",
+                              fontWeight:
+                                invoice.documentType ===
+                                "credit_note"
+                                  ? 950
+                                  : 700,
                             }}
                           >
                             {formatInvoiceAmount(
-                              invoice.vatAmount
+                              getInvoiceDocumentSign(
+                                invoice
+                              ) *
+                                Number(
+                                  invoice.vatAmount ||
+                                    0
+                                )
                             )}
                           </td>
 
@@ -19377,13 +22329,23 @@ if (screen === "invoices") {
                                 "13px 11px",
                               textAlign:
                                 "center",
-                              color: "#287746",
+                              color:
+                                invoice.documentType ===
+                                "credit_note"
+                                  ? "#9b3528"
+                                  : "#287746",
                               fontWeight:
                                 950,
                             }}
                           >
                             {formatInvoiceAmount(
-                              invoice.totalIncludingVat
+                              getInvoiceDocumentSign(
+                                invoice
+                              ) *
+                                Number(
+                                  invoice.totalIncludingVat ||
+                                    0
+                                )
                             )}
                           </td>
                         </tr>
@@ -19395,7 +22357,7 @@ if (screen === "invoices") {
                         0 && (
                         <tr>
                           <td
-                            colSpan="9"
+                            colSpan="10"
                             style={{
                               padding:
                                 "45px 20px",
@@ -19407,7 +22369,7 @@ if (screen === "invoices") {
                                 900,
                             }}
                           >
-                            لا توجد فواتير ضمن
+                            لا توجد مستندات ضمن
                             الفترة المحددة.
                           </td>
                         </tr>
@@ -19490,7 +22452,7 @@ if (screen === "invoices") {
                     onClick={() =>
                       setSelectedInvoice(null)
                     }
-                    aria-label="إغلاق الفاتورة"
+                    aria-label="إغلاق المستند"
                     style={{
                       position: "absolute",
                       top: "14px",
@@ -19521,7 +22483,13 @@ if (screen === "invoices") {
                         fontWeight: 950,
                       }}
                     >
-                      فاتورة ضريبية مبسطة
+                      {selectedInvoice.documentType ===
+                      "credit_note"
+                        ? "إشعار دائن ضريبي مبسط"
+                        : selectedInvoice.documentType ===
+                          "debit_note"
+                        ? "إشعار مدين ضريبي مبسط"
+                        : "فاتورة ضريبية مبسطة"}
                     </div>
 
                     <div
@@ -19548,7 +22516,10 @@ if (screen === "invoices") {
                   >
                     {[
                       [
-                        "تاريخ الفاتورة",
+                        selectedInvoice.documentType ===
+                        "invoice"
+                          ? "تاريخ الفاتورة"
+                          : "تاريخ الإشعار",
                         (() => {
                           const invoiceDate =
                             getInvoiceDateInRiyadh(
@@ -19590,6 +22561,29 @@ if (screen === "invoices") {
                         selectedInvoice.paymentMethod ||
                           "-",
                       ],
+
+                      ...(selectedInvoice.documentType !==
+                      "invoice"
+                        ? [
+                            [
+                              "الفاتورة الأصلية",
+                              invoices.find(
+                                (invoice) =>
+                                  String(invoice.id) ===
+                                  String(
+                                    selectedInvoice.originalInvoiceId
+                                  )
+                              )?.invoiceCode ||
+                                selectedInvoice.originalInvoiceId ||
+                                "-",
+                            ],
+                            [
+                              "سبب التصحيح",
+                              selectedInvoice.correctionReason ||
+                                "-",
+                            ],
+                          ]
+                        : []),
                     ].map(([label, value]) => (
                       <div
                         key={label}
@@ -19837,7 +22831,13 @@ if (screen === "invoices") {
                       }}
                     >
                       {invoicesPdfBusy
-                        ? "جاري إنشاء الفاتورة..."
+                        ? "جاري إنشاء المستند..."
+                        : selectedInvoice.documentType ===
+                          "credit_note"
+                        ? "تحميل الإشعار الدائن PDF"
+                        : selectedInvoice.documentType ===
+                          "debit_note"
+                        ? "تحميل الإشعار المدين PDF"
                         : "تحميل الفاتورة PDF"}
                     </button>
 
@@ -19864,6 +22864,531 @@ if (screen === "invoices") {
                       }}
                     >
                       إرسال عبر واتساب
+                    </button>
+
+                    {selectedInvoice.documentType ===
+                      "invoice" &&
+                      canEditData && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openInvoiceNoteModal(
+                                selectedInvoice,
+                                "credit_note"
+                              )
+                            }
+                            style={{
+                              ...buttonStyle,
+                              flex: "1 1 220px",
+                              minWidth: 0,
+                              maxWidth: "100%",
+                              padding: "14px",
+                              borderRadius: "15px",
+                              background: "#9b4b3d",
+                              color: "white",
+                              fontSize: "16px",
+                              fontWeight: 950,
+                              cursor: "pointer",
+                              boxSizing: "border-box",
+                            }}
+                          >
+                            إصدار إشعار دائن
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openInvoiceNoteModal(
+                                selectedInvoice,
+                                "debit_note"
+                              )
+                            }
+                            style={{
+                              ...buttonStyle,
+                              flex: "1 1 220px",
+                              minWidth: 0,
+                              maxWidth: "100%",
+                              padding: "14px",
+                              borderRadius: "15px",
+                              background: "#9b6b3f",
+                              color: "white",
+                              fontSize: "16px",
+                              fontWeight: 950,
+                              cursor: "pointer",
+                              boxSizing: "border-box",
+                            }}
+                          >
+                            إصدار إشعار مدين
+                          </button>
+                        </>
+                      )}
+                  </div>
+                </div>
+              </div>,
+              document.body
+            )}
+
+          {invoiceNoteModal &&
+            createPortal(
+              <div
+                onClick={closeInvoiceNoteModal}
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  zIndex: 100000,
+                  width: "100vw",
+                  height: "100dvh",
+                  background:
+                    "rgba(35, 22, 15, 0.76)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "16px",
+                  boxSizing: "border-box",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  onClick={(event) =>
+                    event.stopPropagation()
+                  }
+                  style={{
+                    position: "relative",
+                    width: "min(620px, 100%)",
+                    maxWidth: "100%",
+                    maxHeight: "92dvh",
+                    overflowY: "auto",
+                    overflowX: "hidden",
+                    background: "#fffdf9",
+                    borderRadius: "24px",
+                    boxShadow:
+                      "0 25px 70px rgba(0, 0, 0, 0.38)",
+                    padding: "28px",
+                    boxSizing: "border-box",
+                    color: "#4b2e1f",
+                    direction: "rtl",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={closeInvoiceNoteModal}
+                    disabled={invoiceNoteSaving}
+                    aria-label="إغلاق نافذة الإشعار"
+                    style={{
+                      position: "absolute",
+                      top: "14px",
+                      left: "14px",
+                      width: "38px",
+                      height: "38px",
+                      padding: 0,
+                      border: "none",
+                      borderRadius: "50%",
+                      background: "#4b2e1f",
+                      color: "white",
+                      fontSize: "23px",
+                      fontWeight: "bold",
+                      cursor: invoiceNoteSaving
+                        ? "wait"
+                        : "pointer",
+                      opacity: invoiceNoteSaving
+                        ? 0.6
+                        : 1,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    ×
+                  </button>
+
+                  <div
+                    style={{
+                      textAlign: "center",
+                      paddingLeft: "42px",
+                      paddingRight: "42px",
+                      marginBottom: "22px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "25px",
+                        fontWeight: 950,
+                      }}
+                    >
+                      {invoiceNoteDraft.documentType ===
+                      "credit_note"
+                        ? "إصدار إشعار دائن"
+                        : "إصدار إشعار مدين"}
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: "7px",
+                        color: "#9b6b3f",
+                        fontSize: "15px",
+                        fontWeight: 900,
+                      }}
+                    >
+                      الفاتورة الأصلية:{" "}
+                      {invoiceNoteModal.invoiceCode ||
+                        invoiceNoteModal.invoiceNumber ||
+                        "-"}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "repeat(auto-fit, minmax(180px, 1fr))",
+                      gap: "12px",
+                      marginBottom: "20px",
+                    }}
+                  >
+                    {[
+                      [
+                        "اسم العميلة",
+                        invoiceNoteModal.clientName ||
+                          "-",
+                      ],
+                      [
+                        "الخدمة",
+                        invoiceNoteModal.serviceName ||
+                          "-",
+                      ],
+                      [
+                        "طريقة الدفع",
+                        invoiceNoteModal.paymentMethod ||
+                          "-",
+                      ],
+                      [
+                        "إجمالي الفاتورة الأصلية",
+                        formatInvoiceAmount(
+                          invoiceNoteModal.totalIncludingVat
+                        ),
+                      ],
+                    ].map(([label, value]) => (
+                      <div
+                        key={label}
+                        style={{
+                          border: "1px solid #eadfd5",
+                          borderRadius: "16px",
+                          background: "#faf7f2",
+                          padding: "13px",
+                          boxSizing: "border-box",
+                        }}
+                      >
+                        <div
+                          style={{
+                            color: "#8a7a68",
+                            fontSize: "12px",
+                            fontWeight: 850,
+                            marginBottom: "5px",
+                          }}
+                        >
+                          {label}
+                        </div>
+
+                        <div
+                          style={{
+                            fontSize: "15px",
+                            fontWeight: 950,
+                            wordBreak: "break-word",
+                          }}
+                        >
+                          {value}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "repeat(auto-fit, minmax(210px, 1fr))",
+                      gap: "12px",
+                      marginBottom: "16px",
+                    }}
+                  >
+                    <label
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "7px",
+                        fontSize: "14px",
+                        fontWeight: 900,
+                      }}
+                    >
+                      مبلغ الخدمة شامل الضريبة
+
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={
+                          invoiceNoteDraft
+                            .serviceAmountIncludingVat
+                        }
+                        disabled={invoiceNoteSaving}
+                        onChange={(event) =>
+                          setInvoiceNoteDraft(
+                            (previousDraft) => ({
+                              ...previousDraft,
+                              serviceAmountIncludingVat:
+                                event.target.value,
+                            })
+                          )
+                        }
+                        style={{
+                          width: "100%",
+                          padding: "13px",
+                          borderRadius: "14px",
+                          border:
+                            "1px solid #d6c7b8",
+                          background: "white",
+                          color: "#4b2e1f",
+                          fontSize: "16px",
+                          fontWeight: 850,
+                          boxSizing: "border-box",
+                          outline: "none",
+                          direction: "ltr",
+                          textAlign: "center",
+                        }}
+                      />
+                    </label>
+
+                    <label
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "7px",
+                        fontSize: "14px",
+                        fontWeight: 900,
+                      }}
+                    >
+                      مبلغ المواصلات شامل الضريبة
+
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={
+                          invoiceNoteDraft
+                            .transportationAmountIncludingVat
+                        }
+                        disabled={invoiceNoteSaving}
+                        onChange={(event) =>
+                          setInvoiceNoteDraft(
+                            (previousDraft) => ({
+                              ...previousDraft,
+                              transportationAmountIncludingVat:
+                                event.target.value,
+                            })
+                          )
+                        }
+                        style={{
+                          width: "100%",
+                          padding: "13px",
+                          borderRadius: "14px",
+                          border:
+                            "1px solid #d6c7b8",
+                          background: "white",
+                          color: "#4b2e1f",
+                          fontSize: "16px",
+                          fontWeight: 850,
+                          boxSizing: "border-box",
+                          outline: "none",
+                          direction: "ltr",
+                          textAlign: "center",
+                        }}
+                      />
+                    </label>
+                  </div>
+
+                  <div
+                    style={{
+                      padding: "14px",
+                      borderRadius: "16px",
+                      background:
+                        invoiceNoteDraft.documentType ===
+                        "credit_note"
+                          ? "#f7e9e5"
+                          : "#f5ede3",
+                      border:
+                        invoiceNoteDraft.documentType ===
+                        "credit_note"
+                          ? "1px solid #d8aaa0"
+                          : "1px solid #d7b995",
+                      textAlign: "center",
+                      marginBottom: "16px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "13px",
+                        fontWeight: 900,
+                        marginBottom: "5px",
+                      }}
+                    >
+                      إجمالي الإشعار شامل الضريبة
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: "22px",
+                        fontWeight: 950,
+                      }}
+                    >
+                      {formatInvoiceAmount(
+                        Number(
+                          parseAmount(
+                            invoiceNoteDraft
+                              .serviceAmountIncludingVat
+                          )
+                        ) +
+                          Number(
+                            parseAmount(
+                              invoiceNoteDraft
+                                .transportationAmountIncludingVat
+                            )
+                          )
+                      )}
+                    </div>
+                  </div>
+
+                  <label
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "7px",
+                      fontSize: "14px",
+                      fontWeight: 900,
+                      marginBottom: "16px",
+                    }}
+                  >
+                    سبب إصدار الإشعار
+
+                    <textarea
+                      value={
+                        invoiceNoteDraft
+                          .correctionReason
+                      }
+                      disabled={invoiceNoteSaving}
+                      onChange={(event) =>
+                        setInvoiceNoteDraft(
+                          (previousDraft) => ({
+                            ...previousDraft,
+                            correctionReason:
+                              event.target.value,
+                          })
+                        )
+                      }
+                      placeholder="اكتب سبب التصحيح بشكل واضح..."
+                      style={{
+                        width: "100%",
+                        minHeight: "105px",
+                        padding: "13px",
+                        borderRadius: "14px",
+                        border:
+                          "1px solid #d6c7b8",
+                        background: "white",
+                        color: "#4b2e1f",
+                        fontSize: "15px",
+                        fontWeight: 750,
+                        fontFamily: "Arial",
+                        resize: "vertical",
+                        boxSizing: "border-box",
+                        outline: "none",
+                      }}
+                    />
+                  </label>
+
+                  {invoiceNoteError && (
+                    <div
+                      style={{
+                        padding: "12px 14px",
+                        borderRadius: "14px",
+                        background: "#fff0ed",
+                        border:
+                          "1px solid #e1a69d",
+                        color: "#9b3528",
+                        fontSize: "14px",
+                        fontWeight: 900,
+                        lineHeight: 1.7,
+                        marginBottom: "16px",
+                        textAlign: "center",
+                      }}
+                    >
+                      {invoiceNoteError}
+                    </div>
+                  )}
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "10px",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={closeInvoiceNoteModal}
+                      disabled={invoiceNoteSaving}
+                      style={{
+                        ...buttonStyle,
+                        flex: "1 1 180px",
+                        minWidth: 0,
+                        padding: "14px",
+                        borderRadius: "15px",
+                        background: "#e7ddd3",
+                        color: "#4b2e1f",
+                        fontSize: "15px",
+                        fontWeight: 950,
+                        cursor: invoiceNoteSaving
+                          ? "wait"
+                          : "pointer",
+                        opacity: invoiceNoteSaving
+                          ? 0.65
+                          : 1,
+                      }}
+                    >
+                      إلغاء
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={issueInvoiceNote}
+                      disabled={invoiceNoteSaving}
+                      style={{
+                        ...buttonStyle,
+                        flex: "1 1 220px",
+                        minWidth: 0,
+                        padding: "14px",
+                        borderRadius: "15px",
+                        background:
+                          invoiceNoteSaving
+                            ? "#a99889"
+                            : invoiceNoteDraft.documentType ===
+                              "credit_note"
+                            ? "#9b4b3d"
+                            : "#9b6b3f",
+                        color: "white",
+                        fontSize: "15px",
+                        fontWeight: 950,
+                        cursor: invoiceNoteSaving
+                          ? "wait"
+                          : "pointer",
+                      }}
+                    >
+                      {invoiceNoteSaving
+                        ? "جاري إصدار الإشعار..."
+                        : invoiceNoteDraft.documentType ===
+                          "credit_note"
+                        ? "إصدار الإشعار الدائن"
+                        : "إصدار الإشعار المدين"}
                     </button>
                   </div>
                 </div>
@@ -20150,7 +23675,6 @@ if (screen === "finance") {
                   ["Tabby", financeStats.paymentTotals.Tabby],
                   ["Tamara", financeStats.paymentTotals.Tamara],
                   ["Bank Transfer", financeStats.paymentTotals["Bank Transfer"]],
-                  ["Paid", financeStats.paymentTotals.Paid],
                   ["Total", financeStats.paymentTotal],
                 ])}
               </div>
