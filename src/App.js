@@ -18672,6 +18672,7 @@ const settingsFieldGridStyle = {
         )}
 {showGlobalLayout && showGlobalClientForm && (
   <div
+    className="paradise-global-client-modal-overlay"
     style={{
       position: "fixed",
       inset: 0,
@@ -18685,6 +18686,7 @@ const settingsFieldGridStyle = {
     }}
   >
     <div
+      className="paradise-global-client-modal-card"
       style={{
         background: "linear-gradient(145deg, #fffaf3, #f3e8df)",
         border: "1px solid rgba(214,199,184,0.95)",
@@ -18728,7 +18730,14 @@ const settingsFieldGridStyle = {
         style={inputStyle}
       />
 
-      <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
+      <div
+        className="paradise-global-client-modal-actions"
+        style={{
+          display: "flex",
+          gap: "10px",
+          justifyContent: "center",
+        }}
+      >
         <button
           onClick={addClient}
           style={{
@@ -19107,17 +19116,24 @@ const settingsFieldGridStyle = {
 
 if (!isLoggedIn) {
   return (
-    <div style={luxuryPageStyle}>
+    <div
+      className="paradise-login-page"
+      style={luxuryPageStyle}
+    >
       <div
+        className="paradise-login-card"
         style={{
           ...luxuryCardStyle,
           background:
             "linear-gradient(145deg, rgba(255,255,255,0.92), rgba(250,247,242,0.74))",
-          boxShadow: "0 34px 90px rgba(75,46,31,0.24)",
-          border: "1px solid rgba(255,255,255,0.9)",
+          boxShadow:
+            "0 34px 90px rgba(75,46,31,0.24)",
+          border:
+            "1px solid rgba(255,255,255,0.9)",
         }}
       >
         <img
+          className="paradise-login-logo"
           src={logo}
           alt="logo"
           style={{
@@ -19126,57 +19142,96 @@ if (!isLoggedIn) {
           }}
         />
 
+        <div className="paradise-login-fields">
+          <input
+            className="paradise-login-input"
+            placeholder="Username"
+            value={username}
+            onChange={(event) =>
+              setUsername(
+                event.target.value
+              )
+            }
+            style={inputStyle}
+          />
 
-
-        <input
-          placeholder="Username"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          style={inputStyle}
-        />
-
-        <input
-          placeholder="Password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          style={inputStyle}
-        />
+          <input
+            className="paradise-login-input"
+            placeholder="Password"
+            type="password"
+            value={password}
+            onChange={(event) =>
+              setPassword(
+                event.target.value
+              )
+            }
+            style={inputStyle}
+          />
+        </div>
 
         <button
+          className="paradise-login-button"
           onClick={async () => {
-            const email = createLoginEmail(username);
+            const email =
+              createLoginEmail(
+                username
+              );
 
-            if (!email || !password) {
-              alert("Username أو Password غير صحيح");
+            if (
+              !email ||
+              !password
+            ) {
+              alert(
+                "Username أو Password غير صحيح"
+              );
               return;
             }
 
-            const { data, error } = await supabase.auth.signInWithPassword({
-              email,
-              password,
-            });
+            const {
+              data,
+              error,
+            } =
+              await supabase.auth.signInWithPassword(
+                {
+                  email,
+                  password,
+                }
+              );
 
-            if (error || !data?.session?.user?.email) {
-              alert("Username أو Password غير صحيح");
+            if (
+              error ||
+              !data?.session?.user
+                ?.email
+            ) {
+              alert(
+                "Username أو Password غير صحيح"
+              );
               return;
             }
 
-            setLoggedInUser(getDisplayNameFromEmail(data.session.user.email) || "مستخدم");
+            setLoggedInUser(
+              getDisplayNameFromEmail(
+                data.session.user
+                  .email
+              ) || "مستخدم"
+            );
+
             setIsLoggedIn(true);
             setAuthReady(true);
+
             // التحميل يتم من useEffect مرة واحدة بعد تسجيل الدخول لتجنب سحب البيانات مرتين.
           }}
           style={{
             ...buttonStyle,
             width: "90%",
-            background: "linear-gradient(135deg, #3a2116, #8b654d)",
+            background:
+              "linear-gradient(135deg, #3a2116, #8b654d)",
             color: "white",
             fontSize: "16px",
             padding: "15px",
-            
             marginTop: "45px",
-            boxShadow: "0 16px 34px rgba(75,46,31,0.22)",
+            boxShadow:
+              "0 16px 34px rgba(75,46,31,0.22)",
           }}
         >
           Login
@@ -19185,156 +19240,199 @@ if (!isLoggedIn) {
     </div>
   );
 }
-  if (screen === "welcome") {
-    return withGreeting(
-      <div style={luxuryPageStyle}>
-        <div style={luxuryCardStyle}>
-          <img
-            src={logo}
-            alt="logo"
-            style={{
-              width: "185px",
-              marginTop: "35px",
-              marginBottom: "45px",
-            }}
-          />
 
-          <h1
-            style={{
-              color: "#4b2e1f",
-              fontSize: "30px",
-              marginBottom: "8px",
-              letterSpacing: "1px",
-            }}
-          >
+if (screen === "welcome") {
+  return withGreeting(
+    <div
+      className="paradise-welcome-entry-page"
+      style={luxuryPageStyle}
+    >
+      <div
+        className="paradise-welcome-entry-card"
+        style={luxuryCardStyle}
+      >
+        <img
+          className="paradise-welcome-entry-logo"
+          src={logo}
+          alt="logo"
+          style={{
+            width: "185px",
+            marginTop: "35px",
+            marginBottom: "45px",
+          }}
+        />
 
-          </h1>
+        <h1
+          style={{
+            color: "#4b2e1f",
+            fontSize: "30px",
+            marginBottom: "8px",
+            letterSpacing: "1px",
+          }}
+        >
+        </h1>
 
-          <p
-            style={{
-              color: "#8a7a68",
-              fontSize: "15px",
-              marginBottom: "45px",
-            }}
-          >
-          </p>
+        <p
+          style={{
+            color: "#8a7a68",
+            fontSize: "15px",
+            marginBottom: "45px",
+          }}
+        >
+        </p>
 
-          <button
-            onClick={() => {
-              setScreen("dashboard");
-            }}
-            style={{
-              ...buttonStyle,
-              width: "78%",
-              padding: "16px 22px",
-              background:
-                "linear-gradient(to right, #4b2e1f, #7a5a43)",
-              color: "white",
-              fontSize: "18px",
-              borderRadius: "18px",
-              boxShadow: "0 12px 24px rgba(75,46,31,0.22)",
-            }}
-          >
-            Welcome To Paradise Spa
-          </button>
-        </div>
+        <button
+          className="paradise-welcome-entry-button"
+          onClick={() => {
+            setScreen("dashboard");
+          }}
+          style={{
+            ...buttonStyle,
+            width: "78%",
+            padding: "16px 22px",
+            background:
+              "linear-gradient(to right, #4b2e1f, #7a5a43)",
+            color: "white",
+            fontSize: "18px",
+            borderRadius: "18px",
+            boxShadow:
+              "0 12px 24px rgba(75,46,31,0.22)",
+          }}
+        >
+          Welcome To Paradise Spa
+        </button>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
-  if (screen === "menu") {
-    return withGreeting(
-      <div style={luxuryPageStyle}>
-        <div style={luxuryCardStyle}>
-          <img
-            src={logo}
-            alt="logo"
-            style={{
-              width: "135px",
-              marginBottom: "25px",
-            }}
-          />
+if (screen === "menu") {
+  return withGreeting(
+    <div
+      className="paradise-menu-page"
+      style={luxuryPageStyle}
+    >
+      <div
+        className="paradise-menu-card"
+        style={luxuryCardStyle}
+      >
+        <img
+          className="paradise-menu-logo"
+          src={logo}
+          alt="logo"
+          style={{
+            width: "135px",
+            marginBottom: "25px",
+          }}
+        />
 
-          <h2
-            style={{
-              color: "#4b2e1f",
-              fontSize: "26px",
-              marginBottom: "35px",
-            }}
-          >
-            اختر الخدمة
-          </h2>
+        <h2
+          className="paradise-menu-title"
+          style={{
+            color: "#4b2e1f",
+            fontSize: "26px",
+            marginBottom: "35px",
+          }}
+        >
+          اختر الخدمة
+        </h2>
 
+        <div className="paradise-menu-buttons">
           <button
-            onClick={() => setScreen("appointments")}
+            className="paradise-menu-button"
+            onClick={() =>
+              setScreen(
+                "appointments"
+              )
+            }
             style={{
               ...buttonStyle,
               width: "85%",
               padding: "17px 22px",
-              backgroundColor: "#faf7f2",
+              backgroundColor:
+                "#faf7f2",
               color: "#4b2e1f",
               fontSize: "17px",
               marginBottom: "16px",
               borderRadius: "18px",
-              border: "1px solid #d6c7b8",
+              border:
+                "1px solid #d6c7b8",
             }}
           >
             جدول المواعيد
           </button>
 
           <button
-            onClick={() => setScreen("loyalty")}
+            className="paradise-menu-button"
+            onClick={() =>
+              setScreen("loyalty")
+            }
             style={{
               ...buttonStyle,
               width: "85%",
               padding: "17px 22px",
-              backgroundColor: "#4b2e1f",
+              backgroundColor:
+                "#4b2e1f",
               color: "white",
               fontSize: "17px",
               marginBottom: "16px",
               borderRadius: "18px",
-              boxShadow: "0 10px 22px rgba(75,46,31,0.18)",
+              boxShadow:
+                "0 10px 22px rgba(75,46,31,0.18)",
             }}
           >
             كروت الولاء
           </button>
 
           <button
-            onClick={() => setScreen("clients")}
+            className="paradise-menu-button"
+            onClick={() =>
+              setScreen("clients")
+            }
             style={{
               ...buttonStyle,
               width: "85%",
               padding: "17px 22px",
-              backgroundColor: "#faf7f2",
+              backgroundColor:
+                "#faf7f2",
               color: "#4b2e1f",
               fontSize: "17px",
               marginBottom: "16px",
               borderRadius: "18px",
-              border: "1px solid #d6c7b8",
+              border:
+                "1px solid #d6c7b8",
             }}
           >
             عملائنا
           </button>
 
           <button
-            onClick={() => setScreen("referrals")}
+            className="paradise-menu-button"
+            onClick={() =>
+              setScreen("referrals")
+            }
             style={{
               ...buttonStyle,
               width: "85%",
               padding: "17px 22px",
-              backgroundColor: "#4b2e1f",
+              backgroundColor:
+                "#4b2e1f",
               color: "#ffffff",
               fontSize: "17px",
               marginBottom: "16px",
               borderRadius: "18px",
-              border: "1px solid #d6c7b8",
+              border:
+                "1px solid #d6c7b8",
             }}
           >
             العملاء المرشحين
           </button>
 
           <button
-            onClick={() => setScreen("invoices")}
+            className="paradise-menu-button"
+            onClick={() =>
+              setScreen("invoices")
+            }
             style={{
               ...buttonStyle,
               width: "85%",
@@ -19345,7 +19443,8 @@ if (!isLoggedIn) {
               fontSize: "17px",
               marginBottom: "16px",
               borderRadius: "18px",
-              border: "1px solid #d6c7b8",
+              border:
+                "1px solid #d6c7b8",
               boxShadow:
                 "0 10px 22px rgba(75,46,31,0.16)",
             }}
@@ -19354,7 +19453,10 @@ if (!isLoggedIn) {
           </button>
 
           <button
-            onClick={() => setScreen("purchases")}
+            className="paradise-menu-button"
+            onClick={() =>
+              setScreen("purchases")
+            }
             style={{
               ...buttonStyle,
               width: "85%",
@@ -19366,7 +19468,8 @@ if (!isLoggedIn) {
               fontWeight: "900",
               marginBottom: "16px",
               borderRadius: "18px",
-              border: "1px solid #c7a98f",
+              border:
+                "1px solid #c7a98f",
               boxShadow:
                 "0 10px 22px rgba(75,46,31,0.10)",
             }}
@@ -19375,42 +19478,54 @@ if (!isLoggedIn) {
           </button>
 
           <button
-            onClick={() => setScreen("finance")}
+            className="paradise-menu-button"
+            onClick={() =>
+              setScreen("finance")
+            }
             style={{
               ...buttonStyle,
               width: "85%",
               padding: "17px 22px",
-              backgroundColor: "#6b4630",
+              backgroundColor:
+                "#6b4630",
               color: "white",
               fontSize: "17px",
               marginBottom: "16px",
               borderRadius: "18px",
-              border: "1px solid #d6c7b8",
+              border:
+                "1px solid #d6c7b8",
             }}
           >
             التقارير
           </button>
 
           <button
-            onClick={() => setScreen("incomeExpenses")}
+            className="paradise-menu-button"
+            onClick={() =>
+              setScreen(
+                "incomeExpenses"
+              )
+            }
             style={{
               ...buttonStyle,
               width: "85%",
               padding: "17px 22px",
-              backgroundColor: "#faf7f2",
+              backgroundColor:
+                "#faf7f2",
               color: "#4b2e1f",
               fontSize: "17px",
               borderRadius: "18px",
-              border: "1px solid #d6c7b8",
+              border:
+                "1px solid #d6c7b8",
             }}
           >
             الدخل والمصاريف
           </button>
-          
         </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
   if (screen === "dashboard") {
     const getDashboardAppointmentSection = (
@@ -19795,6 +19910,7 @@ if (!isLoggedIn) {
 
             return createPortal(
               <div
+                className="paradise-duplicate-client-modal-overlay"
                 style={{
                   position: "fixed",
                   inset: 0,
@@ -19816,6 +19932,7 @@ if (!isLoggedIn) {
                 }}
               >
                 <div
+                  className="paradise-duplicate-client-modal-card"
                   style={{
                     width: "100%",
                     maxWidth: "560px",
@@ -20141,6 +20258,7 @@ if (!isLoggedIn) {
 
             return createPortal(
               <div
+                className="paradise-gift-link-modal-overlay"
                 style={{
                   position: "fixed",
                   inset: 0,
@@ -20162,6 +20280,7 @@ if (!isLoggedIn) {
                 }}
               >
                 <div
+                  className="paradise-gift-link-modal-card"
                   style={{
                     width: "100%",
                     maxWidth: "560px",
@@ -20349,6 +20468,7 @@ if (!isLoggedIn) {
 
             return (
               <div
+                className="paradise-household-modal-overlay"
                 style={{
                   position: "fixed",
                   inset: 0,
@@ -20362,11 +20482,12 @@ if (!isLoggedIn) {
                 }}
               >
                 <div
+                  className="paradise-household-modal-card"
                   style={{
                     position: "fixed",
-left: "50%",
-top: "37%",
-transform: "translate(-50%, -50%)",
+                    left: "50%",
+                    top: "37%",
+                    transform: "translate(-50%, -50%)",
                     width: "calc(100% - 32px)",
                     maxWidth: "520px",
                     maxHeight: "90vh",
@@ -20460,7 +20581,14 @@ transform: "translate(-50%, -50%)",
                     </div>
                   )}
 
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                  <div
+                    className="paradise-household-form-grid"
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: "10px",
+                    }}
+                  >
                     <input
                       placeholder="الاسم"
                       value={additionalClientDraft.name}
@@ -35185,6 +35313,7 @@ if (screen === "availableAppointments") {
         {selectedInvoice &&
           createPortal(
             <div
+              className="paradise-invoice-modal-overlay"
               onClick={() =>
                 setSelectedInvoice(null)
               }
@@ -35205,6 +35334,7 @@ if (screen === "availableAppointments") {
               }}
             >
               <div
+                className="paradise-invoice-modal-card"
                 onClick={(event) =>
                   event.stopPropagation()
                 }
