@@ -28,6 +28,7 @@ import welcomeBride from "./welcome-boards/bride.jpeg";
 import welcomeGraduation from "./welcome-boards/graduation.jpeg";
 import availableAppointmentsTemplate from "./available-appointments/available-template.png";
 import { supabase, supabaseKey, supabaseUrl } from "./supabase";
+import "./paradise-responsive.css";
 
 function App() {
   const restorableScreensRef = useRef([
@@ -13202,6 +13203,7 @@ const leavingTime = addMinutesToDisplayTime(
 
   const renderLoyaltyCard = (loyaltyClient) => (
           <div
+            className="paradise-loyalty-card"
             style={{
               margin: "0 auto",
               backgroundColor: "#fff",
@@ -14226,13 +14228,16 @@ const welcomeBoardNameStyle = {
 
   const renderWelcomeBoardCard = (board, previewMode = false) => (
     <div
+      className="paradise-welcome-board-card"
       style={{
         width: `${currentWelcomeBoardPrintWidth}in`,
         height: `${currentWelcomeBoardPrintHeight}in`,
         position: "relative",
         overflow: "hidden",
         backgroundColor: "#ead8c9",
-        boxShadow: previewMode ? "none" : "0 18px 38px rgba(75,46,31,0.18)",
+        boxShadow: previewMode
+          ? "none"
+          : "0 18px 38px rgba(75,46,31,0.18)",
         flexShrink: 0,
       }}
     >
@@ -14248,7 +14253,10 @@ const welcomeBoardNameStyle = {
       />
 
       {board.name && (
-        <div style={welcomeBoardNameStyle}>
+        <div
+          className="paradise-welcome-board-name"
+          style={welcomeBoardNameStyle}
+        >
           {board.name}
         </div>
       )}
@@ -14492,6 +14500,7 @@ const welcomeBoardNameStyle = {
 
   const renderWelcomeBoardsPage = () => (
     <div
+      className="paradise-welcome-page"
       style={{
         minHeight: "100vh",
         background:
@@ -14645,7 +14654,7 @@ const welcomeBoardNameStyle = {
       </style>
 
       <div
-        className="no-print"
+        className="no-print paradise-welcome-shell"
         style={{
           maxWidth: "1600px",
           margin: "0 auto",
@@ -14654,15 +14663,17 @@ const welcomeBoardNameStyle = {
         
 
         <div
+          className="paradise-welcome-surface"
           style={{
             background: "transparent",
-border: "none",
-borderRadius: "0px",
-boxShadow: "none",
-backdropFilter: "none",
+            border: "none",
+            borderRadius: "0px",
+            boxShadow: "none",
+            backdropFilter: "none",
           }}
         >
           <div
+            className="paradise-welcome-header"
             style={{
               textAlign: "center",
               marginBottom: "24px",
@@ -14671,7 +14682,10 @@ backdropFilter: "none",
             <img
               src={logo}
               alt="logo"
-              style={{ width: "100px", marginBottom: "14px" }}
+              style={{
+                width: "100px",
+                marginBottom: "14px",
+              }}
             />
 
             <h2
@@ -14697,26 +14711,32 @@ backdropFilter: "none",
           </div>
 
           <div
+            className="paradise-welcome-layout"
             style={{
-  display: "grid",
-  gridTemplateColumns: "minmax(560px, 1fr) 330px",
-  gridTemplateAreas: `
-    "guest designs"
-    "guest preview"
-  `,
-  gap: "22px",
-  alignItems: "start",
-  direction: "ltr",
-}}
+              display: "grid",
+              gridTemplateColumns:
+                "minmax(560px, 1fr) 330px",
+              gridTemplateAreas: `
+                "guest designs"
+                "guest preview"
+              `,
+              gap: "22px",
+              alignItems: "start",
+              direction: "ltr",
+            }}
           >
             <div
+              className="paradise-welcome-designs-card"
               style={{
-                background: "linear-gradient(145deg, #fffaf3, #f1e4d8)",
-                border: "1px solid #d8c5b3",
+                background:
+                  "linear-gradient(145deg, #fffaf3, #f1e4d8)",
+                border:
+                  "1px solid #d8c5b3",
                 gridArea: "designs",
                 borderRadius: "26px",
                 padding: "16px",
-                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.75)",
+                boxShadow:
+                  "inset 0 1px 0 rgba(255,255,255,0.75)",
               }}
             >
               <h3
@@ -16496,18 +16516,37 @@ const settingsFieldGridStyle = {
 
   const settingsTabButton = (key, label) => (
     <button
-      onClick={() => setSettingsActiveTab(key)}
+      className={`paradise-settings-tab-button${
+        settingsActiveTab === key
+          ? " paradise-settings-tab-button-active"
+          : ""
+      }`}
+      onClick={() =>
+        setSettingsActiveTab(key)
+      }
       style={{
         ...buttonStyle,
         minHeight: "50px",
         padding: "0 18px",
         fontSize: "14px",
         fontWeight: 950,
-        background: settingsActiveTab === key ? "linear-gradient(135deg, #4b2e1f, #805d45)" : "linear-gradient(145deg, rgba(255,255,255,0.92), rgba(248,241,233,0.82))",
-        color: settingsActiveTab === key ? "white" : "#3a2418",
-        border: settingsActiveTab === key ? "1px solid rgba(75,46,31,0.52)" : "1px solid rgba(214,199,184,0.95)",
+        background:
+          settingsActiveTab === key
+            ? "linear-gradient(135deg, #4b2e1f, #805d45)"
+            : "linear-gradient(145deg, rgba(255,255,255,0.92), rgba(248,241,233,0.82))",
+        color:
+          settingsActiveTab === key
+            ? "white"
+            : "#3a2418",
+        border:
+          settingsActiveTab === key
+            ? "1px solid rgba(75,46,31,0.52)"
+            : "1px solid rgba(214,199,184,0.95)",
         borderRadius: "17px",
-        boxShadow: settingsActiveTab === key ? "0 12px 24px rgba(75,46,31,0.20)" : "0 8px 20px rgba(75,46,31,0.055), inset 0 1px 0 rgba(255,255,255,0.78)",
+        boxShadow:
+          settingsActiveTab === key
+            ? "0 12px 24px rgba(75,46,31,0.20)"
+            : "0 8px 20px rgba(75,46,31,0.055), inset 0 1px 0 rgba(255,255,255,0.78)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -17987,60 +18026,196 @@ const settingsFieldGridStyle = {
   };
 
   const renderSettingsScreen = () => (
-    <div style={settingsPageShellStyle}>
+    <div
+      className="paradise-settings-page"
+      style={settingsPageShellStyle}
+    >
       <div
+        className="paradise-settings-surface"
         style={{
           ...settingsSurfaceStyle,
           marginBottom: "18px",
           padding: "22px 24px 20px",
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", gap: "14px", alignItems: "flex-start", flexWrap: "wrap", marginBottom: "18px" }}>
-          <div style={{ textAlign: "right" }}>
-            
-            <h2 style={{ margin: 0, fontSize: "34px", fontWeight: 950, letterSpacing: "-0.5px", color: "#3a2418" }}>الإعدادات</h2>
-            <div style={{ marginTop: "8px", color: "#4b2e1f", fontWeight: 900, display: "flex", justifyContent: "flex-start", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-              <span style={{ width: "9px", height: "9px", borderRadius: "50%", background: isSystemFrozen ? "#c1372c" : "#48ad43", display: "inline-block" }} />
-              <span>{isSystemFrozen ? "النظام مجمّد" : "النظام يعمل"} — {securitySettings.deleteLocked ? "الحذف مقفل" : "الحذف يعمل"}</span>
+        <div
+          className="paradise-settings-header"
+          style={{
+            display: "flex",
+            justifyContent:
+              "space-between",
+            gap: "14px",
+            alignItems: "flex-start",
+            flexWrap: "wrap",
+            marginBottom: "18px",
+          }}
+        >
+          <div
+            style={{
+              textAlign: "right",
+            }}
+          >
+            <h2
+              style={{
+                margin: 0,
+                fontSize: "34px",
+                fontWeight: 950,
+                letterSpacing: "-0.5px",
+                color: "#3a2418",
+              }}
+            >
+              الإعدادات
+            </h2>
+
+            <div
+              className="paradise-settings-status"
+              style={{
+                marginTop: "8px",
+                color: "#4b2e1f",
+                fontWeight: 900,
+                display: "flex",
+                justifyContent:
+                  "flex-start",
+                alignItems: "center",
+                gap: "8px",
+                flexWrap: "wrap",
+              }}
+            >
+              <span
+                style={{
+                  width: "9px",
+                  height: "9px",
+                  borderRadius: "50%",
+                  background:
+                    isSystemFrozen
+                      ? "#c1372c"
+                      : "#48ad43",
+                  display: "inline-block",
+                }}
+              />
+
+              <span>
+                {isSystemFrozen
+                  ? "النظام مجمّد"
+                  : "النظام يعمل"}{" "}
+                —{" "}
+                {securitySettings.deleteLocked
+                  ? "الحذف مقفل"
+                  : "الحذف يعمل"}
+              </span>
             </div>
           </div>
         </div>
 
         {!settingsUnlocked ? (
-          <div style={{ ...settingsRowStyle, maxWidth: "520px", margin: "38px auto 10px", textAlign: "center" }}>
-            <h3 style={settingsSectionTitleStyle}>أدخل الرقم السري للإعدادات</h3>
+          <div
+            className="paradise-settings-lock-card"
+            style={{
+              ...settingsRowStyle,
+              maxWidth: "520px",
+              margin:
+                "38px auto 10px",
+              textAlign: "center",
+            }}
+          >
+            <h3
+              style={
+                settingsSectionTitleStyle
+              }
+            >
+              أدخل الرقم السري للإعدادات
+            </h3>
+
             <input
-  type="text"
-  name="settings-secret-code"
-  autoComplete="one-time-code"
-  inputMode="numeric"
-  value={settingsSecretInput}
-  onChange={(e) => setSettingsSecretInput(e.target.value)}
-  onKeyDown={(e) => {
-    if (e.key === "Enter") unlockSettings();
-  }}
-  style={{
-    ...settingsInputStyle,
-    marginBottom: "14px",
-    textAlign: "center",
-    WebkitTextSecurity: "disc",
-  }}
-  placeholder="Settings Password"
-/>
-            <button onClick={unlockSettings} style={{ ...settingsPrimaryButtonStyle, width: "180px" }}>دخول</button>
+              type="text"
+              name="settings-secret-code"
+              autoComplete="one-time-code"
+              inputMode="numeric"
+              value={settingsSecretInput}
+              onChange={(event) =>
+                setSettingsSecretInput(
+                  event.target.value
+                )
+              }
+              onKeyDown={(event) => {
+                if (
+                  event.key === "Enter"
+                ) {
+                  unlockSettings();
+                }
+              }}
+              style={{
+                ...settingsInputStyle,
+                marginBottom: "14px",
+                textAlign: "center",
+                WebkitTextSecurity:
+                  "disc",
+              }}
+              placeholder="Settings Password"
+            />
+
+            <button
+              className="paradise-settings-unlock-button"
+              onClick={unlockSettings}
+              style={{
+                ...settingsPrimaryButtonStyle,
+                width: "180px",
+              }}
+            >
+              دخول
+            </button>
           </div>
         ) : (
           <>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))", gap: "10px", marginBottom: "14px" }}>
-              {settingsTabButton("accounts", "الحسابات")}
-              {settingsTabButton("backup", "النسخ الاحتياطي")}
-              {settingsTabButton("security", "الأمان")}
-              {settingsTabButton("system", "النظام")}
-              {settingsTabButton("server", "السيرفر")}
-              {settingsTabButton("zatca", "الفوترة الإلكترونية")}
-              {settingsTabButton("excel", "شهري Excel")}
+            <div
+              className="paradise-settings-tabs"
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(145px, 1fr))",
+                gap: "10px",
+                marginBottom: "14px",
+              }}
+            >
+              {settingsTabButton(
+                "accounts",
+                "الحسابات"
+              )}
+
+              {settingsTabButton(
+                "backup",
+                "النسخ الاحتياطي"
+              )}
+
+              {settingsTabButton(
+                "security",
+                "الأمان"
+              )}
+
+              {settingsTabButton(
+                "system",
+                "النظام"
+              )}
+
+              {settingsTabButton(
+                "server",
+                "السيرفر"
+              )}
+
+              {settingsTabButton(
+                "zatca",
+                "الفوترة الإلكترونية"
+              )}
+
+              {settingsTabButton(
+                "excel",
+                "شهري Excel"
+              )}
             </div>
-            {renderSettingsContent()}
+
+            <div className="paradise-settings-content">
+              {renderSettingsContent()}
+            </div>
           </>
         )}
       </div>
@@ -18433,6 +18608,16 @@ const settingsFieldGridStyle = {
 ].map(([key, label]) => (
               <button
                 key={key}
+                className={`paradise-navigation-button ${
+                  screen === key
+                    ? "paradise-navigation-button-active"
+                    : ""
+                }`}
+                aria-current={
+                  screen === key
+                    ? "page"
+                    : undefined
+                }
                 onClick={() => setScreen(key)}
                 onMouseEnter={(event) => {
                   event.currentTarget.style.transform =
@@ -18593,41 +18778,57 @@ const settingsFieldGridStyle = {
               boxSizing: "border-box",
             }}
           >
-            {globalSearchBox(true)}
-{canAddData && (
-<button
-  onClick={() => { if (ensureSystemWritable()) setShowGlobalClientForm(true); }}
-  style={{
-    ...buttonStyle,
-    height: "44px",
-    minWidth: "150px",
-    padding: "0 18px",
-    margin: 0,
-    background: "linear-gradient(135deg, #fffaf3, #f3e8df)",
-    color: "#4b2e1f",
-    border: "1px solid rgba(214,199,184,0.95)",
-    borderRadius: "20px",
-    boxShadow: "0 12px 28px rgba(75,46,31,0.10)",
-    fontSize: "14px",
-    fontWeight: "900",
-    pointerEvents: "auto",
-    whiteSpace: "nowrap",
-  }}
->
-  + Add Client
-</button>
-)}
+            <div className="paradise-topbar-search-slot">
+              {globalSearchBox(true)}
+            </div>
+
+            {canAddData && (
+              <button
+                className="paradise-topbar-add-client"
+                onClick={() => {
+                  if (ensureSystemWritable()) {
+                    setShowGlobalClientForm(true);
+                  }
+                }}
+                style={{
+                  ...buttonStyle,
+                  height: "44px",
+                  minWidth: "150px",
+                  padding: "0 18px",
+                  margin: 0,
+                  background:
+                    "linear-gradient(135deg, #fffaf3, #f3e8df)",
+                  color: "#4b2e1f",
+                  border:
+                    "1px solid rgba(214,199,184,0.95)",
+                  borderRadius: "20px",
+                  boxShadow:
+                    "0 12px 28px rgba(75,46,31,0.10)",
+                  fontSize: "14px",
+                  fontWeight: "900",
+                  pointerEvents: "auto",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                + Add Client
+              </button>
+            )}
+
             <div
+              className="paradise-topbar-date"
               style={{
-                background: "linear-gradient(135deg, #fffaf3, #f3e8df)",
-                border: "1px solid rgba(214,199,184,0.95)",
+                background:
+                  "linear-gradient(135deg, #fffaf3, #f3e8df)",
+                border:
+                  "1px solid rgba(214,199,184,0.95)",
                 borderRadius: "20px",
                 padding: "0 14px",
                 height: "44px",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                boxShadow: "0 12px 28px rgba(75,46,31,0.10)",
+                boxShadow:
+                  "0 12px 28px rgba(75,46,31,0.10)",
                 color: "#6f6259",
                 fontWeight: "800",
                 textAlign: "center",
@@ -18639,13 +18840,17 @@ const settingsFieldGridStyle = {
             </div>
 
             <div
+              className="paradise-topbar-account"
               style={{
-                background: "linear-gradient(135deg, #fffaf3, #f3e8df)",
-                border: "1px solid rgba(214,199,184,0.95)",
+                background:
+                  "linear-gradient(135deg, #fffaf3, #f3e8df)",
+                border:
+                  "1px solid rgba(214,199,184,0.95)",
                 borderRadius: "20px",
                 padding: "0 11px",
                 height: "44px",
-                boxShadow: "0 12px 28px rgba(75,46,31,0.10)",
+                boxShadow:
+                  "0 12px 28px rgba(75,46,31,0.10)",
                 display: "flex",
                 alignItems: "center",
                 gap: "10px",
@@ -18654,12 +18859,25 @@ const settingsFieldGridStyle = {
                 whiteSpace: "nowrap",
               }}
             >
-              <strong style={{ fontSize: "15px", letterSpacing: "0.2px", fontWeight: "900", color: "#3f2a1f" }}>مرحبا {loggedInUser}</strong>
+              <strong
+                className="paradise-topbar-user"
+                style={{
+                  fontSize: "15px",
+                  letterSpacing: "0.2px",
+                  fontWeight: "900",
+                  color: "#3f2a1f",
+                }}
+              >
+                مرحبا {loggedInUser}
+              </strong>
+
               <button
+                className="paradise-topbar-logout"
                 onClick={globalLogout}
                 style={{
                   ...buttonStyle,
-                  background: "linear-gradient(135deg, #4b2e1f, #7a5a43)",
+                  background:
+                    "linear-gradient(135deg, #4b2e1f, #7a5a43)",
                   color: "white",
                   padding: "8px 12px",
                   borderRadius: "999px",
@@ -19241,6 +19459,7 @@ if (!isLoggedIn) {
 
     return withGreeting(
       <div
+        className="paradise-dashboard-page"
         style={{
           width: "100%",
           color: "#4b2e1f",
@@ -19388,6 +19607,7 @@ if (!isLoggedIn) {
   if (screen === "appointments") {
     return withGreeting(
       <div
+        className="paradise-appointments-page"
         style={{
           minHeight: "100vh",
           background:
@@ -19397,6 +19617,7 @@ if (!isLoggedIn) {
         }}
       >
         <div
+          className="paradise-appointments-shell"
           style={{
             maxWidth: "1600px",
             margin: "0 auto",
@@ -20327,6 +20548,7 @@ transform: "translate(-50%, -50%)",
           })()}
 
           <div
+            className="paradise-schedule-format-toolbar"
             style={{
               display: "flex",
               justifyContent: "center",
@@ -20378,8 +20600,13 @@ transform: "translate(-50%, -50%)",
             
           </div>
 
-          <div ref={scheduleTableWrapperRef} style={scheduleTableWrapperStyle}>
+          <div
+            ref={scheduleTableWrapperRef}
+            className="paradise-schedule-table-scroll"
+            style={scheduleTableWrapperStyle}
+          >
             <table
+              className="paradise-schedule-table"
               style={{
                 minWidth: "max-content",
                 width: "max-content",
@@ -23189,6 +23416,7 @@ margin: "0 auto",
   if (screen === "referrals") {
     return withGreeting(
       <div
+        className="paradise-referrals-page"
         style={{
           width: "100%",
           color: "#4b2e1f",
@@ -23198,6 +23426,7 @@ margin: "0 auto",
         }}
       >
         <div
+          className="paradise-referrals-count"
           style={{
             position: "absolute",
             top: "18px",
@@ -23215,12 +23444,35 @@ margin: "0 auto",
           عدد العملاء: {referredClients.length}
         </div>
 
-        <div style={{ textAlign: "center", marginBottom: "36px" }}>
-          <img src={logo} alt="logo" style={{ width: "100px", marginBottom: "14px" }} />
-          <h2 style={{ margin: 18, fontSize: "28px", color: "#4b2e1f" }}>العملاء المرشحين</h2>
+        <div
+          className="paradise-referrals-header"
+          style={{
+            textAlign: "center",
+            marginBottom: "36px",
+          }}
+        >
+          <img
+            src={logo}
+            alt="logo"
+            style={{
+              width: "100px",
+              marginBottom: "14px",
+            }}
+          />
+
+          <h2
+            style={{
+              margin: 18,
+              fontSize: "28px",
+              color: "#4b2e1f",
+            }}
+          >
+            العملاء المرشحين
+          </h2>
         </div>
 
         <div
+          className="paradise-referrals-toolbar"
           style={{
             display: "flex",
             gap: "12px",
@@ -23232,6 +23484,7 @@ margin: "0 auto",
           }}
         >
           <button
+            className="paradise-referrals-add-button"
             onClick={() => setShowReferralForm(!showReferralForm)}
             style={{
               ...buttonStyle,
@@ -23247,6 +23500,7 @@ margin: "0 auto",
           </button>
 
           <input
+            className="paradise-referrals-search"
             placeholder="Search referrals..."
             value={referralsSearch}
             onChange={(e) => setReferralsSearch(e.target.value)}
@@ -23266,6 +23520,7 @@ margin: "0 auto",
           />
 
           <select
+            className="paradise-referrals-filter"
             value={referralsCustomerFilter}
             onChange={(e) => setReferralsCustomerFilter(e.target.value)}
             style={{
@@ -23288,6 +23543,7 @@ margin: "0 auto",
 
         {showReferralForm && (
           <div
+            className="paradise-referrals-form"
             style={{
               backgroundColor: "#faf7f2",
               padding: "18px",
@@ -23371,6 +23627,7 @@ margin: "0 auto",
         )}
 
         <div
+          className="paradise-referrals-list"
           style={{
             width: "min(1160px, 100%)",
             margin: "34px auto 0",
@@ -23378,10 +23635,12 @@ margin: "0 auto",
             borderRadius: "20px",
             border: "1px solid #eadfd5",
             background: "rgba(255,255,255,0.76)",
-            boxShadow: "0 18px 40px rgba(75,46,31,0.08)",
+            boxShadow:
+              "0 18px 40px rgba(75,46,31,0.08)",
           }}
         >
           <table
+            className="paradise-referrals-table"
             style={{
               width: "100%",
               borderCollapse: "collapse",
@@ -24883,6 +25142,7 @@ if (screen === "invoices") {
 
     return withGreeting(
       <div
+        className="paradise-invoices-page"
         style={{
           minHeight: "100vh",
           width: "100%",
@@ -24923,12 +25183,14 @@ if (screen === "invoices") {
         </style>
 
         <div
+          className="paradise-invoices-shell"
           style={{
             width: "min(1380px, 100%)",
             margin: "0 auto",
           }}
         >
           <div
+            className="paradise-invoices-header"
             style={{
               width: "100%",
               textAlign: "center",
@@ -24960,6 +25222,7 @@ if (screen === "invoices") {
           </div>
 
           <div
+            className="paradise-invoices-filters-card"
             style={{
               background:
                 "rgba(255,255,255,0.88)",
@@ -25150,6 +25413,7 @@ if (screen === "invoices") {
           </div>
 
           <div
+            className="paradise-invoices-actions"
             style={{
               display: "flex",
               justifyContent: "center",
@@ -25305,6 +25569,7 @@ if (screen === "invoices") {
           </div>
 
           <div
+            className="paradise-invoices-list-card"
             style={{
               background:
                 "rgba(255,255,255,0.92)",
@@ -25340,12 +25605,14 @@ if (screen === "invoices") {
               </div>
             ) : (
               <div
+                className="paradise-invoices-table-scroll"
                 style={{
                   width: "100%",
                   overflowX: "auto",
                 }}
               >
                 <table
+                  className="paradise-invoices-table"
                   style={{
                     width: "100%",
                     minWidth: "1040px",
@@ -25700,6 +25967,7 @@ if (screen === "invoices") {
           {selectedInvoice &&
             createPortal(
               <div
+                className="paradise-invoice-modal-overlay"
                 onClick={() =>
                   setSelectedInvoice(null)
                 }
@@ -25717,6 +25985,7 @@ if (screen === "invoices") {
                 }}
               >
                 <div
+                  className="paradise-invoice-modal-card"
                   onClick={(event) =>
                     event.stopPropagation()
                   }
@@ -26219,6 +26488,7 @@ if (screen === "invoices") {
           {invoiceNoteModal &&
             createPortal(
               <div
+                className="paradise-invoice-note-overlay"
                 onClick={closeInvoiceNoteModal}
                 style={{
                   position: "fixed",
@@ -26237,6 +26507,7 @@ if (screen === "invoices") {
                 }}
               >
                 <div
+                  className="paradise-invoice-note-card"
                   onClick={(event) =>
                     event.stopPropagation()
                   }
@@ -26842,6 +27113,7 @@ if (screen === "purchases") {
 
   return withGreeting(
     <div
+      className="paradise-purchases-page"
       style={{
         minHeight: "100vh",
         width: "100%",
@@ -26951,6 +27223,7 @@ if (screen === "purchases") {
         </div>
 
         <div
+          className="paradise-purchases-filter-card"
           style={{
             ...purchasePageCardStyle,
             padding: "14px",
@@ -27203,6 +27476,7 @@ if (screen === "purchases") {
           </style>
 
           <div
+            className="paradise-purchases-list-header"
             style={{
               display: "flex",
               justifyContent:
@@ -27258,6 +27532,7 @@ if (screen === "purchases") {
           )}
 
           <div
+            className="paradise-purchases-table-wrapper"
             style={{
               width: "100%",
               overflow: "hidden",
@@ -28061,10 +28336,12 @@ if (screen === "finance") {
 
     return withGreeting(
       <div
+        className="paradise-finance-page"
         style={{
           minHeight: "100vh",
           width: "100%",
-          background: "radial-gradient(circle at top, #fffaf3, #ebe1d3 48%, #d8c5b3)",
+          background:
+            "radial-gradient(circle at top, #fffaf3, #ebe1d3 48%, #d8c5b3)",
           padding: "24px",
           boxSizing: "border-box",
           fontFamily: "Arial",
@@ -28072,6 +28349,7 @@ if (screen === "finance") {
         }}
       >
         <div
+          className="paradise-finance-shell"
           style={{
             width: "min(1360px, 100%)",
             margin: "0 auto",
@@ -28079,7 +28357,13 @@ if (screen === "finance") {
             direction: "ltr",
           }}
         >
-          <main style={{ direction: "ltr", paddingTop: 0 }}>
+          <main
+            className="paradise-finance-main"
+            style={{
+              direction: "ltr",
+              paddingTop: 0,
+            }}
+          >
             <style>
               {`
                 .paradise-finance-header {
@@ -30355,6 +30639,7 @@ if (screen === "printFrame") {
 
     return withGreeting(
       <div
+        className="paradise-income-expenses-page"
         style={{
           width: "100%",
           color: "#4b2e1f",
@@ -30363,6 +30648,7 @@ if (screen === "printFrame") {
         }}
       >
         <div
+  className="paradise-income-expenses-header"
   style={{
     textAlign: "center",
     marginBottom: "60px",
@@ -30392,6 +30678,7 @@ if (screen === "printFrame") {
 </div>
 
 <div
+  className="paradise-income-expenses-controls"
   style={{
     display: "flex",
     justifyContent: "center",
@@ -30444,8 +30731,12 @@ if (screen === "printFrame") {
           </button>
         </div>
 
-        <div style={scheduleTableWrapperStyle}>
+        <div
+          className="paradise-income-expenses-table-scroll"
+          style={scheduleTableWrapperStyle}
+        >
           <table
+            className="paradise-income-expenses-table"
             style={{
               minWidth: "max-content",
               width: "max-content",
@@ -30503,6 +30794,7 @@ if (screen === "printFrame") {
   if (screen === "giftClients") {
     return withGreeting(
       <div
+        className="paradise-gift-page"
         style={{
           width: "100%",
           color: "#4b2e1f",
@@ -30512,6 +30804,7 @@ if (screen === "printFrame") {
         }}
       >
         <div
+          className="paradise-gift-count"
           style={{
             position: "absolute",
             top: "18px",
@@ -30529,12 +30822,35 @@ if (screen === "printFrame") {
           عدد العملاء: {giftClients.length}
         </div>
 
-        <div style={{ textAlign: "center", marginBottom: "36px" }}>
-          <img src={logo} alt="logo" style={{ width: "100px", marginBottom: "14px" }} />
-          <h2 style={{ margin: 18, fontSize: "28px", color: "#4b2e1f" }}>عملاء الإهداء</h2>
+        <div
+          className="paradise-gift-header"
+          style={{
+            textAlign: "center",
+            marginBottom: "36px",
+          }}
+        >
+          <img
+            src={logo}
+            alt="logo"
+            style={{
+              width: "100px",
+              marginBottom: "14px",
+            }}
+          />
+
+          <h2
+            style={{
+              margin: 18,
+              fontSize: "28px",
+              color: "#4b2e1f",
+            }}
+          >
+            عملاء الإهداء
+          </h2>
         </div>
 
         <div
+          className="paradise-gift-toolbar"
           style={{
             display: "flex",
             gap: "12px",
@@ -30546,7 +30862,10 @@ if (screen === "printFrame") {
           }}
         >
           <button
-            onClick={() => setShowGiftForm(!showGiftForm)}
+            className="paradise-gift-add-button"
+            onClick={() =>
+              setShowGiftForm(!showGiftForm)
+            }
             style={{
               ...buttonStyle,
               width: "180px",
@@ -30561,6 +30880,7 @@ if (screen === "printFrame") {
           </button>
 
           <input
+            className="paradise-gift-search"
             placeholder="Search gift clients..."
             value={giftSearch}
             onChange={(e) => setGiftSearch(e.target.value)}
@@ -30580,6 +30900,7 @@ if (screen === "printFrame") {
           />
 
           <select
+            className="paradise-gift-status-filter"
             value={giftStatusFilter}
             onChange={(e) => setGiftStatusFilter(e.target.value)}
            style={{
@@ -30602,6 +30923,7 @@ if (screen === "printFrame") {
 
         {showGiftForm && (
           <div
+            className="paradise-gift-form"
             style={{
               backgroundColor: "#faf7f2",
               padding: "18px",
@@ -30756,6 +31078,7 @@ marginRight: "auto",
         )}
 
         <div
+          className="paradise-gift-list"
           style={{
             width: "min(1160px, 100%)",
             margin: "34px auto 0",
@@ -30763,10 +31086,12 @@ marginRight: "auto",
             borderRadius: "20px",
             border: "1px solid #eadfd5",
             background: "rgba(255,255,255,0.76)",
-            boxShadow: "0 18px 40px rgba(75,46,31,0.08)",
+            boxShadow:
+              "0 18px 40px rgba(75,46,31,0.08)",
           }}
         >
           <table
+            className="paradise-gift-table"
             style={{
               width: "100%",
               borderCollapse: "collapse",
@@ -30967,6 +31292,7 @@ marginRight: "auto",
 
     return withGreeting(
       <div
+        className="paradise-inactive-page"
         style={{
           minHeight: "100vh",
           background:
@@ -30980,6 +31306,7 @@ marginRight: "auto",
         }}
       >
         <div
+          className="paradise-inactive-shell"
           style={{
             width: "96%",
             maxWidth: "1240px",
@@ -31000,6 +31327,7 @@ marginRight: "auto",
           }}
         >
         <div
+          className="paradise-inactive-count"
           style={{
             position: "absolute",
             top: "18px",
@@ -31018,6 +31346,7 @@ marginRight: "auto",
         </div>
 
         <img
+          className="paradise-inactive-logo"
           src={logo}
           alt="logo"
           style={{
@@ -31027,6 +31356,7 @@ marginRight: "auto",
         />
 
         <h2
+          className="paradise-inactive-title"
           style={{
             color: "#4b2e1f",
             margin: "0 0 20px",
@@ -31037,6 +31367,7 @@ marginRight: "auto",
         </h2>
 
         <div
+          className="paradise-inactive-toolbar"
           style={{
             display: "flex",
             gap: "12px",
@@ -31047,6 +31378,7 @@ marginRight: "auto",
           }}
         >
           <input
+            className="paradise-inactive-search"
             placeholder="ابحث بالاسم أو رقم الجوال أو الحي"
             value={inactiveClientsSearch}
             onChange={(event) => {
@@ -31071,6 +31403,7 @@ marginRight: "auto",
           />
 
           <select
+            className="paradise-inactive-tab-select"
             value={inactiveClientsTab}
             onChange={(event) => {
               setInactiveClientsTab(
@@ -31108,6 +31441,7 @@ marginRight: "auto",
           {inactiveClientsTab ===
             "confirmed" && (
             <select
+              className="paradise-inactive-days-select"
               value={inactiveClientsDays}
               onChange={(event) => {
                 setInactiveClientsDays(
@@ -31172,6 +31506,7 @@ marginRight: "auto",
         ) : (
           <>
             <div
+              className="paradise-inactive-table-wrapper"
               style={{
                 width: "100%",
                 margin: 0,
@@ -31552,6 +31887,7 @@ marginRight: "auto",
             </div>
 
             <div
+              className="paradise-inactive-load-more"
               style={{
                 width: "min(1100px, 100%)",
                 margin: "18px auto 0",
@@ -31573,6 +31909,7 @@ marginRight: "auto",
 if (screen === "potentialClients") {
     return withGreeting(
       <div
+        className="paradise-potential-page"
         style={{
           width: "100%",
           color: "#4b2e1f",
@@ -31582,6 +31919,7 @@ if (screen === "potentialClients") {
         }}
       >
         <div
+          className="paradise-potential-count"
           style={{
             position: "absolute",
             top: "18px",
@@ -31599,12 +31937,35 @@ if (screen === "potentialClients") {
           عدد العملاء: {potentialClients.length}
         </div>
 
-        <div style={{ textAlign: "center", marginBottom: "36px" }}>
-          <img src={logo} alt="logo" style={{ width: "100px", marginBottom: "14px" }} />
-          <h2 style={{ margin: 18, fontSize: "28px", color: "#4b2e1f" }}>العملاء المحتملين</h2>
+        <div
+          className="paradise-potential-header"
+          style={{
+            textAlign: "center",
+            marginBottom: "36px",
+          }}
+        >
+          <img
+            src={logo}
+            alt="logo"
+            style={{
+              width: "100px",
+              marginBottom: "14px",
+            }}
+          />
+
+          <h2
+            style={{
+              margin: 18,
+              fontSize: "28px",
+              color: "#4b2e1f",
+            }}
+          >
+            العملاء المحتملين
+          </h2>
         </div>
 
         <div
+          className="paradise-potential-toolbar"
           style={{
             display: "flex",
             gap: "12px",
@@ -31616,6 +31977,7 @@ if (screen === "potentialClients") {
           }}
         >
           <button
+            className="paradise-potential-add-button"
             onClick={() => setShowPotentialForm(!showPotentialForm)}
             style={{
               ...buttonStyle,
@@ -31631,6 +31993,7 @@ if (screen === "potentialClients") {
           </button>
 
           <input
+            className="paradise-potential-search"
             placeholder="Search prospects..."
             value={potentialSearch}
             onChange={(e) => setPotentialSearch(e.target.value)}
@@ -31650,6 +32013,7 @@ if (screen === "potentialClients") {
           />
 
           <select
+            className="paradise-potential-filter"
             value={potentialCustomerFilter}
             onChange={(e) => setPotentialCustomerFilter(e.target.value)}
             style={{
@@ -31672,6 +32036,7 @@ if (screen === "potentialClients") {
 
         {showPotentialForm && (
           <div
+            className="paradise-potential-form"
             style={{
               backgroundColor: "#faf7f2",
               padding: "18px",
@@ -31738,6 +32103,7 @@ if (screen === "potentialClients") {
         </datalist>
 
         <div
+          className="paradise-potential-list"
           style={{
             width: "min(1160px, 100%)",
             margin: "34px auto 0",
@@ -31745,10 +32111,12 @@ if (screen === "potentialClients") {
             borderRadius: "20px",
             border: "1px solid #eadfd5",
             background: "rgba(255,255,255,0.76)",
-            boxShadow: "0 18px 40px rgba(75,46,31,0.08)",
+            boxShadow:
+              "0 18px 40px rgba(75,46,31,0.08)",
           }}
         >
           <table
+            className="paradise-potential-table"
             style={{
               width: "100%",
               borderCollapse: "collapse",
@@ -32002,6 +32370,7 @@ if (screen === "potentialClients") {
 
     return withGreeting(
       <div
+        className="paradise-available-page"
         style={{
           minHeight: "100vh",
           background:
@@ -32012,20 +32381,41 @@ if (screen === "potentialClients") {
           textAlign: "center",
         }}
       >
-        <img
+        <div className="paradise-available-header">
+          <img
+            className="paradise-available-logo"
             src={logo}
             alt="logo"
-            style={{ width: "100px", marginBottom: "14px" }}
+            style={{
+              width: "100px",
+              marginBottom: "14px",
+            }}
           />
 
-        <h2 style={{ margin: "0 0 8px", fontSize: "30px", color: "#4b2e1f" }}>
-          المواعيد المتاحة
-        </h2>
-        <p style={{ margin: "0 0 22px", color: "#7d6a5a", fontWeight: "700" }}>
-         
-        </p>
+          <h2
+            className="paradise-available-title"
+            style={{
+              margin: "0 0 8px",
+              fontSize: "30px",
+              color: "#4b2e1f",
+            }}
+          >
+            المواعيد المتاحة
+          </h2>
+
+          <p
+            className="paradise-available-subtitle"
+            style={{
+              margin: "0 0 22px",
+              color: "#7d6a5a",
+              fontWeight: "700",
+            }}
+          >
+          </p>
+        </div>
 
         <div
+          className="paradise-available-toolbar"
           style={{
             display: "flex",
             justifyContent: "center",
@@ -32036,25 +32426,35 @@ if (screen === "potentialClients") {
           }}
         >
           <label
+            className="paradise-available-date-field"
             style={{
               display: "flex",
               alignItems: "center",
               gap: "10px",
-              background: "rgba(255,255,255,0.72)",
-              border: "1px solid #d8c5b3",
+              background:
+                "rgba(255,255,255,0.72)",
+              border:
+                "1px solid #d8c5b3",
               borderRadius: "18px",
               padding: "10px 14px",
-              boxShadow: "0 10px 24px rgba(75,46,31,0.08)",
+              boxShadow:
+                "0 10px 24px rgba(75,46,31,0.08)",
               fontWeight: "800",
             }}
           >
-            التاريخ
+            <span>التاريخ</span>
+
             <input
               type="date"
               value={availableAppointmentDate}
-              onChange={(event) => setAvailableAppointmentDate(event.target.value)}
+              onChange={(event) =>
+                setAvailableAppointmentDate(
+                  event.target.value
+                )
+              }
               style={{
-                border: "1px solid #d6c7b8",
+                border:
+                  "1px solid #d6c7b8",
                 borderRadius: "12px",
                 padding: "9px 12px",
                 color: "#4b2e1f",
@@ -32065,10 +32465,16 @@ if (screen === "potentialClients") {
           </label>
 
           <button
-            onClick={() => setAllAvailableAppointmentsStatus("available")}
+            className="paradise-available-all-button"
+            onClick={() =>
+              setAllAvailableAppointmentsStatus(
+                "available"
+              )
+            }
             style={{
               ...buttonStyle,
-              background: "linear-gradient(135deg, #7ac75a, #a9e96a)",
+              background:
+                "linear-gradient(135deg, #7ac75a, #a9e96a)",
               color: "#3f332a",
               padding: "10px 16px",
               borderRadius: "16px",
@@ -32076,11 +32482,18 @@ if (screen === "potentialClients") {
           >
             الكل متاح
           </button>
+
           <button
-            onClick={() => setAllAvailableAppointmentsStatus("booked")}
+            className="paradise-available-all-button"
+            onClick={() =>
+              setAllAvailableAppointmentsStatus(
+                "booked"
+              )
+            }
             style={{
               ...buttonStyle,
-              background: "linear-gradient(135deg, #db4f4f, #ff6b63)",
+              background:
+                "linear-gradient(135deg, #db4f4f, #ff6b63)",
               color: "white",
               padding: "10px 16px",
               borderRadius: "16px",
@@ -32090,159 +32503,238 @@ if (screen === "potentialClients") {
           </button>
         </div>
 
-                <div style={{ height: "35px" }} />
+        <div
+          className="paradise-available-spacer"
+          style={{
+            height: "35px",
+          }}
+        />
 
         <div
+          className="paradise-available-layout"
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(320px, 540px) minmax(280px, 360px)",
+            gridTemplateColumns:
+              "minmax(320px, 540px) minmax(280px, 360px)",
             gap: "24px",
             alignItems: "start",
             justifyContent: "center",
           }}
         >
-          <div
-            ref={availablePosterRef}
-            style={{
-              width: "540px",
-              maxWidth: "100%",
-              aspectRatio: "540 / 744",
-              position: "relative",
-              overflow: "hidden",
-              background: "#d9c8b8",
-              boxShadow: "0 24px 55px rgba(75,46,31,0.22)",
-            }}
-          >
-            <img
-              src={availableAppointmentsTemplate}
-              alt="المواعيد المتاحة"
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-                display: "block",
-              }}
-            />
-
+          <div className="paradise-available-poster-stage">
             <div
+              className="paradise-available-poster"
+              ref={availablePosterRef}
               style={{
-                position: "absolute",
-                top: "8.6%",
-                left: "12%",
-                color: "#5b3b2c",
-                transform: "translateX(18px)",
-                fontSize: "17px",
-                fontWeight: "800",
-                direction: "rtl",
+                width: "540px",
+                maxWidth: "100%",
+                aspectRatio: "540 / 744",
+                position: "relative",
+                overflow: "hidden",
+                background: "#d9c8b8",
+                boxShadow:
+                  "0 24px 55px rgba(75,46,31,0.22)",
               }}
             >
-              {formatAvailableDateForPoster(availableAppointmentDate)}
-            </div>
+              <img
+                src={availableAppointmentsTemplate}
+                alt="المواعيد المتاحة"
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                  display: "block",
+                }}
+              />
 
-            <div
-              style={{
-                position: "absolute",
-                top: "29%",
-                left: "50%",
-                transform: "translateX(-50%)",
-                width: "42%",
-                display: "grid",
-                gap: "10px",
-              }}
-            >
-              {availableAppointmentTimes.map((time) => {
-                const isAvailable = availableAppointmentStatus[time] === "available";
+              <div
+                className="paradise-available-poster-date"
+                style={{
+                  position: "absolute",
+                  top: "8.6%",
+                  left: "12%",
+                  color: "#5b3b2c",
+                  transform:
+                    "translateX(18px)",
+                  fontSize: "17px",
+                  fontWeight: "800",
+                  direction: "rtl",
+                }}
+              >
+                {formatAvailableDateForPoster(
+                  availableAppointmentDate
+                )}
+              </div>
 
-                return (
-                  <button
-                    key={time}
-                    onClick={() => toggleAvailableAppointmentStatus(time)}
-                    style={{
-                      border: "none",
-                      background: "rgba(223,211,201,0.62)",
-                      minHeight: "36px",
-                      borderRadius: "3px",
-                      padding: "4px 14px",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <span
-                      style={{
-                        display: "block",
-                        width: "122px",
-                        maxWidth: "100%",
-                        borderRadius: "999px",
-                        background: isAvailable
-                          ? `linear-gradient(135deg, ${availableColor}, #b7f06b)`
-                          : `linear-gradient(135deg, ${bookedColor}, #ff7068)`,
-                        color: "#4b2e1f",
-                        fontSize: "23px",
-                        fontWeight: "900",
-                        lineHeight: "28px",
-                        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.28)",
-                      }}
-                    >
-                      {time}
-                    </span>
-                  </button>
-                );
-              })}
+              <div
+                className="paradise-available-poster-times"
+                style={{
+                  position: "absolute",
+                  top: "29%",
+                  left: "50%",
+                  transform:
+                    "translateX(-50%)",
+                  width: "42%",
+                  display: "grid",
+                  gap: "10px",
+                }}
+              >
+                {availableAppointmentTimes.map(
+                  (time) => {
+                    const isAvailable =
+                      availableAppointmentStatus[
+                        time
+                      ] === "available";
+
+                    return (
+                      <button
+                        className="paradise-available-poster-time-button"
+                        key={time}
+                        onClick={() =>
+                          toggleAvailableAppointmentStatus(
+                            time
+                          )
+                        }
+                        style={{
+                          border: "none",
+                          background:
+                            "rgba(223,211,201,0.62)",
+                          minHeight: "36px",
+                          borderRadius: "3px",
+                          padding: "4px 14px",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <span
+                          style={{
+                            display: "block",
+                            width: "122px",
+                            maxWidth: "100%",
+                            borderRadius:
+                              "999px",
+                            background:
+                              isAvailable
+                                ? `linear-gradient(135deg, ${availableColor}, #b7f06b)`
+                                : `linear-gradient(135deg, ${bookedColor}, #ff7068)`,
+                            color: "#4b2e1f",
+                            fontSize: "23px",
+                            fontWeight: "900",
+                            lineHeight: "28px",
+                            boxShadow:
+                              "inset 0 1px 0 rgba(255,255,255,0.28)",
+                          }}
+                        >
+                          {time}
+                        </span>
+                      </button>
+                    );
+                  }
+                )}
+              </div>
             </div>
           </div>
 
           <div
+            className="paradise-available-controls-card"
             style={{
-              background: "rgba(255,255,255,0.76)",
-              border: "1px solid rgba(216,197,179,0.95)",
+              background:
+                "rgba(255,255,255,0.76)",
+              border:
+                "1px solid rgba(216,197,179,0.95)",
               borderRadius: "28px",
               padding: "22px",
-              boxShadow: "0 20px 46px rgba(75,46,31,0.13)",
+              boxShadow:
+                "0 20px 46px rgba(75,46,31,0.13)",
               textAlign: "center",
             }}
           >
-            <h3 style={{ marginTop: 0, fontSize: "22px" }}>تعديل الأوقات</h3>
-            <div style={{ display: "grid", gap: "10px", marginBottom: "18px" }}>
-              {availableAppointmentTimes.map((time) => {
-                const isAvailable = availableAppointmentStatus[time] === "available";
+            <h3
+              className="paradise-available-controls-title"
+              style={{
+                marginTop: 0,
+                fontSize: "22px",
+              }}
+            >
+              تعديل الأوقات
+            </h3>
 
-                return (
-                  <button
-                    key={time}
-                    onClick={() => toggleAvailableAppointmentStatus(time)}
-                    style={{
-                      border: `1px solid ${isAvailable ? "#8fc96a" : "#db5d58"}`,
-                      borderRadius: "16px",
-                      padding: "12px 16px",
-                      background: isAvailable ? "#f2ffe8" : "#fff0ef",
-                      color: "#4b2e1f",
-                      cursor: "pointer",
-                      fontWeight: "900",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                    }}
-                  >
-                    <span>{time}</span>
-                    <span>{isAvailable ? "متاح" : "محجوز"}</span>
-                  </button>
-                );
-              })}
+            <div
+              className="paradise-available-controls-list"
+              style={{
+                display: "grid",
+                gap: "10px",
+                marginBottom: "18px",
+              }}
+            >
+              {availableAppointmentTimes.map(
+                (time) => {
+                  const isAvailable =
+                    availableAppointmentStatus[
+                      time
+                    ] === "available";
+
+                  return (
+                    <button
+                      className="paradise-available-control-time"
+                      key={time}
+                      onClick={() =>
+                        toggleAvailableAppointmentStatus(
+                          time
+                        )
+                      }
+                      style={{
+                        border: `1px solid ${
+                          isAvailable
+                            ? "#8fc96a"
+                            : "#db5d58"
+                        }`,
+                        borderRadius: "16px",
+                        padding: "12px 16px",
+                        background:
+                          isAvailable
+                            ? "#f2ffe8"
+                            : "#fff0ef",
+                        color: "#4b2e1f",
+                        cursor: "pointer",
+                        fontWeight: "900",
+                        display: "flex",
+                        justifyContent:
+                          "space-between",
+                        alignItems: "center",
+                      }}
+                    >
+                      <span>{time}</span>
+
+                      <span>
+                        {isAvailable
+                          ? "متاح"
+                          : "محجوز"}
+                      </span>
+                    </button>
+                  );
+                }
+              )}
             </div>
 
             <button
-              onClick={saveAvailableAppointmentsImage}
+              className="paradise-available-save-button"
+              onClick={
+                saveAvailableAppointmentsImage
+              }
               style={{
                 ...buttonStyle,
                 width: "100%",
-                background: "linear-gradient(135deg, #4b2e1f, #7a5a43)",
+                background:
+                  "linear-gradient(135deg, #4b2e1f, #7a5a43)",
                 color: "white",
                 borderRadius: "18px",
                 padding: "14px 18px",
                 fontSize: "17px",
-                boxShadow: "0 14px 30px rgba(75,46,31,0.20)",
+                boxShadow:
+                  "0 14px 30px rgba(75,46,31,0.20)",
               }}
             >
               حفظ الصورة
@@ -32327,6 +32819,7 @@ if (screen === "availableAppointments") {
         </style>
 
         <div
+          className="paradise-client-profile-shell"
           style={{
             width: "min(1040px, 100%)",
             maxWidth: "1040px",
@@ -32374,6 +32867,7 @@ if (screen === "availableAppointments") {
             }}
           />
           <div
+            className="paradise-client-profile-header"
             style={{
               position: "relative",
               zIndex: 1,
@@ -32495,6 +32989,7 @@ if (screen === "availableAppointments") {
           </div>
 
           <div
+            className="paradise-client-profile-loyalty"
             style={{
               position: "relative",
               zIndex: 1,
@@ -32825,6 +33320,7 @@ if (screen === "availableAppointments") {
           )}
 
           <div
+            className="paradise-client-profile-identity"
             style={{
               position: "relative",
               zIndex: 1,
@@ -33008,6 +33504,7 @@ if (screen === "availableAppointments") {
           </div>
 {editingId === selectedClient.id && (
   <div
+    className="paradise-client-profile-edit-form"
     style={{
       position: "relative",
       zIndex: 1,
@@ -33273,6 +33770,7 @@ if (screen === "availableAppointments") {
   </div>
 )}
           <div
+            className="paradise-client-profile-summary"
             style={{
               position: "relative",
               zIndex: 1,
@@ -33632,6 +34130,7 @@ if (screen === "availableAppointments") {
           </div>
 
           <div
+            className="paradise-client-profile-history"
             style={{
               position: "relative",
               zIndex: 1,
@@ -33782,6 +34281,7 @@ if (screen === "availableAppointments") {
               </div>
             ) : (
               <div
+                className="paradise-client-history-scroll"
                 style={{
                   width: "100%",
                   overflowX: "auto",
@@ -33794,11 +34294,13 @@ if (screen === "availableAppointments") {
                 }}
               >
                 <div
+                  className="paradise-client-history-content"
                   style={{
                     minWidth: "680px",
                   }}
                 >
                   <div
+                    className="paradise-client-history-header"
                     style={{
                       display: "grid",
                       gridTemplateColumns:
@@ -33836,6 +34338,7 @@ if (screen === "availableAppointments") {
                   </div>
 
                   <div
+                    className="paradise-client-history-body"
                     style={{
                       maxHeight: "300px",
                       overflowY: "auto",
@@ -33844,6 +34347,7 @@ if (screen === "availableAppointments") {
                     {selectedClientServiceSummary.serviceHistory.map(
                       (service, index) => (
                         <div
+                          className="paradise-client-history-row"
                           key={`${service.date}-${service.serviceTime}-${index}`}
                           style={{
                             display: "grid",
@@ -33989,6 +34493,7 @@ if (screen === "availableAppointments") {
           </div>
 
           <div
+            className="paradise-client-profile-settings"
             style={{
               position: "relative",
               zIndex: 1,
@@ -34272,6 +34777,7 @@ if (screen === "availableAppointments") {
           </div>
 
           <div
+            className="paradise-client-profile-lower-grid"
             onBlurCapture={() => {
               saveClientProfile(false);
             }}
@@ -34418,6 +34924,7 @@ if (screen === "availableAppointments") {
               {profileReferrals.map(
                 (referral) => (
                   <div
+                    className="paradise-client-profile-referral-row"
                     key={referral.id}
                     style={{
                       display: "grid",
@@ -34649,6 +35156,7 @@ if (screen === "availableAppointments") {
             }}
           >
             <button
+              className="paradise-client-profile-save-button"
               type="button"
               onClick={saveClientProfile}
               style={{
@@ -35196,6 +35704,7 @@ if (screen === "availableAppointments") {
   if (screen === "clients") {
     return withGreeting(
       <div
+        className="paradise-clients-page"
         style={{
           minHeight: "100vh",
           background:
@@ -35208,6 +35717,7 @@ if (screen === "availableAppointments") {
         }}
       >
         <div
+          className="paradise-clients-shell"
           style={{
             width: "96%",
             maxWidth: "1240px",
@@ -35242,6 +35752,7 @@ if (screen === "availableAppointments") {
           </button>
 
           <div
+            className="paradise-clients-count"
             style={{
               position: "absolute",
               top: "18px",
@@ -35276,6 +35787,7 @@ if (screen === "availableAppointments") {
           </h2>
 
           <div
+            className="paradise-clients-toolbar"
             style={{
               display: "flex",
               gap: "12px",
@@ -35286,6 +35798,7 @@ if (screen === "availableAppointments") {
             }}
           >
             <input
+              className="paradise-clients-search"
               placeholder="Search clients..."
               value={clientsSearch}
               onChange={(e) => setClientsSearch(e.target.value)}
@@ -35301,6 +35814,7 @@ if (screen === "availableAppointments") {
               }}
             />
 <select
+  className="paradise-clients-sort"
   value={clientsSortMode}
   onChange={(e) => {
     setClientsSortMode(e.target.value);
@@ -35326,6 +35840,7 @@ if (screen === "availableAppointments") {
           </div>
 
           <div
+            className="paradise-clients-list"
             style={{
               overflowX: "auto",
               borderRadius: "20px",
@@ -35333,6 +35848,7 @@ if (screen === "availableAppointments") {
             }}
           >
             <table
+              className="paradise-clients-table"
               style={{
                 width: "100%",
                 borderCollapse: "collapse",
@@ -35559,6 +36075,7 @@ if (screen === "availableAppointments") {
 
   return withGreeting(
     <div
+      className="paradise-loyalty-page"
       style={{
         minHeight: "100vh",
         background:
@@ -35571,6 +36088,7 @@ if (screen === "availableAppointments") {
       }}
     >
       <div
+        className="paradise-loyalty-shell"
         style={{
           width: "96%",
           maxWidth: "1120px",
@@ -35642,6 +36160,7 @@ if (screen === "availableAppointments") {
         </div>
 
         <div
+          className="paradise-loyalty-toolbar"
           style={{
             display: "flex",
             gap: "12px",
@@ -35652,6 +36171,7 @@ if (screen === "availableAppointments") {
           }}
         >
           <input
+  className="paradise-loyalty-visits-filter"
   type="number"
   placeholder="عدد الخدمات"
   value={loyaltyVisitsFilter}
@@ -35670,6 +36190,7 @@ if (screen === "availableAppointments") {
 />
           {/* SEARCH */}
           <input
+            className="paradise-loyalty-search"
             placeholder="Search client..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -35686,6 +36207,7 @@ if (screen === "availableAppointments") {
 
           {/* ADD BUTTON */}
           <button
+            className="paradise-loyalty-add-button"
             onClick={() => setShowForm(!showForm)}
             style={{
               ...buttonStyle,
@@ -35704,6 +36226,7 @@ if (screen === "availableAppointments") {
         {/* FORM */}
         {showForm && (
           <div
+            className="paradise-loyalty-add-form"
             style={{
               backgroundColor: "#faf7f2",
               padding: "18px",
@@ -35750,6 +36273,7 @@ if (screen === "availableAppointments") {
 
         {/* LOYALTY CLIENTS LIST - LIGHT VIEW */}
         <div
+          className="paradise-loyalty-list"
           style={{
             width: "100%",
             maxWidth: "1180px",
@@ -35763,6 +36287,7 @@ if (screen === "availableAppointments") {
           }}
         >
           <div
+            className="paradise-loyalty-list-header"
             style={{
               display: "grid",
               gridTemplateColumns: "1.2fr 1fr 1fr 120px 110px",
@@ -35786,8 +36311,12 @@ if (screen === "availableAppointments") {
               String(selectedLoyaltyClientId) === String(c.id);
 
             return (
-              <div key={c.id}>
+              <div
+                className="paradise-loyalty-item"
+                key={c.id}
+              >
                 <div
+                  className="paradise-loyalty-row"
                   style={{
                     display: "grid",
                     gridTemplateColumns: "1.2fr 1fr 1fr 120px 110px",
@@ -35826,6 +36355,7 @@ if (screen === "availableAppointments") {
 
                 {isSelectedLoyaltyClient && (
                   <div
+                    className="paradise-loyalty-expanded"
                     style={{
                       padding: "20px 14px 26px",
                       borderBottom: "1px solid #eadfd5",
