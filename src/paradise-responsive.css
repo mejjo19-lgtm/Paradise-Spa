@@ -10504,3 +10504,502 @@ button {
       ) !important;
   }
 }
+/* =========================================================
+   GIFT CARDS PAGE
+   ========================================================= */
+
+@media (max-width: 1050px) {
+  html body .paradise-gift-cards-page,
+  html body .paradise-gift-cards-shell {
+    width: 100% !important;
+    max-width: 100% !important;
+
+    min-width: 0 !important;
+
+    box-sizing: border-box !important;
+  }
+
+  html body .paradise-gift-cards-page {
+    padding: 14px !important;
+
+    overflow-x: hidden !important;
+  }
+
+  html body .paradise-gift-card-basic-fields {
+    width: min(820px, 100%) !important;
+    max-width: 100% !important;
+  }
+}
+
+/* =========================================================
+   MOBILE GIFT CARDS
+   ========================================================= */
+
+@media (max-width: 700px) {
+  html body .paradise-gift-cards-page {
+    width: 100% !important;
+    max-width: 100% !important;
+
+    min-height: 100dvh !important;
+
+    margin: 0 !important;
+
+    padding:
+      8px 8px
+      calc(
+        110px +
+        env(safe-area-inset-bottom)
+      ) !important;
+
+    background:
+      linear-gradient(
+        180deg,
+        #f2e9df 0%,
+        #dfcebd 100%
+      ) !important;
+
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
+  }
+
+  html body .paradise-gift-cards-shell {
+    width: 100% !important;
+    max-width: 100% !important;
+
+    min-width: 0 !important;
+
+    margin: 0 !important;
+    padding: 0 !important;
+
+    box-sizing: border-box !important;
+  }
+
+  /* رأس الصفحة */
+  html body .paradise-gift-cards-header {
+    width: 100% !important;
+
+    margin: 0 0 12px !important;
+    padding: 2px 0 0 !important;
+  }
+
+  html body .paradise-gift-cards-header img {
+    width: 74px !important;
+    max-width: 74px !important;
+
+    height: auto !important;
+
+    margin: 0 auto 6px !important;
+  }
+
+  html body .paradise-gift-cards-header h2 {
+    margin: 0 !important;
+
+    font-size: 23px !important;
+    line-height: 1.35 !important;
+  }
+
+  html body .paradise-gift-cards-header p {
+    margin-top: 5px !important;
+
+    font-size: 11px !important;
+    line-height: 1.4 !important;
+  }
+
+  /* المناسبات — سحب أفقي */
+  html body .paradise-gift-card-category-list {
+    width: 100% !important;
+    max-width: 100% !important;
+
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    justify-content: flex-start !important;
+
+    gap: 7px !important;
+
+    margin: 0 0 9px !important;
+    padding: 3px 1px 7px !important;
+
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+
+    scroll-snap-type: x proximity;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+
+    scrollbar-width: none !important;
+
+    box-sizing: border-box !important;
+  }
+
+  html body
+    .paradise-gift-card-category-list::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  html body
+    .paradise-gift-card-category-list
+    button {
+    flex: 0 0 auto !important;
+
+    width: auto !important;
+    min-width: 91px !important;
+    max-width: none !important;
+
+    min-height: 42px !important;
+
+    margin: 0 !important;
+    padding: 7px 11px !important;
+
+    font-size: 11px !important;
+    white-space: nowrap !important;
+
+    scroll-snap-align: start;
+  }
+
+  /* القوالب — سحب أفقي */
+  html body .paradise-gift-card-template-list {
+    width: 100% !important;
+    max-width: 100% !important;
+
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    justify-content: flex-start !important;
+
+    gap: 8px !important;
+
+    margin: 0 0 11px !important;
+    padding: 2px 1px 8px !important;
+
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+
+    scroll-snap-type: x proximity;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+
+    scrollbar-width: none !important;
+
+    box-sizing: border-box !important;
+  }
+
+  html body
+    .paradise-gift-card-template-list::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  html body
+    .paradise-gift-card-template-list
+    > button {
+    flex: 0 0 116px !important;
+
+    width: 116px !important;
+    min-width: 116px !important;
+    max-width: 116px !important;
+
+    margin: 0 !important;
+    padding: 6px !important;
+
+    border-radius: 14px !important;
+
+    scroll-snap-align: center;
+  }
+
+  html body
+    .paradise-gift-card-template-list
+    img {
+    height: 132px !important;
+
+    border-radius: 9px !important;
+  }
+
+  /* المعاينة */
+  html body .paradise-gift-card-preview-stage {
+    width: 100% !important;
+    max-width: 100% !important;
+
+    margin: 0 0 11px !important;
+    padding: 0 !important;
+
+    display: flex !important;
+    justify-content: center !important;
+
+    box-sizing: border-box !important;
+  }
+
+  html body .paradise-gift-card-canvas {
+    width: min(100%, 430px) !important;
+    max-width: 430px !important;
+
+    margin: 0 auto !important;
+
+    border-radius: 18px !important;
+
+    box-shadow:
+      0 14px 32px
+      rgba(75, 46, 31, 0.18) !important;
+  }
+
+  /* حقول البيانات */
+  html body .paradise-gift-card-basic-fields {
+    width: 100% !important;
+    max-width: 100% !important;
+
+    margin: 0 !important;
+    padding: 12px 10px !important;
+
+    border-radius: 20px !important;
+
+    box-sizing: border-box !important;
+    overflow: visible !important;
+  }
+
+  html body
+    .paradise-gift-card-basic-fields
+    > h3 {
+    margin: 0 0 11px !important;
+
+    font-size: 19px !important;
+  }
+
+  html body .paradise-gift-card-fields-grid {
+    width: 100% !important;
+
+    display: grid !important;
+    grid-template-columns:
+      minmax(0, 1fr) !important;
+
+    gap: 8px !important;
+  }
+
+  html body
+    .paradise-gift-card-basic-fields
+    label {
+    width: 100% !important;
+    max-width: 100% !important;
+
+    min-width: 0 !important;
+
+    box-sizing: border-box !important;
+  }
+
+  html body
+    .paradise-gift-card-basic-fields
+    input,
+  html body
+    .paradise-gift-card-basic-fields
+    select,
+  html body
+    .paradise-gift-card-basic-fields
+    textarea {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+
+    font-size: 16px !important;
+
+    box-sizing: border-box !important;
+  }
+
+  html body
+    .paradise-gift-card-message-field
+    textarea {
+    min-height: 120px !important;
+  }
+
+  /* محرر النص */
+  html body .paradise-gift-card-editor {
+    width: 100% !important;
+    max-width: 100% !important;
+
+    margin-top: 12px !important;
+    padding: 10px !important;
+
+    border-radius: 17px !important;
+
+    box-sizing: border-box !important;
+  }
+
+  html body
+    .paradise-gift-card-text-tabs {
+    width: 100% !important;
+
+    display: grid !important;
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr)) !important;
+
+    gap: 7px !important;
+  }
+
+  html body
+    .paradise-gift-card-text-tabs
+    button {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+
+    min-height: 43px !important;
+
+    margin: 0 !important;
+    padding: 7px 5px !important;
+
+    font-size: 11px !important;
+    line-height: 1.3 !important;
+
+    white-space: normal !important;
+  }
+
+  html body .paradise-gift-card-editor-grid {
+    width: 100% !important;
+
+    display: grid !important;
+    grid-template-columns:
+      minmax(0, 1fr) !important;
+
+    gap: 9px !important;
+  }
+
+  html body .paradise-gift-card-font-panel,
+  html body .paradise-gift-card-position-panel {
+    width: 100% !important;
+    max-width: 100% !important;
+
+    padding: 10px !important;
+
+    border-radius: 14px !important;
+
+    box-sizing: border-box !important;
+  }
+
+  html body
+    .paradise-gift-card-size-controls {
+    grid-template-columns:
+      minmax(0, 1fr)
+      44px
+      44px !important;
+  }
+
+  html body
+    .paradise-gift-card-move-grid {
+    width: 178px !important;
+    max-width: 100% !important;
+  }
+
+  html body
+    .paradise-gift-card-move-grid
+    button {
+    width: 100% !important;
+    min-width: 0 !important;
+
+    min-height: 44px !important;
+
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* أزرار الإجراءات */
+  html body .paradise-gift-card-actions {
+    width: 100% !important;
+
+    display: grid !important;
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr)) !important;
+
+    gap: 8px !important;
+
+    margin-top: 11px !important;
+
+    box-sizing: border-box !important;
+  }
+
+  html body
+    .paradise-gift-card-actions
+    button {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+
+    min-height: 46px !important;
+
+    margin: 0 !important;
+    padding: 8px 7px !important;
+
+    border-radius: 13px !important;
+
+    font-size: 11px !important;
+    line-height: 1.35 !important;
+
+    white-space: normal !important;
+  }
+
+  /*
+    زر الحفظ يبقى ظاهرًا فوق القائمة
+    السفلية أثناء تحرير البطاقة.
+  */
+  html body .paradise-gift-card-save-button {
+    grid-column: 1 / -1 !important;
+
+    position: sticky !important;
+
+    bottom:
+      calc(
+        82px +
+        env(safe-area-inset-bottom)
+      ) !important;
+
+    z-index: 30 !important;
+
+    min-height: 52px !important;
+
+    font-size: 14px !important;
+
+    box-shadow:
+      0 15px 34px
+      rgba(75, 46, 31, 0.26) !important;
+  }
+}
+
+/* الجوالات الصغيرة جدًا */
+@media (max-width: 380px) {
+  html body .paradise-gift-cards-page {
+    padding-right: 6px !important;
+    padding-left: 6px !important;
+  }
+
+  html body
+    .paradise-gift-card-template-list
+    > button {
+    flex-basis: 106px !important;
+
+    width: 106px !important;
+    min-width: 106px !important;
+    max-width: 106px !important;
+  }
+
+  html body
+    .paradise-gift-card-template-list
+    img {
+    height: 122px !important;
+  }
+
+  html body .paradise-gift-card-basic-fields {
+    padding-right: 7px !important;
+    padding-left: 7px !important;
+
+    border-radius: 17px !important;
+  }
+
+  html body
+    .paradise-gift-card-text-tabs {
+    grid-template-columns:
+      minmax(0, 1fr) !important;
+  }
+
+  html body .paradise-gift-card-actions {
+    grid-template-columns:
+      minmax(0, 1fr) !important;
+  }
+
+  html body .paradise-gift-card-save-button {
+    grid-column: 1 !important;
+  }
+}

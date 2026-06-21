@@ -20,14 +20,62 @@ import card7 from "./cards/Card7.png";
 import card8 from "./cards/Card8.png";
 import card9 from "./cards/Card9.png";
 import card10 from "./cards/Card10.png";
+
 import welcomeWoman from "./welcome-boards/woman.jpeg";
 import welcomeMan from "./welcome-boards/man.jpeg";
 import welcomeBirthday from "./welcome-boards/birthday.jpeg";
 import welcomePregnant from "./welcome-boards/pregnant.jpeg";
 import welcomeBride from "./welcome-boards/bride.jpeg";
 import welcomeGraduation from "./welcome-boards/graduation.jpeg";
+
 import availableAppointmentsTemplate from "./available-appointments/available-template.png";
-import { supabase, supabaseKey, supabaseUrl } from "./supabase";
+
+/* كروت الإهداء — الأم */
+import giftMother1Arabic from "./gift-cards/mother-1-ar.jpeg";
+import giftMother1English from "./gift-cards/mother-1-en.jpeg";
+import giftMother2Arabic from "./gift-cards/mother-2-ar.jpeg";
+import giftMother2English from "./gift-cards/mother-2-en.jpeg";
+
+/* كروت الإهداء — التخرج */
+import giftGraduationArabic from "./gift-cards/graduation-ar.jpeg";
+import giftGraduationEnglish from "./gift-cards/graduation-en.jpeg";
+import giftGraduationCustom from "./gift-cards/graduation-custom.jpeg";
+
+/* كروت الإهداء — الحج */
+import giftHajjArabic from "./gift-cards/hajj-ar.jpeg";
+import giftHajjEnglish from "./gift-cards/hajj-en.jpeg";
+import giftHajjCustom from "./gift-cards/hajj-custom.jpeg";
+
+/* كروت الإهداء — العروس */
+import giftBrideArabic from "./gift-cards/bride-ar.jpeg";
+import giftBrideEnglish from "./gift-cards/bride-en.jpeg";
+import giftBrideCustom from "./gift-cards/bride-custom.jpeg";
+
+/* كروت الإهداء — العيد */
+import giftEidArabic from "./gift-cards/eid-ar.jpeg";
+import giftEidEnglish from "./gift-cards/eid-en.jpeg";
+
+/* كروت الإهداء — عيد الميلاد */
+import giftBirthdayArabic from "./gift-cards/birthday-ar.jpeg";
+import giftBirthdayEnglish from "./gift-cards/birthday-en.jpeg";
+import giftBirthdayCustom from "./gift-cards/birthday-custom.jpeg";
+
+/* كروت الإهداء — الإهداء العام */
+import giftGeneralArabic from "./gift-cards/general-ar.jpeg";
+import giftGeneralEnglish from "./gift-cards/general-en.jpeg";
+import giftGeneralCustom from "./gift-cards/general-custom.jpeg";
+
+/* كروت الإهداء — المولود الجديد */
+import giftNewbornArabic from "./gift-cards/newborn-ar.jpeg";
+import giftNewbornEnglish from "./gift-cards/newborn-en.jpeg";
+import giftNewbornCustom from "./gift-cards/newborn-custom.jpeg";
+
+import {
+  supabase,
+  supabaseKey,
+  supabaseUrl,
+} from "./supabase";
+
 import "./paradise-responsive.css";
 
 function App() {
@@ -47,6 +95,7 @@ function App() {
     "inactiveClients",
     "potentialClients",
     "availableAppointments",
+    "giftCards",
     "printFrame",
     "settings",
   ]);
@@ -959,6 +1008,114 @@ function fetchSharedClientLists() {
       [time]: "available",
     }), {})
   );
+
+  const giftCardCategories = [
+    ["mother", "الأم"],
+    ["graduation", "التخرج"],
+    ["hajj", "الحج"],
+    ["bride", "العروس"],
+    ["eid", "العيد"],
+    ["birthday", "عيد الميلاد"],
+    ["general", "إهداء عام"],
+    ["newborn", "مولود جديد"],
+  ].map(([id, title]) => ({ id, title }));
+
+  const giftCardTemplates = [
+    ["mother-1-ar", "mother", "إهداء الأم 1 — عربي", "عربي 1", "ar", giftMother1Arabic, false],
+    ["mother-1-en", "mother", "Mother Gift 1 — English", "English 1", "en", giftMother1English, false],
+    ["mother-2-ar", "mother", "إهداء الأم 2 — عربي", "عربي 2", "ar", giftMother2Arabic, false],
+    ["mother-2-en", "mother", "Mother Gift 2 — English", "English 2", "en", giftMother2English, false],
+    ["graduation-ar", "graduation", "تخرج — عربي", "عربي", "ar", giftGraduationArabic, false],
+    ["graduation-en", "graduation", "Graduation — English", "English", "en", giftGraduationEnglish, false],
+    ["graduation-custom", "graduation", "تخرج — نص مخصص", "نص مخصص", "ar", giftGraduationCustom, true, { top: 84, left: 34, width: 58 }],
+    ["hajj-ar", "hajj", "حج — عربي", "عربي", "ar", giftHajjArabic, false],
+    ["hajj-en", "hajj", "Hajj — English", "English", "en", giftHajjEnglish, false],
+    ["hajj-custom", "hajj", "حج — نص مخصص", "نص مخصص", "ar", giftHajjCustom, true, { top: 84, left: 33, width: 56 }],
+    ["bride-ar", "bride", "عروس — عربي", "عربي", "ar", giftBrideArabic, false],
+    ["bride-en", "bride", "Bride — English", "English", "en", giftBrideEnglish, false],
+    ["bride-custom", "bride", "عروس — نص مخصص", "نص مخصص", "ar", giftBrideCustom, true, { top: 84, left: 33, width: 56 }],
+    ["eid-ar", "eid", "عيدكم مبارك — عربي", "عربي", "ar", giftEidArabic, false],
+    ["eid-en", "eid", "Eid Mubarak — English", "English", "en", giftEidEnglish, false],
+    ["birthday-ar", "birthday", "عيد ميلاد — عربي", "عربي", "ar", giftBirthdayArabic, false],
+    ["birthday-en", "birthday", "Birthday — English", "English", "en", giftBirthdayEnglish, false],
+    ["birthday-custom", "birthday", "عيد ميلاد — نص مخصص", "نص مخصص", "ar", giftBirthdayCustom, true, { top: 84, left: 34, width: 58 }],
+    ["general-ar", "general", "إهداء عام — عربي", "عربي", "ar", giftGeneralArabic, false],
+    ["general-en", "general", "General Gift — English", "English", "en", giftGeneralEnglish, false],
+    ["general-custom", "general", "إهداء عام — نص مخصص", "نص مخصص", "ar", giftGeneralCustom, true, { top: 82.5, left: 50, width: 78 }],
+    ["newborn-ar", "newborn", "مولود جديد — عربي", "عربي", "ar", giftNewbornArabic, false],
+    ["newborn-en", "newborn", "New Baby — English", "English", "en", giftNewbornEnglish, false],
+    ["newborn-custom", "newborn", "مولود جديد — نص مخصص", "نص مخصص", "ar", giftNewbornCustom, true, { top: 84, left: 34, width: 58 }],
+  ].map(
+    ([id, category, title, variant, language, image, customMessageEnabled, messagePosition]) => ({
+      id,
+      category,
+      title,
+      variant,
+      language,
+      image,
+      customMessageEnabled,
+      messagePosition: messagePosition || null,
+    })
+  );
+
+  const createDefaultGiftCardTextSettings = (language = "ar", messagePosition = {}) => {
+    const isEnglish = language === "en";
+    const defaultFontId = isEnglish
+      ? "cormorant-upright-bold"
+      : "riwaya-29lt-only";
+
+    return {
+      recipient: {
+        top: 38.65,
+        left: 50.5,
+        width: 61,
+        fontSize: isEnglish ? 27 : 30,
+        fontWeight: isEnglish ? 700 : 500,
+        fontId: defaultFontId,
+        lineHeight: 1.05,
+      },
+      giver: {
+        top: 53.45,
+        left: 50.5,
+        width: 61,
+        fontSize: isEnglish ? 27 : 30,
+        fontWeight: isEnglish ? 700 : 500,
+        fontId: defaultFontId,
+        lineHeight: 1.05,
+      },
+      service: {
+        top: 68.25,
+        left: 50.5,
+        width: 61,
+        fontSize: isEnglish ? 23 : 26,
+        fontWeight: isEnglish ? 700 : 500,
+        fontId: defaultFontId,
+        lineHeight: 1.08,
+      },
+      message: {
+        top: Number(messagePosition.top || 84),
+        left: Number(messagePosition.left || 50),
+        width: Number(messagePosition.width || 76),
+        fontSize: isEnglish ? 19 : 22,
+        fontWeight: isEnglish ? 700 : 500,
+        fontId: defaultFontId,
+        lineHeight: 1.35,
+      },
+    };
+  };
+
+  const giftCardCanvasRef = useRef(null);
+  const [selectedGiftCardCategory, setSelectedGiftCardCategory] = useState("birthday");
+  const [selectedGiftCardTemplateId, setSelectedGiftCardTemplateId] = useState("birthday-ar");
+  const [giftCardRecipient, setGiftCardRecipient] = useState("");
+  const [giftCardGiver, setGiftCardGiver] = useState("");
+  const [giftCardService, setGiftCardService] = useState("");
+  const [giftCardMessage, setGiftCardMessage] = useState("");
+  const [selectedGiftCardTextKey, setSelectedGiftCardTextKey] = useState("recipient");
+  const [giftCardTextSettings, setGiftCardTextSettings] = useState(() =>
+    createDefaultGiftCardTextSettings("ar")
+  );
+  const [giftCardIsSaving, setGiftCardIsSaving] = useState(false);
 
   const [scheduleData, setScheduleData] = useState({});
 
@@ -12566,22 +12723,67 @@ const leavingTime = addMinutesToDisplayTime(
     : [];
 
   const dashboardServices = [
-    ["appointments", "جدول المواعيد"],
-    ["clients", "عملائنا"],
-    ["loyalty", "كروت الولاء"],
-    ["giftClients", "عملاء الإهداء"],
-    ["referrals", "العملاء المرشحين"],
-    ["potentialClients", "العملاء المحتملين"],
-    ["inactiveClients", "العملاء المنقطعين"],
-    ["availableAppointments", "المواعيد المتاحة"],
-    ["printFrame", "طباعة اللوحة الترحيبية"],
-    ["invoices", "الفواتير"],
-    ["purchases", "المشتريات"],
-    ["finance", "التقارير"],
-    ["incomeExpenses", "الدخل والمصاريف"],
-    ["settings", "الإعدادات"],
+    [
+      "appointments",
+      "جدول المواعيد",
+    ],
+    [
+      "clients",
+      "عملائنا",
+    ],
+    [
+      "loyalty",
+      "كروت الولاء",
+    ],
+    [
+      "giftClients",
+      "عملاء الإهداء",
+    ],
+    [
+      "referrals",
+      "العملاء المرشحين",
+    ],
+    [
+      "potentialClients",
+      "العملاء المحتملين",
+    ],
+    [
+      "inactiveClients",
+      "العملاء المنقطعين",
+    ],
+    [
+      "availableAppointments",
+      "المواعيد المتاحة",
+    ],
+    [
+      "giftCards",
+      "كروت الإهداء",
+    ],
+    [
+      "printFrame",
+      "طباعة اللوحة الترحيبية",
+    ],
+    [
+      "invoices",
+      "الفواتير",
+    ],
+    [
+      "purchases",
+      "المشتريات",
+    ],
+    [
+      "finance",
+      "التقارير",
+    ],
+    [
+      "incomeExpenses",
+      "الدخل والمصاريف",
+    ],
+    [
+      "settings",
+      "الإعدادات",
+    ],
   ];
-
 
   const settingsTables = [
     "clients",
@@ -12596,91 +12798,263 @@ const leavingTime = addMinutesToDisplayTime(
   ];
 
   const settingsMenuOptions = [
-    ["appointments", "جدول المواعيد"],
-    ["clients", "عملائنا"],
-    ["loyalty", "كروت الولاء"],
-    ["giftClients", "عملاء الإهداء"],
-    ["referrals", "العملاء المرشحون"],
-    ["potentialClients", "العملاء المحتملين"],
-    ["inactiveClients", "العملاء المنقطعين"],
-    ["availableAppointments", "المواعيد المتاحة"],
-    ["printFrame", "طباعة اللوحة الترحيبية"],
-    ["invoices", "الفواتير"],
-    ["purchases", "المشتريات"],
-    ["finance", "التقارير"],
-    ["incomeExpenses", "الدخل والمصاريف"],
-    ["settings", "الإعدادات"],
+    [
+      "appointments",
+      "جدول المواعيد",
+    ],
+    [
+      "clients",
+      "عملائنا",
+    ],
+    [
+      "loyalty",
+      "كروت الولاء",
+    ],
+    [
+      "giftClients",
+      "عملاء الإهداء",
+    ],
+    [
+      "referrals",
+      "العملاء المرشحون",
+    ],
+    [
+      "potentialClients",
+      "العملاء المحتملين",
+    ],
+    [
+      "inactiveClients",
+      "العملاء المنقطعين",
+    ],
+    [
+      "availableAppointments",
+      "المواعيد المتاحة",
+    ],
+    [
+      "giftCards",
+      "كروت الإهداء",
+    ],
+    [
+      "printFrame",
+      "طباعة اللوحة الترحيبية",
+    ],
+    [
+      "invoices",
+      "الفواتير",
+    ],
+    [
+      "purchases",
+      "المشتريات",
+    ],
+    [
+      "finance",
+      "التقارير",
+    ],
+    [
+      "incomeExpenses",
+      "الدخل والمصاريف",
+    ],
+    [
+      "settings",
+      "الإعدادات",
+    ],
   ];
 
   const settingsActionOptions = [
-    ["add", "إضافة"],
-    ["edit", "تعديل"],
-    ["delete", "حذف"],
-    ["backup", "نسخ احتياطي"],
-    ["restore", "استعادة"],
-    ["security", "الأمان"],
-    ["server", "السيرفر"],
+    [
+      "add",
+      "إضافة",
+    ],
+    [
+      "edit",
+      "تعديل",
+    ],
+    [
+      "delete",
+      "حذف",
+    ],
+    [
+      "backup",
+      "نسخ احتياطي",
+    ],
+    [
+      "restore",
+      "استعادة",
+    ],
+    [
+      "security",
+      "الأمان",
+    ],
+    [
+      "server",
+      "السيرفر",
+    ],
   ];
 
-  const normalizePermissionArray = (value) => {
-    if (value === "all") return "all";
-    if (Array.isArray(value)) return value;
-    if (typeof value === "string" && value.trim()) {
+  const normalizePermissionArray = (
+    value
+  ) => {
+    if (value === "all") {
+      return "all";
+    }
+
+    if (Array.isArray(value)) {
+      return value;
+    }
+
+    if (
+      typeof value ===
+        "string" &&
+      value.trim()
+    ) {
       try {
-        const parsed = JSON.parse(value);
-        return Array.isArray(parsed) ? parsed : [];
+        const parsed =
+          JSON.parse(value);
+
+        return Array.isArray(
+          parsed
+        )
+          ? parsed
+          : [];
       } catch {
-        return value.split(",").map((item) => item.trim()).filter(Boolean);
+        return value
+          .split(",")
+          .map((item) =>
+            item.trim()
+          )
+          .filter(Boolean);
       }
     }
+
     return [];
   };
 
-  const normalizeEmployeeAccount = (account) => {
-    const usernameValue = account.username || account.user_name || account.email || "";
-    const displayValue = account.display_name || account.displayName || account.name || getDisplayNameFromEmail(usernameValue) || usernameValue;
-    const roleValue = account.role || (String(usernameValue).toLowerCase().includes("majed") ? "owner" : "employee");
+  const normalizeEmployeeAccount = (
+    account
+  ) => {
+    const usernameValue =
+      account.username ||
+      account.user_name ||
+      account.email ||
+      "";
+
+    const displayValue =
+      account.display_name ||
+      account.displayName ||
+      account.name ||
+      getDisplayNameFromEmail(
+        usernameValue
+      ) ||
+      usernameValue;
+
+    const roleValue =
+      account.role ||
+      (String(usernameValue)
+        .toLowerCase()
+        .includes("majed")
+        ? "owner"
+        : "employee");
+
     return {
-      id: account.id || usernameValue || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      username: usernameValue,
-      displayName: displayValue,
-      role: roleValue,
-      menuPermissions: roleValue === "owner" || roleValue === "manager" ? "all" : normalizePermissionArray(account.menu_permissions || account.menuPermissions),
-      actionPermissions: roleValue === "owner" ? "all" : normalizePermissionArray(account.action_permissions || account.actionPermissions),
-      active: account.active !== false,
-      createdAt: account.created_at || account.createdAt || "",
+      id:
+        account.id ||
+        usernameValue ||
+        `${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2)}`,
+
+      username:
+        usernameValue,
+
+      displayName:
+        displayValue,
+
+      role:
+        roleValue,
+
+      menuPermissions:
+        roleValue === "owner" ||
+        roleValue === "manager"
+          ? "all"
+          : normalizePermissionArray(
+              account.menu_permissions ||
+                account.menuPermissions
+            ),
+
+      actionPermissions:
+        roleValue === "owner"
+          ? "all"
+          : normalizePermissionArray(
+              account.action_permissions ||
+                account.actionPermissions
+            ),
+
+      active:
+        account.active !== false,
+
+      createdAt:
+        account.created_at ||
+        account.createdAt ||
+        "",
     };
   };
 
-  const getDefaultEmployeeAccounts = () => [
-    normalizeEmployeeAccount({
-      id: "default-majed",
-      username: "majed",
-      display_name: "ماجد",
-      role: "owner",
-      menu_permissions: "all",
-      action_permissions: "all",
-      active: true,
-    }),
-    normalizeEmployeeAccount({
-      id: "default-fatima",
-      username: "fatima",
-      display_name: "فاطمة",
-      role: "employee",
-      menu_permissions: ["appointments", "clients", "loyalty", "giftClients", "referrals", "potentialClients", "availableAppointments", "printFrame"],
-      action_permissions: ["add"],
-      active: true,
-    }),
-    normalizeEmployeeAccount({
-      id: "default-tahani",
-      username: "tahani",
-      display_name: "تهاني",
-      role: "employee",
-      menu_permissions: ["appointments", "clients", "loyalty", "giftClients", "referrals", "potentialClients", "availableAppointments", "printFrame"],
-      action_permissions: ["add"],
-      active: true,
-    }),
-  ];
+  const getDefaultEmployeeAccounts =
+    () => [
+      normalizeEmployeeAccount({
+        id: "default-majed",
+        username: "majed",
+        display_name: "ماجد",
+        role: "owner",
+        menu_permissions: "all",
+        action_permissions: "all",
+        active: true,
+      }),
+
+      normalizeEmployeeAccount({
+        id: "default-fatima",
+        username: "fatima",
+        display_name: "فاطمة",
+        role: "employee",
+        menu_permissions: [
+          "appointments",
+          "clients",
+          "loyalty",
+          "giftClients",
+          "referrals",
+          "potentialClients",
+          "availableAppointments",
+          "giftCards",
+          "printFrame",
+        ],
+        action_permissions: [
+          "add",
+        ],
+        active: true,
+      }),
+
+      normalizeEmployeeAccount({
+        id: "default-tahani",
+        username: "tahani",
+        display_name: "تهاني",
+        role: "employee",
+        menu_permissions: [
+          "appointments",
+          "clients",
+          "loyalty",
+          "giftClients",
+          "referrals",
+          "potentialClients",
+          "availableAppointments",
+          "giftCards",
+          "printFrame",
+        ],
+        action_permissions: [
+          "add",
+        ],
+        active: true,
+      }),
+    ];
 
   const currentAccount = employeeAccounts.find((account) => {
     const accountText = `${account.username || ""} ${account.displayName || ""}`.toLowerCase();
@@ -33463,11 +33837,2203 @@ if (screen === "potentialClients") {
     );
   };
 
-if (screen === "availableAppointments") {
+  const selectedGiftCardTemplate =
+    giftCardTemplates.find(
+      (template) => template.id === selectedGiftCardTemplateId
+    ) || giftCardTemplates[0];
+
+  const selectedGiftCardCategoryTemplates = giftCardTemplates.filter(
+    (template) => template.category === selectedGiftCardCategory
+  );
+
+  const giftCardTextLabels = {
+    recipient: "اسم المُهدى إليه",
+    giver: "اسم المُهدي",
+    service: "الخدمة أو الهدية",
+    message: "النص الخاص",
+  };
+
+  const giftCardTextPlaceholders = {
+    recipient: "اسم المُهدى إليه",
+    giver: "اسم المُهدي",
+    service: "الخدمة أو الهدية",
+    message: "اكتب النص الخاص هنا",
+  };
+
+  const selectGiftCardTemplate = (
+    template
+  ) => {
+    if (!template) {
+      return;
+    }
+
+    setSelectedGiftCardCategory(
+      template.category
+    );
+
+    setSelectedGiftCardTemplateId(
+      template.id
+    );
+
+    setGiftCardTextSettings(
+      createDefaultGiftCardTextSettings(
+        template.language,
+        template.messagePosition || {}
+      )
+    );
+
+    if (
+      selectedGiftCardTextKey ===
+        "message" &&
+      !template.customMessageEnabled
+    ) {
+      setSelectedGiftCardTextKey(
+        "recipient"
+      );
+    }
+  };
+
+  const selectGiftCardCategory = (
+    categoryId
+  ) => {
+    const firstTemplate =
+      giftCardTemplates.find(
+        (template) =>
+          template.category ===
+          categoryId
+      );
+
+    if (firstTemplate) {
+      selectGiftCardTemplate(
+        firstTemplate
+      );
+    }
+  };
+
+  const giftCardTextValues = {
+    recipient:
+      giftCardRecipient,
+
+    giver:
+      giftCardGiver,
+
+    service:
+      giftCardService,
+
+    message:
+      giftCardMessage,
+  };
+
+  const clampGiftCardValue = (
+    value,
+    minimum,
+    maximum
+  ) =>
+    Math.min(
+      maximum,
+      Math.max(
+        minimum,
+        Number(value) || 0
+      )
+    );
+
+  const updateGiftCardTextSetting = (
+    textKey,
+    nextValues
+  ) => {
+    setGiftCardTextSettings(
+      (previousSettings) => ({
+        ...previousSettings,
+
+        [textKey]: {
+          ...previousSettings[
+            textKey
+          ],
+
+          ...nextValues,
+        },
+      })
+    );
+  };
+
+  const moveGiftCardText = (
+    axis,
+    direction
+  ) => {
+    const currentSettings =
+      giftCardTextSettings[
+        selectedGiftCardTextKey
+      ];
+
+    if (!currentSettings) {
+      return;
+    }
+
+    const movementStep = 0.5;
+
+    if (axis === "top") {
+      updateGiftCardTextSetting(
+        selectedGiftCardTextKey,
+        {
+          top: Number(
+            clampGiftCardValue(
+              Number(
+                currentSettings.top
+              ) +
+                direction *
+                  movementStep,
+              5,
+              95
+            ).toFixed(1)
+          ),
+        }
+      );
+
+      return;
+    }
+
+    updateGiftCardTextSetting(
+      selectedGiftCardTextKey,
+      {
+        left: Number(
+          clampGiftCardValue(
+            Number(
+              currentSettings.left
+            ) +
+              direction *
+                movementStep,
+            5,
+            95
+          ).toFixed(1)
+        ),
+      }
+    );
+  };
+
+  const resizeGiftCardText = (
+    direction
+  ) => {
+    const currentSettings =
+      giftCardTextSettings[
+        selectedGiftCardTextKey
+      ];
+
+    if (!currentSettings) {
+      return;
+    }
+
+    updateGiftCardTextSetting(
+      selectedGiftCardTextKey,
+      {
+        fontSize:
+          clampGiftCardValue(
+            Number(
+              currentSettings.fontSize
+            ) + direction,
+            10,
+            64
+          ),
+      }
+    );
+  };
+
+  const toggleGiftCardTextBold =
+    () => {
+      const currentSettings =
+        giftCardTextSettings[
+          selectedGiftCardTextKey
+        ];
+
+      if (!currentSettings) {
+        return;
+      }
+
+      updateGiftCardTextSetting(
+        selectedGiftCardTextKey,
+        {
+          fontWeight:
+            Number(
+              currentSettings.fontWeight
+            ) >= 700
+              ? 400
+              : 800,
+        }
+      );
+    };
+
+  const resetSelectedGiftCardText =
+    () => {
+      const defaultSettings =
+        createDefaultGiftCardTextSettings(
+          selectedGiftCardTemplate.language,
+          selectedGiftCardTemplate.messagePosition ||
+            {}
+        );
+
+      const selectedDefault =
+        defaultSettings[
+          selectedGiftCardTextKey
+        ];
+
+      if (!selectedDefault) {
+        return;
+      }
+
+      updateGiftCardTextSetting(
+        selectedGiftCardTextKey,
+        selectedDefault
+      );
+    };
+
+  const resetAllGiftCardText =
+    () => {
+      setGiftCardTextSettings(
+        createDefaultGiftCardTextSettings(
+          selectedGiftCardTemplate.language,
+          selectedGiftCardTemplate.messagePosition ||
+            {}
+        )
+      );
+    };
+
+  const clearGiftCardFields =
+    () => {
+      const shouldClear =
+        window.confirm(
+          "هل ترغب بمسح جميع بيانات البطاقة؟"
+        );
+
+      if (!shouldClear) {
+        return;
+      }
+
+      setGiftCardRecipient("");
+      setGiftCardGiver("");
+      setGiftCardService("");
+      setGiftCardMessage("");
+      setSelectedGiftCardTextKey(
+        "recipient"
+      );
+    };
+
+  const calculateGiftCardWrappedLines =
+    (
+      context,
+      text,
+      maximumWidth
+    ) => {
+      const paragraphs =
+        String(text || "").split(
+          "\n"
+        );
+
+      let lineCount = 0;
+      let largestWordWidth = 0;
+
+      paragraphs.forEach(
+        (paragraph) => {
+          const words =
+            paragraph
+              .trim()
+              .split(/\s+/)
+              .filter(Boolean);
+
+          if (words.length === 0) {
+            lineCount += 1;
+            return;
+          }
+
+          let currentLine = "";
+
+          words.forEach((word) => {
+            largestWordWidth =
+              Math.max(
+                largestWordWidth,
+                context.measureText(
+                  word
+                ).width
+              );
+
+            const candidateLine =
+              currentLine
+                ? `${currentLine} ${word}`
+                : word;
+
+            if (
+              currentLine &&
+              context.measureText(
+                candidateLine
+              ).width >
+                maximumWidth
+            ) {
+              lineCount += 1;
+              currentLine = word;
+            } else {
+              currentLine =
+                candidateLine;
+            }
+          });
+
+          if (currentLine) {
+            lineCount += 1;
+          }
+        }
+      );
+
+      return {
+        lineCount,
+        largestWordWidth,
+      };
+    };
+
+  const fitGiftCardText = async (
+    textKey =
+      selectedGiftCardTextKey
+  ) => {
+    const textValue =
+      String(
+        giftCardTextValues[
+          textKey
+        ] || ""
+      ).trim();
+
+    if (!textValue) {
+      return;
+    }
+
+    const currentSettings =
+      giftCardTextSettings[
+        textKey
+      ];
+
+    if (!currentSettings) {
+      return;
+    }
+
+    if (
+      typeof document !==
+        "undefined" &&
+      document.fonts?.ready
+    ) {
+      await document.fonts.ready;
+    }
+
+    const measurementCanvas =
+      document.createElement(
+        "canvas"
+      );
+
+    const context =
+      measurementCanvas.getContext(
+        "2d"
+      );
+
+    if (!context) {
+      return;
+    }
+
+    const fontData =
+      welcomeBoardFonts.find(
+        (font) =>
+          font.id ===
+          currentSettings.fontId
+      ) || welcomeBoardFonts[0];
+
+    const maximumWidth =
+      540 *
+        (Number(
+          currentSettings.width
+        ) /
+          100) -
+      18;
+
+    const maximumLines =
+      textKey === "message"
+        ? 5
+        : 1;
+
+    const minimumFontSize =
+      textKey === "message"
+        ? 12
+        : 11;
+
+    let nextFontSize =
+      clampGiftCardValue(
+        currentSettings.fontSize,
+        minimumFontSize,
+        64
+      );
+
+    while (
+      nextFontSize >
+      minimumFontSize
+    ) {
+      context.font =
+        `${Number(
+          currentSettings.fontWeight ||
+            400
+        )} ${nextFontSize}px ${fontData.font}`;
+
+      const {
+        lineCount,
+        largestWordWidth,
+      } =
+        calculateGiftCardWrappedLines(
+          context,
+          textValue,
+          maximumWidth
+        );
+
+      if (
+        lineCount <=
+          maximumLines &&
+        largestWordWidth <=
+          maximumWidth
+      ) {
+        break;
+      }
+
+      nextFontSize -= 1;
+    }
+
+    updateGiftCardTextSetting(
+      textKey,
+      {
+        fontSize:
+          nextFontSize,
+      }
+    );
+  };
+
+  const fitAllGiftCardTexts =
+    async () => {
+      const editableKeys = [
+        "recipient",
+        "giver",
+        "service",
+      ];
+
+      if (
+        selectedGiftCardTemplate
+          .customMessageEnabled
+      ) {
+        editableKeys.push(
+          "message"
+        );
+      }
+
+      for (
+        const textKey of editableKeys
+      ) {
+        await fitGiftCardText(
+          textKey
+        );
+      }
+    };
+
+  const saveGiftCardImage =
+    async () => {
+      if (
+        !giftCardRecipient.trim() ||
+        !giftCardGiver.trim()
+      ) {
+        alert(
+          "أدخلي اسم المُهدى إليه واسم المُهدي أولًا."
+        );
+
+        return;
+      }
+
+      if (
+        selectedGiftCardTemplate
+          .customMessageEnabled &&
+        !giftCardMessage.trim()
+      ) {
+        alert(
+          "اكتبي النص الخاص بالبطاقة أولًا."
+        );
+
+        return;
+      }
+
+      const giftCardElement =
+        giftCardCanvasRef.current;
+
+      if (!giftCardElement) {
+        alert(
+          "تعذر العثور على معاينة البطاقة."
+        );
+
+        return;
+      }
+
+      try {
+        setGiftCardIsSaving(
+          true
+        );
+
+        if (
+          typeof document !==
+            "undefined" &&
+          document.fonts?.ready
+        ) {
+          await document.fonts.ready;
+        }
+
+        await new Promise(
+          (resolve) => {
+            requestAnimationFrame(
+              () => {
+                requestAnimationFrame(
+                  resolve
+                );
+              }
+            );
+          }
+        );
+
+        const elementWidth =
+          giftCardElement.getBoundingClientRect()
+            .width;
+
+        const captureScale =
+          899 /
+          Math.max(
+            elementWidth,
+            1
+          );
+
+        const capturedCanvas =
+          await html2canvas(
+            giftCardElement,
+            {
+              backgroundColor:
+                null,
+
+              useCORS: true,
+
+              allowTaint:
+                false,
+
+              logging:
+                false,
+
+              imageTimeout:
+                15000,
+
+              scale:
+                captureScale,
+            }
+          );
+
+        const finalCanvas =
+          document.createElement(
+            "canvas"
+          );
+
+        finalCanvas.width =
+          899;
+
+        finalCanvas.height =
+          1600;
+
+        const finalContext =
+          finalCanvas.getContext(
+            "2d"
+          );
+
+        if (!finalContext) {
+          throw new Error(
+            "Gift card canvas context unavailable"
+          );
+        }
+
+        finalContext.drawImage(
+          capturedCanvas,
+          0,
+          0,
+          899,
+          1600
+        );
+
+        const safeRecipientName =
+          giftCardRecipient
+            .trim()
+            .replace(
+              /[^\p{L}\p{N}]+/gu,
+              "-"
+            )
+            .replace(
+              /^-+|-+$/g,
+              ""
+            ) ||
+          "Gift";
+
+        const fileName =
+          `Paradise-Gift-${selectedGiftCardTemplate.id}-${safeRecipientName}-${getCurrentLocalDate()}.png`;
+
+        const link =
+          document.createElement(
+            "a"
+          );
+
+        link.download =
+          fileName;
+
+        link.href =
+          finalCanvas.toDataURL(
+            "image/png",
+            1
+          );
+
+        document.body.appendChild(
+          link
+        );
+
+        link.click();
+        link.remove();
+      } catch (error) {
+        console.log(
+          "Gift card image save error:",
+          error
+        );
+
+        alert(
+          "تعذر حفظ بطاقة الإهداء. حاولي مرة أخرى."
+        );
+      } finally {
+        setGiftCardIsSaving(
+          false
+        );
+      }
+    };
+
+  const selectedGiftCardTextSettings =
+    giftCardTextSettings[
+      selectedGiftCardTextKey
+    ] ||
+    giftCardTextSettings.recipient;
+
+  const renderGiftCardTextLayer = (
+    textKey,
+    value
+  ) => {
+    const settings =
+      giftCardTextSettings[
+        textKey
+      ];
+
+    if (!settings) {
+      return null;
+    }
+
+    const cleanValue =
+      String(
+        value || ""
+      ).trim();
+
+    if (
+      giftCardIsSaving &&
+      !cleanValue
+    ) {
+      return null;
+    }
+
+    const displayValue =
+      cleanValue ||
+      giftCardTextPlaceholders[
+        textKey
+      ];
+
+    const fontData =
+      welcomeBoardFonts.find(
+        (font) =>
+          font.id ===
+          settings.fontId
+      ) || welcomeBoardFonts[0];
+
+    const isSelected =
+      selectedGiftCardTextKey ===
+      textKey;
+
+    const showEditor =
+      isSelected &&
+      !giftCardIsSaving;
+
+    const responsiveFontSize =
+      Number(
+        (
+          Number(
+            settings.fontSize ||
+              24
+          ) / 5.4
+        ).toFixed(3)
+      );
+
+    return (
+      <div
+        key={textKey}
+        onClick={() =>
+          setSelectedGiftCardTextKey(
+            textKey
+          )
+        }
+        style={{
+          position:
+            "absolute",
+
+          top:
+            `${settings.top}%`,
+
+          left:
+            `${settings.left}%`,
+
+          width:
+            `${settings.width}%`,
+
+          transform:
+            "translate(-50%, -50%)",
+
+          padding:
+            showEditor
+              ? "4px 5px"
+              : "1px 3px",
+
+          color:
+            cleanValue
+              ? "#8b654d"
+              : "rgba(139,101,77,0.55)",
+
+          fontFamily:
+            fontData.font,
+
+          fontSize:
+            `${responsiveFontSize}cqw`,
+
+          fontWeight:
+            settings.fontWeight,
+
+          lineHeight:
+            settings.lineHeight,
+
+          direction:
+            selectedGiftCardTemplate
+              .language === "en"
+              ? "ltr"
+              : "rtl",
+
+          textAlign:
+            "center",
+
+          whiteSpace:
+            textKey === "message"
+              ? "pre-wrap"
+              : "normal",
+
+          overflowWrap:
+            "anywhere",
+
+          cursor:
+            giftCardIsSaving
+              ? "default"
+              : "pointer",
+
+          border:
+            showEditor
+              ? "1.5px dashed #9d765e"
+              : "1.5px solid transparent",
+
+          borderRadius:
+            "7px",
+
+          background:
+            showEditor
+              ? "rgba(255,255,255,0.30)"
+              : "transparent",
+
+          boxSizing:
+            "border-box",
+
+          zIndex:
+            3,
+
+          userSelect:
+            "none",
+        }}
+      >
+        {displayValue}
+
+        {showEditor && (
+          <span
+            style={{
+              position:
+                "absolute",
+
+              top:
+                "-20px",
+
+              right:
+                "0",
+
+              padding:
+                "2px 6px",
+
+              background:
+                "#6b4938",
+
+              color:
+                "white",
+
+              borderRadius:
+                "7px",
+
+              fontFamily:
+                "Arial",
+
+              fontSize:
+                "9px",
+
+              fontWeight:
+                "800",
+
+              lineHeight:
+                1.3,
+
+              whiteSpace:
+                "nowrap",
+            }}
+          >
+            {
+              giftCardTextLabels[
+                textKey
+              ]
+            }
+          </span>
+        )}
+      </div>
+    );
+  };
+
+  const renderGiftCardsPage = () =>
+    withGreeting(
+      <div
+        className="paradise-gift-cards-page"
+        style={{
+          minHeight: "100vh",
+          padding: "26px",
+          background:
+            "radial-gradient(circle at top, #fffaf3 0%, #e8ddd0 45%, #cdb9a7 100%)",
+          color: "#4b2e1f",
+          fontFamily: "Arial",
+          direction: "rtl",
+          boxSizing: "border-box",
+        }}
+      >
+        <div
+          className="paradise-gift-cards-shell"
+          style={{
+            width: "100%",
+            maxWidth: "1260px",
+            margin: "0 auto",
+          }}
+        >
+          <div
+            className="paradise-gift-cards-header"
+            style={{
+              textAlign: "center",
+              marginBottom: "20px",
+            }}
+          >
+            <img
+              src={logo}
+              alt="logo"
+              style={{
+                width: "100px",
+                marginBottom: "12px",
+              }}
+            />
+
+            <h2
+              style={{
+                margin: "0 0 6px",
+                fontSize: "30px",
+              }}
+            >
+              كروت الإهداء
+            </h2>
+
+            <p
+              style={{
+                margin: 0,
+                color: "#806b5b",
+                fontSize: "14px",
+                fontWeight: "700",
+              }}
+            >
+              اختاري المناسبة والتصميم، ثم اكتبي بيانات البطاقة
+            </p>
+          </div>
+
+          <div
+            className="paradise-gift-card-category-list"
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              gap: "8px",
+              flexWrap: "wrap",
+              marginBottom: "13px",
+            }}
+          >
+            {giftCardCategories.map((category) => {
+              const isActive =
+                selectedGiftCardCategory === category.id;
+
+              return (
+                <button
+                  key={category.id}
+                  onClick={() =>
+                    selectGiftCardCategory(category.id)
+                  }
+                  style={{
+                    ...buttonStyle,
+                    minHeight: "42px",
+                    padding: "8px 15px",
+                    borderRadius: "14px",
+                    background: isActive
+                      ? "linear-gradient(135deg, #4b2e1f, #7a5a43)"
+                      : "rgba(255,255,255,0.76)",
+                    color: isActive ? "white" : "#4b2e1f",
+                    border: isActive
+                      ? "1px solid #4b2e1f"
+                      : "1px solid #d6c7b8",
+                    fontWeight: "900",
+                  }}
+                >
+                  {category.title}
+                </button>
+              );
+            })}
+          </div>
+
+          <div
+            className="paradise-gift-card-template-list"
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              gap: "10px",
+              flexWrap: "wrap",
+              marginBottom: "20px",
+            }}
+          >
+            {selectedGiftCardCategoryTemplates.map((template) => {
+              const isActive =
+                selectedGiftCardTemplate.id === template.id;
+
+              return (
+                <button
+                  key={template.id}
+                  onClick={() => selectGiftCardTemplate(template)}
+                  style={{
+                    width: "132px",
+                    padding: "7px",
+                    background: isActive
+                      ? "#fff8f0"
+                      : "rgba(255,255,255,0.72)",
+                    color: "#4b2e1f",
+                    border: isActive
+                      ? "2px solid #79533d"
+                      : "1px solid #d6c7b8",
+                    borderRadius: "16px",
+                    cursor: "pointer",
+                  }}
+                >
+                  <img
+                    src={template.image}
+                    alt={template.title}
+                    style={{
+                      width: "100%",
+                      height: "150px",
+                      objectFit: "cover",
+                      objectPosition: "top",
+                      display: "block",
+                      borderRadius: "11px",
+                      marginBottom: "7px",
+                    }}
+                  />
+
+                  <span
+                    style={{
+                      display: "block",
+                      fontSize: "11px",
+                      fontWeight: "900",
+                    }}
+                  >
+                    {template.variant}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div
+            className="paradise-gift-card-preview-stage"
+            style={{
+              width: "100%",
+              display: "flex",
+              justifyContent: "center",
+              marginBottom: "18px",
+            }}
+          >
+            <div
+              className="paradise-gift-card-canvas"
+              ref={giftCardCanvasRef}
+              style={{
+                width: "540px",
+                maxWidth: "100%",
+                aspectRatio: "899 / 1600",
+                position: "relative",
+                containerType: "inline-size",
+                overflow: "hidden",
+                background: "#f1e7dc",
+                boxShadow:
+                  "0 24px 55px rgba(75,46,31,0.22)",
+              }}
+            >
+              <img
+                src={selectedGiftCardTemplate.image}
+                alt={selectedGiftCardTemplate.title}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                  display: "block",
+                }}
+              />
+
+              {renderGiftCardTextLayer(
+                "recipient",
+                giftCardRecipient
+              )}
+
+              {renderGiftCardTextLayer(
+                "giver",
+                giftCardGiver
+              )}
+
+              {renderGiftCardTextLayer(
+                "service",
+                giftCardService
+              )}
+
+              {selectedGiftCardTemplate.customMessageEnabled &&
+                renderGiftCardTextLayer(
+                  "message",
+                  giftCardMessage
+                )}
+            </div>
+          </div>
+
+          <div
+            className="paradise-gift-card-basic-fields"
+            style={{
+              width:
+                "min(820px, 100%)",
+
+              margin:
+                "0 auto",
+
+              padding:
+                "20px",
+
+              background:
+                "linear-gradient(145deg, rgba(255,255,255,0.90), rgba(247,238,229,0.84))",
+
+              border:
+                "1px solid rgba(214,199,184,0.96)",
+
+              borderRadius:
+                "26px",
+
+              boxShadow:
+                "0 18px 42px rgba(75,46,31,0.12)",
+
+              boxSizing:
+                "border-box",
+            }}
+          >
+            <h3
+              style={{
+                margin:
+                  "0 0 14px",
+
+                fontSize:
+                  "20px",
+
+                textAlign:
+                  "center",
+              }}
+            >
+              بيانات البطاقة
+            </h3>
+
+            <div
+              className="paradise-gift-card-fields-grid"
+              style={{
+                display:
+                  "grid",
+
+                gridTemplateColumns:
+                  "repeat(3, minmax(0, 1fr))",
+
+                gap:
+                  "10px",
+              }}
+            >
+              <label
+                style={{
+                  display:
+                    "grid",
+
+                  gap:
+                    "6px",
+
+                  fontSize:
+                    "13px",
+
+                  fontWeight:
+                    "900",
+                }}
+              >
+                اسم المُهدى إليه
+
+                <input
+                  value={
+                    giftCardRecipient
+                  }
+                  onFocus={() =>
+                    setSelectedGiftCardTextKey(
+                      "recipient"
+                    )
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setGiftCardRecipient(
+                      event.target
+                        .value
+                    )
+                  }
+                  placeholder="مثال: أسومي"
+                  style={{
+                    minHeight:
+                      "46px",
+
+                    padding:
+                      "10px 12px",
+
+                    border:
+                      "1px solid #d6c7b8",
+
+                    borderRadius:
+                      "13px",
+
+                    background:
+                      "white",
+
+                    color:
+                      "#4b2e1f",
+
+                    fontSize:
+                      "16px",
+
+                    textAlign:
+                      "center",
+                  }}
+                />
+              </label>
+
+              <label
+                style={{
+                  display:
+                    "grid",
+
+                  gap:
+                    "6px",
+
+                  fontSize:
+                    "13px",
+
+                  fontWeight:
+                    "900",
+                }}
+              >
+                اسم المُهدي
+
+                <input
+                  value={
+                    giftCardGiver
+                  }
+                  onFocus={() =>
+                    setSelectedGiftCardTextKey(
+                      "giver"
+                    )
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setGiftCardGiver(
+                      event.target
+                        .value
+                    )
+                  }
+                  placeholder="مثال: حنو"
+                  style={{
+                    minHeight:
+                      "46px",
+
+                    padding:
+                      "10px 12px",
+
+                    border:
+                      "1px solid #d6c7b8",
+
+                    borderRadius:
+                      "13px",
+
+                    background:
+                      "white",
+
+                    color:
+                      "#4b2e1f",
+
+                    fontSize:
+                      "16px",
+
+                    textAlign:
+                      "center",
+                  }}
+                />
+              </label>
+
+              <label
+                style={{
+                  display:
+                    "grid",
+
+                  gap:
+                    "6px",
+
+                  fontSize:
+                    "13px",
+
+                  fontWeight:
+                    "900",
+                }}
+              >
+                الخدمة أو الهدية
+
+                <input
+                  value={
+                    giftCardService
+                  }
+                  onFocus={() =>
+                    setSelectedGiftCardTextKey(
+                      "service"
+                    )
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setGiftCardService(
+                      event.target
+                        .value
+                    )
+                  }
+                  placeholder="مثال: مساج 60 دقيقة"
+                  style={{
+                    minHeight:
+                      "46px",
+
+                    padding:
+                      "10px 12px",
+
+                    border:
+                      "1px solid #d6c7b8",
+
+                    borderRadius:
+                      "13px",
+
+                    background:
+                      "white",
+
+                    color:
+                      "#4b2e1f",
+
+                    fontSize:
+                      "16px",
+
+                    textAlign:
+                      "center",
+                  }}
+                />
+              </label>
+            </div>
+
+            {selectedGiftCardTemplate
+              .customMessageEnabled && (
+              <label
+                className="paradise-gift-card-message-field"
+                style={{
+                  display:
+                    "grid",
+
+                  gap:
+                    "6px",
+
+                  marginTop:
+                    "10px",
+
+                  fontSize:
+                    "13px",
+
+                  fontWeight:
+                    "900",
+                }}
+              >
+                النص الخاص —{" "}
+                {
+                  giftCardMessage.length
+                }{" "}
+                / 240
+
+                <textarea
+                  value={
+                    giftCardMessage
+                  }
+                  maxLength={
+                    240
+                  }
+                  onFocus={() =>
+                    setSelectedGiftCardTextKey(
+                      "message"
+                    )
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setGiftCardMessage(
+                      event.target
+                        .value
+                    )
+                  }
+                  placeholder="اكتبي الرسالة الخاصة هنا"
+                  style={{
+                    minHeight:
+                      "110px",
+
+                    padding:
+                      "12px",
+
+                    resize:
+                      "vertical",
+
+                    border:
+                      "1px solid #d6c7b8",
+
+                    borderRadius:
+                      "13px",
+
+                    background:
+                      "white",
+
+                    color:
+                      "#4b2e1f",
+
+                    fontSize:
+                      "16px",
+
+                    lineHeight:
+                      1.6,
+
+                    textAlign:
+                      "right",
+
+                    direction:
+                      "rtl",
+                  }}
+                />
+              </label>
+            )}
+
+            <div
+              className="paradise-gift-card-editor"
+              style={{
+                marginTop:
+                  "16px",
+
+                padding:
+                  "16px",
+
+                background:
+                  "rgba(255,250,243,0.82)",
+
+                border:
+                  "1px solid #d6c7b8",
+
+                borderRadius:
+                  "20px",
+              }}
+            >
+              <h3
+                style={{
+                  margin:
+                    "0 0 12px",
+
+                  fontSize:
+                    "18px",
+
+                  textAlign:
+                    "center",
+                }}
+              >
+                ضبط النص
+              </h3>
+
+              <div
+                className="paradise-gift-card-text-tabs"
+                style={{
+                  display:
+                    "grid",
+
+                  gridTemplateColumns:
+                    `repeat(${
+                      selectedGiftCardTemplate
+                        .customMessageEnabled
+                        ? 4
+                        : 3
+                    }, minmax(0, 1fr))`,
+
+                  gap:
+                    "7px",
+
+                  marginBottom:
+                    "13px",
+                }}
+              >
+                {[
+                  "recipient",
+                  "giver",
+                  "service",
+
+                  ...(selectedGiftCardTemplate
+                    .customMessageEnabled
+                    ? [
+                        "message",
+                      ]
+                    : []),
+                ].map(
+                  (textKey) => {
+                    const isActive =
+                      selectedGiftCardTextKey ===
+                      textKey;
+
+                    return (
+                      <button
+                        key={
+                          textKey
+                        }
+                        onClick={() =>
+                          setSelectedGiftCardTextKey(
+                            textKey
+                          )
+                        }
+                        style={{
+                          ...buttonStyle,
+
+                          minHeight:
+                            "42px",
+
+                          padding:
+                            "7px 8px",
+
+                          background:
+                            isActive
+                              ? "linear-gradient(135deg, #4b2e1f, #7a5a43)"
+                              : "#ffffff",
+
+                          color:
+                            isActive
+                              ? "white"
+                              : "#4b2e1f",
+
+                          border:
+                            "1px solid #d6c7b8",
+
+                          borderRadius:
+                            "13px",
+
+                          fontSize:
+                            "12px",
+                        }}
+                      >
+                        {
+                          giftCardTextLabels[
+                            textKey
+                          ]
+                        }
+                      </button>
+                    );
+                  }
+                )}
+              </div>
+
+              <div
+                className="paradise-gift-card-editor-grid"
+                style={{
+                  display:
+                    "grid",
+
+                  gridTemplateColumns:
+                    "minmax(220px, 1fr) minmax(220px, 1fr)",
+
+                  gap:
+                    "12px",
+
+                  alignItems:
+                    "stretch",
+                }}
+              >
+                <div
+                  className="paradise-gift-card-font-panel"
+                  style={{
+                    display:
+                      "grid",
+
+                    gap:
+                      "9px",
+
+                    padding:
+                      "12px",
+
+                    background:
+                      "white",
+
+                    border:
+                      "1px solid #e0d2c4",
+
+                    borderRadius:
+                      "16px",
+                  }}
+                >
+                  <label
+                    style={{
+                      display:
+                        "grid",
+
+                      gap:
+                        "6px",
+
+                      fontSize:
+                        "12px",
+
+                      fontWeight:
+                        "900",
+                    }}
+                  >
+                    الخط
+
+                    <select
+                      value={
+                        selectedGiftCardTextSettings
+                          ?.fontId ||
+                        ""
+                      }
+                      onChange={(
+                        event
+                      ) =>
+                        updateGiftCardTextSetting(
+                          selectedGiftCardTextKey,
+                          {
+                            fontId:
+                              event
+                                .target
+                                .value,
+                          }
+                        )
+                      }
+                      style={{
+                        minHeight:
+                          "44px",
+
+                        padding:
+                          "8px 10px",
+
+                        border:
+                          "1px solid #d6c7b8",
+
+                        borderRadius:
+                          "12px",
+
+                        background:
+                          "#fffaf3",
+
+                        color:
+                          "#4b2e1f",
+
+                        fontSize:
+                          "14px",
+                      }}
+                    >
+                      {welcomeBoardFonts.map(
+                        (
+                          fontOption
+                        ) => (
+                          <option
+                            key={
+                              fontOption.id
+                            }
+                            value={
+                              fontOption.id
+                            }
+                          >
+                            {
+                              fontOption.name
+                            }
+                          </option>
+                        )
+                      )}
+                    </select>
+                  </label>
+
+                  <div
+                    className="paradise-gift-card-size-controls"
+                    style={{
+                      display:
+                        "grid",
+
+                      gridTemplateColumns:
+                        "1fr 46px 46px",
+
+                      gap:
+                        "7px",
+
+                      alignItems:
+                        "center",
+                    }}
+                  >
+                    <div
+                      style={{
+                        minHeight:
+                          "42px",
+
+                        display:
+                          "flex",
+
+                        alignItems:
+                          "center",
+
+                        justifyContent:
+                          "center",
+
+                        padding:
+                          "6px",
+
+                        background:
+                          "#f5ebe2",
+
+                        borderRadius:
+                          "12px",
+
+                        fontSize:
+                          "12px",
+
+                        fontWeight:
+                          "900",
+                      }}
+                    >
+                      الحجم:{" "}
+                      {
+                        selectedGiftCardTextSettings
+                          ?.fontSize
+                      }
+                    </div>
+
+                    <button
+                      onClick={() =>
+                        resizeGiftCardText(
+                          -1
+                        )
+                      }
+                      style={{
+                        ...buttonStyle,
+
+                        minHeight:
+                          "42px",
+
+                        padding:
+                          0,
+
+                        borderRadius:
+                          "12px",
+                      }}
+                    >
+                      −
+                    </button>
+
+                    <button
+                      onClick={() =>
+                        resizeGiftCardText(
+                          1
+                        )
+                      }
+                      style={{
+                        ...buttonStyle,
+
+                        minHeight:
+                          "42px",
+
+                        padding:
+                          0,
+
+                        borderRadius:
+                          "12px",
+                      }}
+                    >
+                      +
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={
+                      toggleGiftCardTextBold
+                    }
+                    style={{
+                      ...buttonStyle,
+
+                      minHeight:
+                        "42px",
+
+                      background:
+                        Number(
+                          selectedGiftCardTextSettings
+                            ?.fontWeight
+                        ) >= 700
+                          ? "#4b2e1f"
+                          : "#f5ebe2",
+
+                      color:
+                        Number(
+                          selectedGiftCardTextSettings
+                            ?.fontWeight
+                        ) >= 700
+                          ? "white"
+                          : "#4b2e1f",
+
+                      borderRadius:
+                        "12px",
+                    }}
+                  >
+                    خط عريض
+                  </button>
+
+                  <button
+                    onClick={() =>
+                      fitGiftCardText()
+                    }
+                    style={{
+                      ...buttonStyle,
+
+                      minHeight:
+                        "42px",
+
+                      background:
+                        "#dfc7b1",
+
+                      color:
+                        "#4b2e1f",
+
+                      borderRadius:
+                        "12px",
+                    }}
+                  >
+                    ملاءمة النص داخل الخانة
+                  </button>
+                </div>
+
+                <div
+                  className="paradise-gift-card-position-panel"
+                  style={{
+                    display:
+                      "grid",
+
+                    gap:
+                      "9px",
+
+                    padding:
+                      "12px",
+
+                    background:
+                      "white",
+
+                    border:
+                      "1px solid #e0d2c4",
+
+                    borderRadius:
+                      "16px",
+                  }}
+                >
+                  <div
+                    style={{
+                      textAlign:
+                        "center",
+
+                      fontSize:
+                        "12px",
+
+                      fontWeight:
+                        "900",
+                    }}
+                  >
+                    تحريك النص
+                  </div>
+
+                  <div
+                    className="paradise-gift-card-move-grid"
+                    style={{
+                      width:
+                        "176px",
+
+                      maxWidth:
+                        "100%",
+
+                      margin:
+                        "0 auto",
+
+                      display:
+                        "grid",
+
+                      gridTemplateColumns:
+                        "repeat(3, minmax(0, 1fr))",
+
+                      gap:
+                        "6px",
+                    }}
+                  >
+                    <span />
+
+                    <button
+                      onClick={() =>
+                        moveGiftCardText(
+                          "top",
+                          -1
+                        )
+                      }
+                      style={{
+                        ...buttonStyle,
+
+                        minHeight:
+                          "44px",
+
+                        padding:
+                          0,
+                      }}
+                    >
+                      ↑
+                    </button>
+
+                    <span />
+
+                    <button
+                      onClick={() =>
+                        moveGiftCardText(
+                          "left",
+                          -1
+                        )
+                      }
+                      style={{
+                        ...buttonStyle,
+
+                        minHeight:
+                          "44px",
+
+                        padding:
+                          0,
+                      }}
+                    >
+                      ←
+                    </button>
+
+                    <button
+                      onClick={
+                        resetSelectedGiftCardText
+                      }
+                      title="استعادة موضع العنصر"
+                      style={{
+                        ...buttonStyle,
+
+                        minHeight:
+                          "44px",
+
+                        padding:
+                          "4px",
+
+                        fontSize:
+                          "11px",
+                      }}
+                    >
+                      ضبط
+                    </button>
+
+                    <button
+                      onClick={() =>
+                        moveGiftCardText(
+                          "left",
+                          1
+                        )
+                      }
+                      style={{
+                        ...buttonStyle,
+
+                        minHeight:
+                          "44px",
+
+                        padding:
+                          0,
+                      }}
+                    >
+                      →
+                    </button>
+
+                    <span />
+
+                    <button
+                      onClick={() =>
+                        moveGiftCardText(
+                          "top",
+                          1
+                        )
+                      }
+                      style={{
+                        ...buttonStyle,
+
+                        minHeight:
+                          "44px",
+
+                        padding:
+                          0,
+                      }}
+                    >
+                      ↓
+                    </button>
+
+                    <span />
+                  </div>
+
+                  <div
+                    style={{
+                      display:
+                        "grid",
+
+                      gridTemplateColumns:
+                        "repeat(2, minmax(0, 1fr))",
+
+                      gap:
+                        "7px",
+
+                      fontSize:
+                        "11px",
+
+                      fontWeight:
+                        "900",
+                    }}
+                  >
+                    <div
+                      style={{
+                        padding:
+                          "8px",
+
+                        background:
+                          "#f5ebe2",
+
+                        borderRadius:
+                          "11px",
+
+                        textAlign:
+                          "center",
+                      }}
+                    >
+                      أعلى:{" "}
+                      {
+                        selectedGiftCardTextSettings
+                          ?.top
+                      }
+                      %
+                    </div>
+
+                    <div
+                      style={{
+                        padding:
+                          "8px",
+
+                        background:
+                          "#f5ebe2",
+
+                        borderRadius:
+                          "11px",
+
+                        textAlign:
+                          "center",
+                      }}
+                    >
+                      يسار:{" "}
+                      {
+                        selectedGiftCardTextSettings
+                          ?.left
+                      }
+                      %
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div
+              className="paradise-gift-card-actions"
+              style={{
+                display:
+                  "grid",
+
+                gridTemplateColumns:
+                  "repeat(4, minmax(0, 1fr))",
+
+                gap:
+                  "9px",
+
+                marginTop:
+                  "14px",
+              }}
+            >
+              <button
+                onClick={
+                  clearGiftCardFields
+                }
+                style={{
+                  ...buttonStyle,
+
+                  minHeight:
+                    "48px",
+
+                  background:
+                    "#fffaf3",
+
+                  color:
+                    "#4b2e1f",
+
+                  border:
+                    "1px solid #d6c7b8",
+
+                  borderRadius:
+                    "14px",
+                }}
+              >
+                مسح الحقول
+              </button>
+
+              <button
+                onClick={
+                  resetAllGiftCardText
+                }
+                style={{
+                  ...buttonStyle,
+
+                  minHeight:
+                    "48px",
+
+                  background:
+                    "#f0dfd1",
+
+                  color:
+                    "#4b2e1f",
+
+                  borderRadius:
+                    "14px",
+                }}
+              >
+                استعادة التصميم
+              </button>
+
+              <button
+                onClick={
+                  fitAllGiftCardTexts
+                }
+                style={{
+                  ...buttonStyle,
+
+                  minHeight:
+                    "48px",
+
+                  background:
+                    "#d9bea6",
+
+                  color:
+                    "#4b2e1f",
+
+                  borderRadius:
+                    "14px",
+                }}
+              >
+                ملاءمة جميع النصوص
+              </button>
+
+              <button
+                className="paradise-gift-card-save-button"
+                disabled={
+                  giftCardIsSaving
+                }
+                onClick={
+                  saveGiftCardImage
+                }
+                style={{
+                  ...buttonStyle,
+
+                  minHeight:
+                    "48px",
+
+                  background:
+                    "linear-gradient(135deg, #4b2e1f, #7a5a43)",
+
+                  color:
+                    "white",
+
+                  borderRadius:
+                    "14px",
+
+                  boxShadow:
+                    "0 13px 28px rgba(75,46,31,0.22)",
+
+                  opacity:
+                    giftCardIsSaving
+                      ? 0.65
+                      : 1,
+                }}
+              >
+                {giftCardIsSaving
+                  ? "جاري حفظ البطاقة..."
+                  : "حفظ البطاقة"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+
+  if (screen === "availableAppointments") {
     return renderAvailableAppointmentsPage();
   }
 
-  
+  if (screen === "giftCards") {
+    return renderGiftCardsPage();
+  }
 
   if (screen === "clientProfile" && selectedClient) {
     return withGreeting(
