@@ -14,10 +14,27 @@ body,
   overflow-x: hidden;
 }
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
+/*
+  نستخدم border-box فقط داخل المقاسات
+  المتجاوبة حتى لا يتغير تصميم الكمبيوتر القديم.
+*/
+@media (max-width: 1050px) {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+}
+
+/*
+  إعادة المقاس الأصلي للقائمة الجانبية
+  على الكمبيوتر:
+  190px محتوى + 18px يمين + 18px يسار + الحدود.
+*/
+@media (min-width: 1051px) {
+  html body .paradise-global-sidebar {
+    box-sizing: content-box !important;
+  }
 }
 
 img,

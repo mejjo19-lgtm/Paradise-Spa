@@ -107,6 +107,10 @@ const sharedDataMetaRef = useRef({});
 const sharedDataDeviceIdRef = useRef(`${Date.now()}-${Math.random().toString(36).slice(2)}`);
 const scheduleEditingRef = useRef(false);
 const scheduleRowSaveTimersRef = useRef({});
+const scheduleGiftSyncTimersRef = useRef({});
+const scheduleGiftSyncQueueRef = useRef({});
+const scheduleGiftLinkedIdsRef = useRef({});
+const scheduleGiftDuplicateDecisionRef = useRef({});
 const dailyReportSaveTimersRef = useRef({});
 const incomeExpenseLoadedRangesRef = useRef({});
 const sharedDataSaveDelay = 800;
@@ -6452,6 +6456,14 @@ const getScheduleClientBadges = (row) => {
           rowToSave,
           stylesToSave
         );
+
+        queueScheduleGiftGiverSync({
+          scheduleDate:
+            selectedScheduleDate,
+          rowIndex,
+          rowSnapshot: rowToSave,
+          cellStyles: stylesToSave,
+        });
       }
 
       if (shouldOpenDuplicateModal) {
@@ -6491,58 +6503,484 @@ const getScheduleClientBadges = (row) => {
     }, 0);
   };
 
-  const addScheduleGiftToGiftClients = async (row) => {
-    const fromName = String(row.giftFrom || "").trim();
-    const fromPhone = formatSaudiPhoneForStorage(row.giftPhone || "");
-    const toName = String(row.client || "").trim();
-    const toPhone = formatSaudiPhoneForStorage(row.number || "");
-    const service = String(row.services || "").trim();
+  const syncScheduleGiftGiverToGiftClients = async ({
+    scheduleDate,
+    rowIndex,
+    rowSnapshot,
+    cellStyles = {},
+  }) => {
+    const row = rowSnapshot || {};
 
-    if (!fromName && !fromPhone && !toName && !toPhone && !service) return;
+    if (row.status !== "Gift Giver") {
+      return null;
+    }
+
+    const fromName = String(
+      row.giftFrom || ""
+    ).trim();
+
+    const fromPhone =
+      formatSaudiPhoneForStorage(
+        row.giftPhone || ""
+      );
+
+    const toName = String(
+      row.client || ""
+    ).trim();
+
+    const toPhone =
+      formatSaudiPhoneForStorage(
+        row.number || ""
+      );
+
+    const service = String(
+      row.services || ""
+    ).trim();
+
+    const giftDate = String(
+      scheduleDate ||
+        selectedScheduleDate ||
+        getCurrentLocalDate()
+    ).slice(0, 10);
+
+    const hasCompleteGiftData =
+      Boolean(fromName) &&
+      normalizeDigits(fromPhone).length >= 9 &&
+      Boolean(toName) &&
+      normalizeDigits(toPhone).length >= 9;
+
+    if (!hasCompleteGiftData) {
+      return null;
+    }
+
+    const giftSyncKey =
+      `${giftDate}-${rowIndex}`;
+
+    const giftSignature =
+      JSON.stringify({
+        giftDate,
+        fromName,
+        fromPhone,
+        toName,
+        toPhone,
+        service,
+      });
+
+    let linkedGiftClientId = String(
+      row.giftClientId ||
+        scheduleGiftLinkedIdsRef.current[
+          giftSyncKey
+        ] ||
+        ""
+    ).trim();
+
+    let existingGiftRecord =
+      linkedGiftClientId
+        ? giftClients.find(
+            (gift) =>
+              String(gift.id) ===
+              linkedGiftClientId
+          ) || null
+        : null;
+
+    /*
+      إذا كان الصف مرتبطًا مسبقًا بهدية،
+      يتم تحميل نفس الهدية وتحديثها بدون
+      اعتبارها هدية مكررة.
+    */
+    if (
+      linkedGiftClientId &&
+      !existingGiftRecord
+    ) {
+      const {
+        data: linkedGiftRow,
+        error: linkedGiftError,
+      } = await supabase
+        .from("gift_clients")
+        .select("*")
+        .eq(
+          "id",
+          linkedGiftClientId
+        )
+        .maybeSingle();
+
+      if (linkedGiftError) {
+        console.log(
+          "Gift Giver linked gift fetch error:",
+          linkedGiftError
+        );
+      } else if (linkedGiftRow) {
+        existingGiftRecord =
+          linkedGiftRow;
+      }
+    }
+
+    /*
+      فحص التكرار يتم فقط عندما يكون
+      هذا الصف غير مرتبط بهدية سابقة.
+    */
+    if (
+      !linkedGiftClientId &&
+      !existingGiftRecord
+    ) {
+      const {
+        data: possibleGiftRows,
+        error: possibleGiftError,
+      } = await supabase
+        .from("gift_clients")
+        .select("*")
+        .eq(
+          "from_phone",
+          fromPhone
+        )
+        .eq(
+          "to_phone",
+          toPhone
+        )
+        .order("id", {
+          ascending: false,
+        })
+        .limit(20);
+
+      if (possibleGiftError) {
+        console.log(
+          "Gift Giver existing gift lookup error:",
+          possibleGiftError
+        );
+      } else {
+        const duplicateGiftRecord =
+          (
+            possibleGiftRows || []
+          ).find(
+            (gift) =>
+              String(
+                gift.gift_date ||
+                  gift.items
+                    ?.giftDate ||
+                  ""
+              ).slice(0, 10) ===
+              giftDate
+          ) || null;
+
+        if (duplicateGiftRecord) {
+          const previousDecision =
+            scheduleGiftDuplicateDecisionRef
+              .current[
+                giftSyncKey
+              ];
+
+          /*
+            إذا ضغط المستخدم إلغاء سابقًا
+            لن يظهر التحذير مع كل حرف،
+            إلا إذا تغيرت بيانات الهدية.
+          */
+          if (
+            previousDecision
+              ?.signature ===
+              giftSignature &&
+            previousDecision
+              ?.allowDuplicate ===
+              false
+          ) {
+            return null;
+          }
+
+          const shouldAddDuplicate =
+            window.confirm(
+              [
+                "هذه الهدية موجودة مسبقًا في صفحة عملاء الإهداء.",
+                "",
+                `المُهدية: ${fromName}`,
+                `المستلمة: ${toName}`,
+                `التاريخ: ${giftDate}`,
+                "",
+                "هل ترغب بإضافتها مرة أخرى؟",
+              ].join("\n")
+            );
+
+          if (
+            !shouldAddDuplicate
+          ) {
+            scheduleGiftDuplicateDecisionRef
+              .current[
+                giftSyncKey
+              ] = {
+                signature:
+                  giftSignature,
+                allowDuplicate:
+                  false,
+              };
+
+            return null;
+          }
+
+          /*
+            عند الموافقة لا نربط بالسجل
+            القديم، بل نترك المعرّف فارغًا
+            حتى يتم إنشاء هدية جديدة.
+          */
+          delete scheduleGiftDuplicateDecisionRef
+            .current[
+              giftSyncKey
+            ];
+
+          existingGiftRecord =
+            null;
+
+          linkedGiftClientId =
+            "";
+        } else {
+          delete scheduleGiftDuplicateDecisionRef
+            .current[
+              giftSyncKey
+            ];
+        }
+      }
+    }
+
+    const existingItems =
+      existingGiftRecord?.items || {};
 
     const giftRecord = {
-      gift_date: selectedScheduleDate,
+      gift_date: giftDate,
       from_name: fromName,
       from_phone: fromPhone,
       to_name: toName,
       to_phone: toPhone,
       service,
       items: {
-        balloon: false,
-        flowers: false,
-        cake: false,
+        ...existingItems,
+        balloon: Boolean(
+          existingItems.balloon
+        ),
+        flowers: Boolean(
+          existingItems.flowers
+        ),
+        cake: Boolean(
+          existingItems.cake
+        ),
         giftTaken: false,
-        giftDate: selectedScheduleDate,
+        giftDate,
       },
     };
 
-    const { error } = await supabase.from("gift_clients").insert([giftRecord]);
+    if (linkedGiftClientId) {
+      const {
+        data: updatedGiftRow,
+        error: updateGiftError,
+      } = await supabase
+        .from("gift_clients")
+        .update(giftRecord)
+        .eq("id", linkedGiftClientId)
+        .select("id")
+        .single();
 
-    if (error) {
-      const { error: fallbackError } = await supabase.from("gift_clients").insert([
-        {
-          from_name: fromName,
-          from_phone: fromPhone,
-          to_name: toName,
-          to_phone: toPhone,
-          service,
-          items: {
-            balloon: false,
-            flowers: false,
-            cake: false,
-            giftTaken: false,
-            giftDate: selectedScheduleDate,
-          },
-        },
-      ]);
+      if (updateGiftError) {
+        console.log(
+          "Gift Giver gift client update error:",
+          updateGiftError
+        );
+        return null;
+      }
 
-      if (fallbackError) {
-        console.log("Gift Giver gift client insert error:", fallbackError);
-        return;
+      linkedGiftClientId = String(
+        updatedGiftRow?.id ||
+          linkedGiftClientId
+      );
+    } else {
+      const {
+        data: insertedGiftRow,
+        error: insertGiftError,
+      } = await supabase
+        .from("gift_clients")
+        .insert([giftRecord])
+        .select("id")
+        .single();
+
+      if (insertGiftError) {
+        const {
+          gift_date: ignoredGiftDate,
+          ...fallbackGiftRecord
+        } = giftRecord;
+
+        const {
+          data: fallbackInsertedGiftRow,
+          error: fallbackInsertError,
+        } = await supabase
+          .from("gift_clients")
+          .insert([fallbackGiftRecord])
+          .select("id")
+          .single();
+
+        if (fallbackInsertError) {
+          console.log(
+            "Gift Giver gift client insert error:",
+            fallbackInsertError
+          );
+          return null;
+        }
+
+        linkedGiftClientId = String(
+          fallbackInsertedGiftRow?.id || ""
+        );
+      } else {
+        linkedGiftClientId = String(
+          insertedGiftRow?.id || ""
+        );
       }
     }
 
+    if (!linkedGiftClientId) {
+      return null;
+    }
+
+    scheduleGiftLinkedIdsRef.current[
+      giftSyncKey
+    ] = linkedGiftClientId;
+
+    delete scheduleGiftDuplicateDecisionRef
+      .current[
+        giftSyncKey
+      ];
+
+    let linkedRowToSave = {
+      ...row,
+      giftClientId:
+        linkedGiftClientId,
+    };
+
+    let stylesToSave =
+      cellStyles || {};
+
+    setScheduleData((prev) => {
+      const currentDayData =
+        prev[giftDate] || {};
+
+      const currentRows =
+        currentDayData.rows ||
+        timeSlots.map(
+          createEmptyAppointmentRow
+        );
+
+      const currentRow =
+        currentRows[rowIndex] ||
+        row;
+
+      linkedRowToSave = {
+        ...currentRow,
+        giftClientId:
+          linkedGiftClientId,
+      };
+
+      stylesToSave =
+        currentDayData.cellStyles ||
+        stylesToSave;
+
+      const nextRows =
+        currentRows.map(
+          (currentScheduleRow, index) =>
+            index === rowIndex
+              ? linkedRowToSave
+              : currentScheduleRow
+        );
+
+      return {
+        ...prev,
+        [giftDate]: {
+          ...currentDayData,
+          rows: nextRows,
+        },
+      };
+    });
+
+    setTimeout(() => {
+      queueScheduleRowSave(
+        giftDate,
+        rowIndex,
+        linkedRowToSave,
+        stylesToSave
+      );
+    }, 0);
+
     fetchGiftClients();
+
+    return linkedGiftClientId;
+  };
+
+  const queueScheduleGiftGiverSync = ({
+    scheduleDate,
+    rowIndex,
+    rowSnapshot,
+    cellStyles = {},
+  }) => {
+    const giftSyncKey =
+      `${scheduleDate}-${rowIndex}`;
+
+    clearTimeout(
+      scheduleGiftSyncTimersRef.current[
+        giftSyncKey
+      ]
+    );
+
+    if (
+      rowSnapshot?.status !==
+      "Gift Giver"
+    ) {
+      delete scheduleGiftSyncTimersRef.current[
+        giftSyncKey
+      ];
+
+      delete scheduleGiftLinkedIdsRef.current[
+        giftSyncKey
+      ];
+
+      delete scheduleGiftDuplicateDecisionRef
+        .current[
+          giftSyncKey
+        ];
+
+      return;
+    }
+
+    scheduleGiftSyncTimersRef.current[
+      giftSyncKey
+    ] = setTimeout(() => {
+      delete scheduleGiftSyncTimersRef.current[
+        giftSyncKey
+      ];
+
+      const previousSync =
+        scheduleGiftSyncQueueRef.current[
+          giftSyncKey
+        ] || Promise.resolve();
+
+      const nextSync = previousSync
+        .catch(() => null)
+        .then(() =>
+          syncScheduleGiftGiverToGiftClients({
+            scheduleDate,
+            rowIndex,
+            rowSnapshot,
+            cellStyles,
+          })
+        );
+
+      scheduleGiftSyncQueueRef.current[
+        giftSyncKey
+      ] = nextSync;
+
+      nextSync.finally(() => {
+        if (
+          scheduleGiftSyncQueueRef.current[
+            giftSyncKey
+          ] === nextSync
+        ) {
+          delete scheduleGiftSyncQueueRef.current[
+            giftSyncKey
+          ];
+        }
+      });
+    }, 650);
   };
 
     const createEmptyHouseholdClient = (client = {}) => ({
@@ -7836,6 +8274,15 @@ const getScheduleClientBadges = (row) => {
       currentDayData.cellStyles || {}
     );
 
+    queueScheduleGiftGiverSync({
+      scheduleDate: targetDate,
+      rowIndex,
+      rowSnapshot:
+        updatedRowSnapshot,
+      cellStyles:
+        currentDayData.cellStyles || {},
+    });
+
     setDuplicateClientModal(null);
     setDuplicateClientSearch("");
   };
@@ -8759,15 +9206,39 @@ if (
     closeAdditionalClientModal();
   };
 
-  const copyScheduleRowToSelectedList = async (row, targetList) => {
+  const copyScheduleRowToSelectedList = async (
+    row,
+    targetList,
+    rowIndex = null,
+    cellStyles = {}
+  ) => {
     if (!targetList) return;
 
-    const clientName = String(row.client || "").trim();
-    const clientPhone = formatSaudiPhoneForStorage(row.number || "");
-    const district = String(row.district || "").trim();
-    const service = String(row.services || "").trim();
-    const giftFromNameValue = String(row.giftFrom || "").trim();
-    const giftFromPhoneValue = formatSaudiPhoneForStorage(row.giftPhone || "");
+    const clientName = String(
+      row.client || ""
+    ).trim();
+
+    const clientPhone =
+      formatSaudiPhoneForStorage(
+        row.number || ""
+      );
+
+    const district = String(
+      row.district || ""
+    ).trim();
+
+    const service = String(
+      row.services || ""
+    ).trim();
+
+    const giftFromNameValue = String(
+      row.giftFrom || ""
+    ).trim();
+
+    const giftFromPhoneValue =
+      formatSaudiPhoneForStorage(
+        row.giftPhone || ""
+      );
 
     if (
       !clientName &&
@@ -8780,7 +9251,95 @@ if (
       return;
     }
 
-    if (!confirmDuplicateBeforeSendTo(targetList, clientName, clientPhone)) return;
+    /*
+      صف Gift Giver لا يتم نسخه مرة أخرى
+      يدويًا إلى عملاء الإهداء.
+
+      إذا كانت الهدية مرتبطة بالفعل:
+      نوقف العملية ونبلغ المستخدم.
+
+      وإذا لم تكتمل المزامنة بعد:
+      نشغّل نفس نظام المزامنة التلقائي
+      الآمن بدل إنشاء سجل منفصل.
+    */
+    if (
+      targetList ===
+        "عملاء الإهداء" &&
+      row.status ===
+        "Gift Giver"
+    ) {
+      const normalizedRowIndex =
+        Number(rowIndex);
+
+      const giftSyncKey =
+        `${selectedScheduleDate}-${normalizedRowIndex}`;
+
+      const linkedGiftClientId =
+        String(
+          row.giftClientId ||
+            scheduleGiftLinkedIdsRef
+              .current[
+                giftSyncKey
+              ] ||
+            ""
+        ).trim();
+
+      if (linkedGiftClientId) {
+        alert(
+          "هذه الهدية مسجلة تلقائيًا بالفعل في صفحة عملاء الإهداء."
+        );
+
+        return;
+      }
+
+      if (
+        !Number.isInteger(
+          normalizedRowIndex
+        ) ||
+        normalizedRowIndex < 0
+      ) {
+        alert(
+          "تعذر تحديد صف الهدية. لم يتم إنشاء سجل جديد."
+        );
+
+        return;
+      }
+
+      const syncedGiftClientId =
+        await syncScheduleGiftGiverToGiftClients(
+          {
+            scheduleDate:
+              selectedScheduleDate,
+            rowIndex:
+              normalizedRowIndex,
+            rowSnapshot: row,
+            cellStyles:
+              cellStyles || {},
+          }
+        );
+
+      if (syncedGiftClientId) {
+        alert(
+          "تم تسجيل الهدية تلقائيًا في صفحة عملاء الإهداء."
+        );
+      } else {
+        alert(
+          "أكملي اسم ورقم المُهدية واسم ورقم المستلمة أولًا."
+        );
+      }
+
+      return;
+    }
+
+    if (
+      !confirmDuplicateBeforeSendTo(
+        targetList,
+        clientName,
+        clientPhone
+      )
+    ) {
+      return;
+    }
 
     if (targetList === "عملائنا") {
       const visitsValue = orderToVisits(row.order);
@@ -9305,6 +9864,29 @@ const handleScheduleRowAction = (rowIndex, action) => {
 
     queueScheduleRowSave(selectedScheduleDate, rowIndex, updatedRowSnapshot, nextCellStyles);
 
+    const giftGiverSyncFields = [
+      "status",
+      "giftFrom",
+      "giftPhone",
+      "client",
+      "number",
+      "services",
+    ];
+
+    if (
+      giftGiverSyncFields.includes(field)
+    ) {
+      queueScheduleGiftGiverSync({
+        scheduleDate:
+          selectedScheduleDate,
+        rowIndex,
+        rowSnapshot:
+          updatedRowSnapshot,
+        cellStyles:
+          nextCellStyles,
+      });
+    }
+
     if (field === "order") {
       const matchedClientForOrder =
         clients.find(
@@ -9422,8 +10004,16 @@ const handleScheduleRowAction = (rowIndex, action) => {
       }
     }
 
-    if (field === "sendTo" && value) {
-      await copyScheduleRowToSelectedList(updatedRowSnapshot, value);
+    if (
+      field === "sendTo" &&
+      value
+    ) {
+      await copyScheduleRowToSelectedList(
+        updatedRowSnapshot,
+        value,
+        rowIndex,
+        nextCellStyles
+      );
     }
 if (field === "frame") {
   const matchedClientForFrame =
