@@ -39,6 +39,7 @@ function App() {
     "clients",
     "referrals",
     "invoices",
+    "purchases",
     "finance",
     "incomeExpenses",
     "giftClients",
@@ -287,6 +288,19 @@ const [savedWelcomeBoards, setSavedWelcomeBoards] = useState([]);
     setInactiveServiceHistoryLoading,
   ] = useState(false);
 
+  const [
+    inactiveFollowUpNoticeVisible,
+    setInactiveFollowUpNoticeVisible,
+  ] = useState(true);
+
+  useEffect(() => {
+    if (isLoggedIn) {
+      setInactiveFollowUpNoticeVisible(
+        true
+      );
+    }
+  }, [isLoggedIn]);
+
   const getDisplayNameFromEmail = (email) => {
     const userKey = String(email || "").split("@")[0].toLowerCase();
     const displayNames = {
@@ -496,6 +510,10 @@ const normalizeClientRecord = (client) => ({
   id: client.id,
   name: client.name || client.arabic_name || "",
   arabic_name: client.arabic_name || client.name || "",
+
+  loyaltyCardName:
+    client.loyalty_card_name || "",
+
   phone: client.phone || "",
   address: client.address || "",
   visits: Number(client.visits || 0),
@@ -567,7 +585,7 @@ async function fetchClientsWithSupabaseClient() {
     const { data, error } = await supabase
       .from("clients")
       .select(
-        "id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at"
+        "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at"
       )
       .order("id", { ascending: false })
       .range(from, to);
@@ -610,7 +628,7 @@ async function fetchClientsWithRestApi() {
 
   while (hasMore) {
     const response = await fetch(
-      `${supabaseUrl}/rest/v1/clients?select=id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at&order=id.desc&limit=${pageSize}&offset=${offset}`,
+      `${supabaseUrl}/rest/v1/clients?select=id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at&order=id.desc&limit=${pageSize}&offset=${offset}`,
       {
         headers: {
           apikey: supabaseKey,
@@ -949,7 +967,16 @@ function fetchSharedClientLists() {
     return savedSettings ? JSON.parse(savedSettings) : {};
   });
 
-  const [selectedFinanceMonth, setSelectedFinanceMonth] = useState("2026-05");
+  const [
+    selectedFinanceMonth,
+    setSelectedFinanceMonth,
+  ] = useState(
+    () =>
+      getCurrentLocalDate().slice(
+        0,
+        7
+      )
+  );
 
   const getDefaultIncomeExpensesFromMonth = () => {
     const now = new Date();
@@ -1034,6 +1061,45 @@ function fetchSharedClientLists() {
   ] = useState([]);
 
   const [invoicesPdfBusy, setInvoicesPdfBusy] = useState(false);
+
+  // نظام المشتريات
+  const [purchases, setPurchases] = useState([]);
+
+  const [purchasesLoading, setPurchasesLoading] = useState(false);
+
+  const [purchasesError, setPurchasesError] = useState("");
+
+  const [purchasesFromDate, setPurchasesFromDate] = useState(
+    () => `${getCurrentLocalDate().slice(0, 7)}-01`
+  );
+
+  const [purchasesToDate, setPurchasesToDate] = useState(
+    () => getCurrentLocalDate()
+  );
+
+  const [purchasesVisibleCount, setPurchasesVisibleCount] = useState(30);
+
+  const [purchaseSaving, setPurchaseSaving] = useState(false);
+
+  const [purchaseDeletingId, setPurchaseDeletingId] = useState(null);
+
+  const [purchaseDraft, setPurchaseDraft] = useState({
+    productName: "",
+    quantity: "1",
+    totalPrice: "",
+    supplierName: "",
+    vatInvoice: false,
+  });
+
+  const [editingPurchaseId, setEditingPurchaseId] = useState(null);
+
+  const [editingPurchaseDraft, setEditingPurchaseDraft] = useState({
+    productName: "",
+    quantity: "1",
+    totalPrice: "",
+    supplierName: "",
+    vatInvoice: false,
+  });
 
   const [sharedDataLoaded, setSharedDataLoaded] = useState(false);
 
@@ -1696,6 +1762,313 @@ useEffect(() => {
   };
 }, [isLoggedIn, selectedScheduleDate]);
 
+
+useEffect(() => {
+  if (
+    !isLoggedIn ||
+    screen !== "appointments" ||
+    !selectedScheduleDate
+  ) {
+    return undefined;
+  }
+
+  let effectActive = true;
+
+  const loadDailyPurchases = async () => {
+    setPurchasesLoading(true);
+    setPurchasesError("");
+
+    try {
+      const { data, error } = await supabase
+        .from("purchases")
+        .select(
+          [
+            "id",
+            "purchase_date",
+            "product_name",
+            "quantity",
+            "total_price",
+            "supplier_name",
+            "vat_invoice",
+            "vat_amount",
+            "unit_price",
+            "created_by",
+            "created_at",
+            "updated_at",
+          ].join(",")
+        )
+        .eq(
+          "purchase_date",
+          selectedScheduleDate
+        )
+        .order("id", {
+          ascending: false,
+        });
+
+      if (error) {
+        throw error;
+      }
+
+      if (!effectActive) return;
+
+      setPurchases(
+        sortPurchaseRecordsNewestFirst(
+          (data || []).map(
+            normalizePurchaseRecord
+          )
+        )
+      );
+    } catch (error) {
+      console.error(
+        "Daily purchases load error:",
+        error
+      );
+
+      if (effectActive) {
+        setPurchasesError(
+          "تعذر تحميل مشتريات هذا اليوم."
+        );
+      }
+    } finally {
+      if (effectActive) {
+        setPurchasesLoading(false);
+      }
+    }
+  };
+
+  const dailyPurchasesChannel =
+    supabase
+      .channel(
+        `purchases-daily-sync-${selectedScheduleDate}`
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "purchases",
+        },
+        (payload) => {
+          if (
+            payload.eventType ===
+            "DELETE"
+          ) {
+            const removedPurchaseId =
+              payload.old?.id;
+
+            if (!removedPurchaseId) {
+              return;
+            }
+
+            setPurchases(
+              (previousPurchases) =>
+                previousPurchases.filter(
+                  (purchase) =>
+                    String(
+                      purchase.id
+                    ) !==
+                    String(
+                      removedPurchaseId
+                    )
+                )
+            );
+
+            return;
+          }
+
+          if (!payload.new) return;
+
+          const nextPurchase =
+            normalizePurchaseRecord(
+              payload.new
+            );
+
+          if (
+            nextPurchase.purchaseDate !==
+            selectedScheduleDate
+          ) {
+            return;
+          }
+
+          setPurchases(
+            (previousPurchases) =>
+              sortPurchaseRecordsNewestFirst([
+                ...previousPurchases.filter(
+                  (purchase) =>
+                    String(
+                      purchase.id
+                    ) !==
+                    String(
+                      nextPurchase.id
+                    )
+                ),
+                nextPurchase,
+              ])
+          );
+        }
+      )
+      .subscribe((status) => {
+        if (
+          status === "CHANNEL_ERROR" ||
+          status === "TIMED_OUT"
+        ) {
+          console.error(
+            "Daily purchases realtime error:",
+            status
+          );
+        }
+      });
+
+  loadDailyPurchases();
+
+  return () => {
+    effectActive = false;
+
+    supabase.removeChannel(
+      dailyPurchasesChannel
+    );
+  };
+}, [
+  isLoggedIn,
+  screen,
+  selectedScheduleDate,
+]);
+
+
+useEffect(() => {
+  if (
+    !isLoggedIn ||
+    screen !== "appointments" ||
+    !selectedScheduleDate ||
+    purchasesLoading
+  ) {
+    return undefined;
+  }
+
+  let effectActive = true;
+
+  const syncDailyPurchaseTotal =
+    async () => {
+      const dailyPurchases =
+        purchases.filter(
+          (purchase) =>
+            purchase.purchaseDate ===
+            selectedScheduleDate
+        );
+
+      const purchaseTotal = Number(
+        dailyPurchases
+          .reduce(
+            (total, purchase) =>
+              total +
+              Number(
+                purchase.totalPrice || 0
+              ),
+            0
+          )
+          .toFixed(2)
+      );
+
+      const {
+        data: existingReport,
+        error: reportLoadError,
+      } = await supabase
+        .from("daily_reports")
+        .select("report_data")
+        .eq(
+          "report_date",
+          selectedScheduleDate
+        )
+        .maybeSingle();
+
+      if (
+        reportLoadError ||
+        !effectActive
+      ) {
+        if (reportLoadError) {
+          console.error(
+            "Purchase total report load error:",
+            reportLoadError
+          );
+        }
+
+        return;
+      }
+
+      const currentReport = {
+        ...getManualForDate(
+          selectedScheduleDate
+        ),
+        ...(existingReport?.report_data ||
+          {}),
+      };
+
+      const purchaseIsManagedByTable =
+        Boolean(
+          currentReport
+            .purchaseManagedByTable
+        );
+
+      if (
+        dailyPurchases.length === 0 &&
+        !purchaseIsManagedByTable
+      ) {
+        return;
+      }
+
+      const currentPurchaseTotal =
+        Number(
+          parseAmount(
+            currentReport.purchase
+          ).toFixed(2)
+        );
+
+      if (
+        purchaseIsManagedByTable &&
+        currentPurchaseTotal ===
+          purchaseTotal
+      ) {
+        return;
+      }
+
+      const nextReport = {
+        ...currentReport,
+
+        purchase:
+          purchaseTotal.toFixed(2),
+
+        purchaseManagedByTable: true,
+      };
+
+      setDailyManualData(
+        (previous) => ({
+          ...previous,
+
+          [selectedScheduleDate]:
+            nextReport,
+        })
+      );
+
+      await saveDailyReportForDate(
+        selectedScheduleDate,
+        nextReport
+      );
+    };
+
+  syncDailyPurchaseTotal();
+
+  return () => {
+    effectActive = false;
+  };
+}, [
+  isLoggedIn,
+  screen,
+  selectedScheduleDate,
+  purchases,
+  purchasesLoading,
+]);
+
+
   // 💾 SAVE SCHEDULE SETTINGS
   useEffect(() => {
     localStorage.setItem(
@@ -1863,6 +2236,49 @@ const normalizeInvoiceRecord = (invoice) => ({
 
   updatedAt:
     invoice.updated_at || "",
+});
+
+
+const normalizePurchaseRecord = (purchase) => ({
+  id: purchase.id,
+
+  purchaseDate:
+    purchase.purchase_date || "",
+
+  productName:
+    purchase.product_name || "",
+
+  quantity: Number(
+    purchase.quantity || 0
+  ),
+
+  totalPrice: Number(
+    purchase.total_price || 0
+  ),
+
+  supplierName:
+    purchase.supplier_name || "",
+
+  vatInvoice: Boolean(
+    purchase.vat_invoice
+  ),
+
+  vatAmount: Number(
+    purchase.vat_amount || 0
+  ),
+
+  unitPrice: Number(
+    purchase.unit_price || 0
+  ),
+
+  createdBy:
+    purchase.created_by || "",
+
+  createdAt:
+    purchase.created_at || "",
+
+  updatedAt:
+    purchase.updated_at || "",
 });
 
 
@@ -2265,6 +2681,867 @@ useEffect(() => {
   invoicesToDate,
 ]);
 
+
+useEffect(() => {
+  if (
+    !isLoggedIn ||
+    screen !== "purchases"
+  ) {
+    return undefined;
+  }
+
+  if (
+    !purchasesFromDate ||
+    !purchasesToDate ||
+    purchasesFromDate >
+      purchasesToDate
+  ) {
+    setPurchases([]);
+    setPurchasesLoading(false);
+
+    return undefined;
+  }
+
+  let effectActive = true;
+
+  const purchaseIsInsideSelectedRange =
+    (purchase) => {
+      const purchaseDate =
+        String(
+          purchase?.purchaseDate ||
+            purchase?.purchase_date ||
+            ""
+        ).slice(0, 10);
+
+      if (!purchaseDate) {
+        return false;
+      }
+
+      return (
+        purchaseDate >=
+          purchasesFromDate &&
+        purchaseDate <=
+          purchasesToDate
+      );
+    };
+
+  const loadPurchasesForSelectedRange =
+    async () => {
+      setPurchasesLoading(true);
+      setPurchasesError("");
+
+      try {
+        const pageSize = 1000;
+        let fromIndex = 0;
+        let hasMore = true;
+        let loadedPurchases = [];
+
+        while (
+          hasMore &&
+          effectActive
+        ) {
+          const toIndex =
+            fromIndex +
+            pageSize -
+            1;
+
+          const {
+            data,
+            error,
+          } = await supabase
+            .from("purchases")
+            .select(
+              [
+                "id",
+                "purchase_date",
+                "product_name",
+                "quantity",
+                "total_price",
+                "supplier_name",
+                "vat_invoice",
+                "vat_amount",
+                "unit_price",
+                "created_by",
+                "created_at",
+                "updated_at",
+              ].join(",")
+            )
+            .gte(
+              "purchase_date",
+              purchasesFromDate
+            )
+            .lte(
+              "purchase_date",
+              purchasesToDate
+            )
+            .order(
+              "purchase_date",
+              {
+                ascending: false,
+              }
+            )
+            .order(
+              "id",
+              {
+                ascending: false,
+              }
+            )
+            .range(
+              fromIndex,
+              toIndex
+            );
+
+          if (error) {
+            throw error;
+          }
+
+          const normalizedPage =
+            (data || []).map(
+              normalizePurchaseRecord
+            );
+
+          loadedPurchases = [
+            ...loadedPurchases,
+            ...normalizedPage,
+          ];
+
+          hasMore =
+            normalizedPage.length ===
+            pageSize;
+
+          fromIndex += pageSize;
+        }
+
+        if (!effectActive) {
+          return;
+        }
+
+        setPurchases(
+          sortPurchaseRecordsNewestFirst(
+            loadedPurchases
+          )
+        );
+
+        setPurchasesVisibleCount(30);
+      } catch (error) {
+        console.error(
+          "Purchases range load error:",
+          error
+        );
+
+        if (effectActive) {
+          setPurchases([]);
+
+          setPurchasesError(
+            "تعذر تحميل مشتريات الفترة المحددة."
+          );
+        }
+      } finally {
+        if (effectActive) {
+          setPurchasesLoading(false);
+        }
+      }
+    };
+
+  const purchasesPageChannel =
+    supabase
+      .channel(
+        `purchases-page-sync-${purchasesFromDate}-${purchasesToDate}`
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "purchases",
+        },
+        (payload) => {
+          if (
+            payload.eventType ===
+            "DELETE"
+          ) {
+            const removedPurchaseId =
+              payload.old?.id;
+
+            if (!removedPurchaseId) {
+              return;
+            }
+
+            setPurchases(
+              (previousPurchases) =>
+                previousPurchases.filter(
+                  (purchase) =>
+                    String(
+                      purchase.id
+                    ) !==
+                    String(
+                      removedPurchaseId
+                    )
+                )
+            );
+
+            return;
+          }
+
+          if (!payload.new) {
+            return;
+          }
+
+          const nextPurchase =
+            normalizePurchaseRecord(
+              payload.new
+            );
+
+          setPurchases(
+            (previousPurchases) => {
+              const purchasesWithoutChangedRecord =
+                previousPurchases.filter(
+                  (purchase) =>
+                    String(
+                      purchase.id
+                    ) !==
+                    String(
+                      nextPurchase.id
+                    )
+                );
+
+              if (
+                !purchaseIsInsideSelectedRange(
+                  nextPurchase
+                )
+              ) {
+                return purchasesWithoutChangedRecord;
+              }
+
+              return sortPurchaseRecordsNewestFirst([
+                ...purchasesWithoutChangedRecord,
+                nextPurchase,
+              ]);
+            }
+          );
+        }
+      )
+      .subscribe((status) => {
+        if (
+          status ===
+            "CHANNEL_ERROR" ||
+          status ===
+            "TIMED_OUT"
+        ) {
+          console.error(
+            "Purchases page realtime error:",
+            status
+          );
+        }
+      });
+
+  loadPurchasesForSelectedRange();
+
+  return () => {
+    effectActive = false;
+
+    supabase.removeChannel(
+      purchasesPageChannel
+    );
+  };
+}, [
+  isLoggedIn,
+  screen,
+  purchasesFromDate,
+  purchasesToDate,
+]);
+
+
+const calculatePurchaseVatAmount = (
+  totalPrice
+) => {
+  const safeTotalPrice =
+    Number(totalPrice || 0);
+
+  if (
+    !Number.isFinite(safeTotalPrice) ||
+    safeTotalPrice <= 0
+  ) {
+    return 0;
+  }
+
+  return Number(
+    (
+      (safeTotalPrice * 15) /
+      115
+    ).toFixed(2)
+  );
+};
+
+
+const calculatePurchaseUnitPrice = (
+  totalPrice,
+  quantity
+) => {
+  const safeTotalPrice =
+    Number(totalPrice || 0);
+
+  const safeQuantity =
+    Number(quantity || 0);
+
+  if (
+    !Number.isFinite(safeTotalPrice) ||
+    !Number.isFinite(safeQuantity) ||
+    safeQuantity <= 0
+  ) {
+    return 0;
+  }
+
+  return Number(
+    (
+      safeTotalPrice /
+      safeQuantity
+    ).toFixed(2)
+  );
+};
+
+
+const formatPurchasePageDate = (
+  value
+) => {
+  const cleanDate =
+    String(value || "").slice(
+      0,
+      10
+    );
+
+  if (!cleanDate) {
+    return "-";
+  }
+
+  const [
+    year,
+    month,
+    day,
+  ] = cleanDate.split("-");
+
+  return (
+    year &&
+    month &&
+    day
+  )
+    ? `${day}-${month}-${year}`
+    : cleanDate;
+};
+
+
+const formatPurchaseQuantity = (
+  value
+) => {
+  const numericValue =
+    Number(value || 0);
+
+  if (
+    !Number.isFinite(numericValue)
+  ) {
+    return "0";
+  }
+
+  return numericValue.toLocaleString(
+    "en-US",
+    {
+      maximumFractionDigits: 3,
+    }
+  );
+};
+
+
+const sortPurchaseRecordsNewestFirst = (
+  purchaseRows
+) =>
+  [...(purchaseRows || [])].sort(
+    (
+      firstPurchase,
+      secondPurchase
+    ) => {
+      const dateComparison =
+        String(
+          secondPurchase.purchaseDate || ""
+        ).localeCompare(
+          String(
+            firstPurchase.purchaseDate || ""
+          )
+        );
+
+      if (dateComparison !== 0) {
+        return dateComparison;
+      }
+
+      return (
+        Number(
+          secondPurchase.id || 0
+        ) -
+        Number(
+          firstPurchase.id || 0
+        )
+      );
+    }
+  );
+
+
+const upsertPurchaseInState = (
+  nextPurchase
+) => {
+  if (!nextPurchase?.id) return;
+
+  setPurchases(
+    (previousPurchases) =>
+      sortPurchaseRecordsNewestFirst([
+        ...previousPurchases.filter(
+          (purchase) =>
+            String(purchase.id) !==
+            String(nextPurchase.id)
+        ),
+        nextPurchase,
+      ])
+  );
+};
+
+
+const resetPurchaseDraft = () => {
+  setPurchaseDraft({
+    productName: "",
+    quantity: "1",
+    totalPrice: "",
+    supplierName: "",
+    vatInvoice: false,
+  });
+};
+
+
+const createPurchase = async (
+  purchaseDate = selectedScheduleDate
+) => {
+  if (
+    !ensureSystemWritable() ||
+    !canAddData ||
+    purchaseSaving
+  ) {
+    return;
+  }
+
+  const productName =
+    String(
+      purchaseDraft.productName || ""
+    ).trim();
+
+  const supplierName =
+    String(
+      purchaseDraft.supplierName || ""
+    ).trim();
+
+  const quantity =
+    Number(
+      purchaseDraft.quantity
+    );
+
+  const totalPrice =
+    Number(
+      purchaseDraft.totalPrice
+    );
+
+  const safePurchaseDate =
+    purchaseDate ||
+    selectedScheduleDate ||
+    getCurrentLocalDate();
+
+  if (!productName) {
+    alert(
+      "اكتب اسم المنتج أولاً."
+    );
+
+    return;
+  }
+
+  if (
+    !Number.isFinite(quantity) ||
+    quantity <= 0
+  ) {
+    alert(
+      "الكمية يجب أن تكون أكبر من صفر."
+    );
+
+    return;
+  }
+
+  if (
+    !Number.isFinite(totalPrice) ||
+    totalPrice <= 0
+  ) {
+    alert(
+      "السعر الإجمالي يجب أن يكون أكبر من صفر."
+    );
+
+    return;
+  }
+
+  setPurchaseSaving(true);
+  setPurchasesError("");
+
+  try {
+    const {
+      data,
+      error,
+    } = await supabase
+      .from("purchases")
+      .insert([
+        {
+          purchase_date:
+            safePurchaseDate,
+
+          product_name:
+            productName,
+
+          quantity,
+
+          total_price:
+            totalPrice,
+
+          supplier_name:
+            supplierName,
+
+          vat_invoice:
+            Boolean(
+              purchaseDraft.vatInvoice
+            ),
+        },
+      ])
+      .select(
+        [
+          "id",
+          "purchase_date",
+          "product_name",
+          "quantity",
+          "total_price",
+          "supplier_name",
+          "vat_invoice",
+          "vat_amount",
+          "unit_price",
+          "created_by",
+          "created_at",
+          "updated_at",
+        ].join(",")
+      )
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    if (data) {
+      upsertPurchaseInState(
+        normalizePurchaseRecord(data)
+      );
+    }
+
+    resetPurchaseDraft();
+  } catch (error) {
+    console.error(
+      "Purchase create error:",
+      error
+    );
+
+    setPurchasesError(
+      "تعذر حفظ عملية الشراء."
+    );
+
+    alert(
+      "لم يتم حفظ عملية الشراء. تأكد من الاتصال وحاول مرة أخرى."
+    );
+  } finally {
+    setPurchaseSaving(false);
+  }
+};
+
+
+const startEditPurchase = (
+  purchase
+) => {
+  if (
+    !purchase ||
+    !canEditData ||
+    !ensureSystemWritable()
+  ) {
+    return;
+  }
+
+  setEditingPurchaseId(
+    purchase.id
+  );
+
+  setEditingPurchaseDraft({
+    productName:
+      purchase.productName || "",
+
+    quantity:
+      String(
+        purchase.quantity || 1
+      ),
+
+    totalPrice:
+      String(
+        purchase.totalPrice || ""
+      ),
+
+    supplierName:
+      purchase.supplierName || "",
+
+    vatInvoice:
+      Boolean(
+        purchase.vatInvoice
+      ),
+  });
+};
+
+
+const cancelEditPurchase = () => {
+  setEditingPurchaseId(null);
+
+  setEditingPurchaseDraft({
+    productName: "",
+    quantity: "1",
+    totalPrice: "",
+    supplierName: "",
+    vatInvoice: false,
+  });
+};
+
+
+const savePurchaseEdit = async (
+  purchaseId
+) => {
+  if (
+    !ensureSystemWritable() ||
+    !canEditData ||
+    purchaseSaving ||
+    !purchaseId
+  ) {
+    return;
+  }
+
+  const productName =
+    String(
+      editingPurchaseDraft
+        .productName || ""
+    ).trim();
+
+  const supplierName =
+    String(
+      editingPurchaseDraft
+        .supplierName || ""
+    ).trim();
+
+  const quantity =
+    Number(
+      editingPurchaseDraft.quantity
+    );
+
+  const totalPrice =
+    Number(
+      editingPurchaseDraft
+        .totalPrice
+    );
+
+  if (!productName) {
+    alert(
+      "اكتب اسم المنتج أولاً."
+    );
+
+    return;
+  }
+
+  if (
+    !Number.isFinite(quantity) ||
+    quantity <= 0
+  ) {
+    alert(
+      "الكمية يجب أن تكون أكبر من صفر."
+    );
+
+    return;
+  }
+
+  if (
+    !Number.isFinite(totalPrice) ||
+    totalPrice <= 0
+  ) {
+    alert(
+      "السعر الإجمالي يجب أن يكون أكبر من صفر."
+    );
+
+    return;
+  }
+
+  setPurchaseSaving(true);
+  setPurchasesError("");
+
+  try {
+    const {
+      data,
+      error,
+    } = await supabase
+      .from("purchases")
+      .update({
+        product_name:
+          productName,
+
+        quantity,
+
+        total_price:
+          totalPrice,
+
+        supplier_name:
+          supplierName,
+
+        vat_invoice:
+          Boolean(
+            editingPurchaseDraft
+              .vatInvoice
+          ),
+      })
+      .eq(
+        "id",
+        purchaseId
+      )
+      .select(
+        [
+          "id",
+          "purchase_date",
+          "product_name",
+          "quantity",
+          "total_price",
+          "supplier_name",
+          "vat_invoice",
+          "vat_amount",
+          "unit_price",
+          "created_by",
+          "created_at",
+          "updated_at",
+        ].join(",")
+      )
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    if (data) {
+      upsertPurchaseInState(
+        normalizePurchaseRecord(data)
+      );
+    }
+
+    cancelEditPurchase();
+  } catch (error) {
+    console.error(
+      "Purchase update error:",
+      error
+    );
+
+    setPurchasesError(
+      "تعذر تعديل عملية الشراء."
+    );
+
+    alert(
+      "لم يتم حفظ تعديل عملية الشراء."
+    );
+  } finally {
+    setPurchaseSaving(false);
+  }
+};
+
+
+const deletePurchase = async (
+  purchase
+) => {
+  if (
+    !purchase?.id ||
+    purchaseDeletingId
+  ) {
+    return;
+  }
+
+  if (!ensureDeleteAllowed()) {
+    return;
+  }
+
+  const confirmed =
+    window.confirm(
+      `هل أنت متأكد من حذف عملية شراء ${
+        purchase.productName || ""
+      }؟`
+    );
+
+  if (!confirmed) return;
+
+  setPurchaseDeletingId(
+    purchase.id
+  );
+
+  setPurchasesError("");
+
+  try {
+    const {
+      error,
+    } = await supabase
+      .from("purchases")
+      .delete()
+      .eq(
+        "id",
+        purchase.id
+      );
+
+    if (error) {
+      throw error;
+    }
+
+    setPurchases(
+      (previousPurchases) =>
+        previousPurchases.filter(
+          (purchaseItem) =>
+            String(
+              purchaseItem.id
+            ) !==
+            String(
+              purchase.id
+            )
+        )
+    );
+
+    if (
+      String(
+        editingPurchaseId || ""
+      ) ===
+      String(
+        purchase.id
+      )
+    ) {
+      cancelEditPurchase();
+    }
+  } catch (error) {
+    console.error(
+      "Purchase delete error:",
+      error
+    );
+
+    setPurchasesError(
+      "تعذر حذف عملية الشراء."
+    );
+
+    alert(
+      "لم يتم حذف عملية الشراء."
+    );
+  } finally {
+    setPurchaseDeletingId(null);
+  }
+};
+
+
   const [editingId, setEditingId] = useState(null);
   const [editedName, setEditedName] = useState("");
   const [editedPhone, setEditedPhone] = useState("");
@@ -2362,7 +3639,7 @@ useEffect(() => {
     total_paid: 0,
     service_history: [],
   },
-]).select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at").single();
+]).select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at").single();
 
 if (error) {
   console.error("ADD CLIENT ERROR:", error);
@@ -2414,7 +3691,7 @@ const { data: updatedClient, error } = await supabase
     address: editedAddress,
   })
   .eq("id", id)
-  .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at")
+  .select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at")
   .single();
 
 if (error) {
@@ -2613,12 +3890,152 @@ goToScreen("clientProfile");
 loadClientScheduleHistory(fullClient?.phone || client.phone);
 };
 
+  // 🎫 UPDATE LOYALTY CARD NAME
+  const updateClientLoyaltyCardName = async (
+    client,
+    enteredCardName
+  ) => {
+    if (
+      !ensureSystemWritable() ||
+      !canEditData ||
+      !client?.id
+    ) {
+      return false;
+    }
+
+    const cleanCardName =
+      String(
+        enteredCardName || ""
+      ).trim();
+
+    const {
+      error: updateError,
+    } = await supabase
+      .from("clients")
+      .update({
+        loyalty_card_name:
+          cleanCardName,
+      })
+      .eq(
+        "id",
+        client.id
+      );
+
+    if (updateError) {
+      console.log(
+        "Loyalty card name update error:",
+        updateError
+      );
+
+      alert(
+        `لم يتم حفظ اسم كرت الولاء.\n${updateError.message || ""}`
+      );
+
+      return false;
+    }
+
+    const {
+      data: savedClient,
+      error: verifyError,
+    } = await supabase
+      .from("clients")
+      .select(
+        "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at"
+      )
+      .eq(
+        "id",
+        client.id
+      )
+      .single();
+
+    if (
+      verifyError ||
+      !savedClient
+    ) {
+      console.log(
+        "Loyalty card name verification error:",
+        verifyError
+      );
+
+      alert(
+        `تعذر التأكد من حفظ اسم كرت الولاء.\n${verifyError?.message || ""}`
+      );
+
+      return false;
+    }
+
+    const savedCardName =
+      String(
+        savedClient.loyalty_card_name ||
+          ""
+      ).trim();
+
+    if (
+      savedCardName !==
+      cleanCardName
+    ) {
+      alert(
+        "لم يتم اعتماد اسم كرت الولاء في قاعدة البيانات."
+      );
+
+      return false;
+    }
+
+    const nextClient =
+      normalizeClientRecord(
+        savedClient
+      );
+
+    setClients((previousClients) => {
+      const nextClients =
+        previousClients.map(
+          (clientItem) =>
+            String(clientItem.id) ===
+            String(nextClient.id)
+              ? nextClient
+              : clientItem
+        );
+
+      saveClientsToCache(
+        nextClients
+      );
+
+      return nextClients;
+    });
+
+    return true;
+  };
+
+
+  const profileSaveQueueRef =
+    useRef(Promise.resolve());
+
+
   // 💾 SAVE CLIENT PROFILE
-  const saveClientProfile = async () => {
-    if (!ensureSystemWritable() || !canEditData) return;
-    const updatedReferrals = profileReferrals.filter(
-      (referral) => referral.name || referral.phone
-    );
+  const saveClientProfile = async (
+    closeAfterSave = true
+  ) => {
+    if (
+      !ensureSystemWritable() ||
+      !canEditData ||
+      !selectedClientId
+    ) {
+      return false;
+    }
+
+    const shouldCloseAfterSave =
+      closeAfterSave !== false;
+
+    const updatedReferrals =
+      profileReferrals.filter(
+        (referral) =>
+          String(
+            referral.name || ""
+          ).trim() ||
+          String(
+            referral.phone || ""
+          ).trim()
+      );
 
     const profileUpdate = {
       notes: profileNotes,
@@ -2627,49 +4044,125 @@ loadClientScheduleHistory(fullClient?.phone || client.phone);
       referrals: updatedReferrals,
     };
 
-    const { error } = await supabase
-      .from("clients")
-      .update(profileUpdate)
-      .eq("id", selectedClientId);
+    const clientIdToSave =
+      selectedClientId;
 
-    if (error) {
-      console.log("Client profile save error:", error);
+    const runProfileSave =
+      async () => {
+        const {
+          error,
+        } = await supabase
+          .from("clients")
+          .update(profileUpdate)
+          .eq(
+            "id",
+            clientIdToSave
+          );
 
-      const { error: fallbackError } = await supabase
-        .from("clients")
-        .update({
-          notes: profileNotes,
-          blacklist: profileBlacklist,
-          frame: profileFrame,
-        })
-        .eq("id", selectedClientId);
+        if (error) {
+          console.log(
+            "Client profile save error:",
+            error
+          );
 
-      if (fallbackError) {
-        console.log("Client profile fallback save error:", fallbackError);
-        alert("لم يتم حفظ البروفايل. تأكد من اتصال الإنترنت وجرب مرة ثانية.");
-        return;
-      }
+          const {
+            error: fallbackError,
+          } = await supabase
+            .from("clients")
+            .update({
+              notes:
+                profileUpdate.notes,
+
+              blacklist:
+                profileUpdate.blacklist,
+
+              frame:
+                profileUpdate.frame,
+            })
+            .eq(
+              "id",
+              clientIdToSave
+            );
+
+          if (fallbackError) {
+            console.log(
+              "Client profile fallback save error:",
+              fallbackError
+            );
+
+            alert(
+              "لم يتم حفظ البروفايل. تأكد من اتصال الإنترنت وجرب مرة ثانية."
+            );
+
+            return false;
+          }
+        }
+
+        const referralsSaved =
+          await syncProfileReferralsToSharedList(
+            clientIdToSave,
+            updatedReferrals
+          );
+
+        if (!referralsSaved) {
+          alert(
+            "تم حفظ الملاحظات، لكن لم يتم حفظ العملاء المرشحين. تأكد من الاتصال وجرب مرة ثانية."
+          );
+
+          return false;
+        }
+
+        setClients(
+          (previousClients) => {
+            const nextClients =
+              previousClients.map(
+                (client) =>
+                  String(
+                    client.id
+                  ) ===
+                  String(
+                    clientIdToSave
+                  )
+                    ? {
+                        ...client,
+                        ...profileUpdate,
+                      }
+                    : client
+              );
+
+            saveClientsToCache(
+              nextClients
+            );
+
+            return nextClients;
+          }
+        );
+
+        fetchManualReferrals();
+
+        return true;
+      };
+
+    const queuedSave =
+      profileSaveQueueRef.current.then(
+        runProfileSave,
+        runProfileSave
+      );
+
+    profileSaveQueueRef.current =
+      queuedSave.catch(() => false);
+
+    const saved =
+      await queuedSave;
+
+    if (
+      saved &&
+      shouldCloseAfterSave
+    ) {
+      setScreen("clients");
     }
 
-    const referralsSaved = await syncProfileReferralsToSharedList(
-      selectedClientId,
-      updatedReferrals
-    );
-
-    if (!referralsSaved) {
-      alert("تم حفظ البروفايل، لكن لم يتم نقل العملاء المرشحين. تأكد أن جدول referred_clients موجود في Supabase.");
-      return;
-    }
-
-    setClients((prev) =>
-      prev.map((client) =>
-        String(client.id) === String(selectedClientId)
-          ? { ...client, ...profileUpdate }
-          : client
-      )
-    );
-    fetchManualReferrals();
-    setScreen("clients");
+    return saved;
   };
 
   // ➕ ADD CLIENT REFERRAL
@@ -2716,7 +4209,7 @@ loadClientScheduleHistory(fullClient?.phone || client.phone);
     .from("clients")
     .update({ visits: newVisits })
     .eq("id", id)
-    .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at")
+    .select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at")
     .single();
 
   if (error) {
@@ -2741,7 +4234,7 @@ loadClientScheduleHistory(fullClient?.phone || client.phone);
     .from("clients")
     .update({ visits: newVisits })
     .eq("id", id)
-    .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at")
+    .select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at")
     .single();
 
   if (error) {
@@ -2789,7 +4282,7 @@ const updateClientLastActivity = async (id) => {
       .from("clients")
       .update({ frame: frameValue })
       .eq("id", id)
-      .select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at")
+      .select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at")
       .single();
 
     if (error) {
@@ -3950,10 +5443,7 @@ return next;
     };
 
   useEffect(() => {
-    if (
-      !isLoggedIn ||
-      screen !== "inactiveClients"
-    ) {
+    if (!isLoggedIn) {
       return undefined;
     }
 
@@ -3976,8 +5466,9 @@ return next;
           }, 1500);
       };
 
-    // يتم الفحص الكامل مرة واحدة فقط
-    // عند فتح الصفحة، وليس بعد كل تعديل.
+    // تحميل بيانات العملاء المنقطعين
+    // مباشرة بعد تسجيل الدخول حتى يعمل
+    // إشعار المتابعة في جميع الصفحات.
     loadInactiveFutureAppointments();
     loadInactiveServiceHistory();
 
@@ -3994,9 +5485,8 @@ return next;
             table: "schedule_rows",
           },
           () => {
-            // تحديث خفيف للمواعيد القادمة فقط.
-            // آخر طلب يتحدث من قناة clients-sync
-            // الموجودة أصلًا في النظام.
+            // تحديث قائمة المواعيد القادمة
+            // عند أي تغيير في جدول المواعيد.
             refreshFutureAppointments();
           }
         )
@@ -4015,10 +5505,7 @@ return next;
         inactiveClientsChannel
       );
     };
-  }, [
-    isLoggedIn,
-    screen,
-  ]);
+  }, [isLoggedIn]);
 const getScheduleClientBadges = (row) => {
   const client = findClientByExactPhone(row?.number || "");
 
@@ -6085,7 +7572,7 @@ const getScheduleClientBadges = (row) => {
             matchedClient.id
           )
           .select(
-            "id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at"
+            "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at"
           )
           .single();
 
@@ -6760,7 +8247,7 @@ const getScheduleClientBadges = (row) => {
       .update({ visits: nextVisits })
       .eq("id", matchedClient.id)
       .select(
-        "id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at"
+        "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at"
       )
       .single();
 
@@ -6845,7 +8332,7 @@ if (visitsValue === null) {
           total_paid: 0,
           service_history: [],
         },
-      ]).select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at").single();
+      ]).select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at").single();
 
       if (error) {
         console.log("Additional client Send To clients copy error:", error);
@@ -7314,7 +8801,7 @@ if (visitsValue === null) {
           total_paid: 0,
           service_history: [],
         },
-      ]).select("id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at").single();
+      ]).select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at").single();
 
       if (error) {
         console.log("Send To clients copy error:", error);
@@ -7907,7 +9394,7 @@ const handleScheduleRowAction = (rowIndex, action) => {
             matchedClientForOrder.id
           )
           .select(
-            "id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at"
+            "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at"
           )
           .single();
 
@@ -9775,6 +11262,107 @@ const sendWhatsApp = async (client) => {
     return cleanOrder;
   };
 
+
+  const normalizeServiceHistoryClientName = (
+    value
+  ) =>
+    String(value || "")
+      .normalize("NFKC")
+      .toLowerCase()
+      .replace(
+        /[\u064B-\u065F\u0670]/g,
+        ""
+      )
+      .replace(/[أإآ]/g, "ا")
+      .replace(/ى/g, "ي")
+      .replace(/\s+/g, "")
+      .replace(
+        /[^\u0600-\u06ffa-z0-9]/g,
+        ""
+      );
+
+
+  const matchesServiceHistoryClient = ({
+    serviceClientId,
+    servicePhone,
+    serviceName,
+    profileClient,
+  }) => {
+    if (!profileClient?.id) {
+      return false;
+    }
+
+    const cleanServiceClientId =
+      String(
+        serviceClientId || ""
+      ).trim();
+
+    const cleanProfileClientId =
+      String(
+        profileClient.id || ""
+      ).trim();
+
+    if (cleanServiceClientId) {
+      return (
+        cleanServiceClientId ===
+        cleanProfileClientId
+      );
+    }
+
+    const serviceComparablePhone =
+      normalizePhone(
+        servicePhone
+      );
+
+    const profileComparablePhone =
+      normalizePhone(
+        profileClient.phone
+      );
+
+    if (
+      !serviceComparablePhone ||
+      !profileComparablePhone ||
+      serviceComparablePhone !==
+        profileComparablePhone
+    ) {
+      return false;
+    }
+
+    const clientsSharingPhone =
+      clients.filter(
+        (clientItem) =>
+          normalizePhone(
+            clientItem.phone
+          ) ===
+          profileComparablePhone
+      );
+
+    if (
+      clientsSharingPhone.length <= 1
+    ) {
+      return true;
+    }
+
+    const serviceComparableName =
+      normalizeServiceHistoryClientName(
+        serviceName
+      );
+
+    const profileComparableName =
+      normalizeServiceHistoryClientName(
+        profileClient.name ||
+          profileClient.arabic_name
+      );
+
+    return Boolean(
+      serviceComparableName &&
+        profileComparableName &&
+        serviceComparableName ===
+          profileComparableName
+    );
+  };
+
+
    const getClientServiceSummary = (client) => {
     const clientPhone = normalizePhone(client.phone);
     const serviceHistory = [];
@@ -9798,8 +11386,19 @@ const sendWhatsApp = async (client) => {
           }
 
           const sameExtraClient =
-            normalizePhone(extraClient.phone) === clientPhone &&
-            clientPhone !== "";
+            matchesServiceHistoryClient({
+              serviceClientId:
+                extraClient.clientId,
+
+              servicePhone:
+                extraClient.phone,
+
+              serviceName:
+                extraClient.name,
+
+              profileClient:
+                client,
+            });
 
           if (!sameExtraClient) return;
 
@@ -9889,8 +11488,19 @@ const sendWhatsApp = async (client) => {
         if (!hasRealAppointment) return;
 
         const sameClient =
-          normalizePhone(row.number) === clientPhone &&
-          clientPhone !== "";
+          matchesServiceHistoryClient({
+            serviceClientId:
+              row.clientId,
+
+            servicePhone:
+              row.number,
+
+            serviceName:
+              row.client,
+
+            profileClient:
+              client,
+          });
 
         if (!sameClient) return;
 
@@ -10375,6 +11985,7 @@ const leavingTime = addMinutesToDisplayTime(
     ["availableAppointments", "المواعيد المتاحة"],
     ["printFrame", "طباعة اللوحة الترحيبية"],
     ["invoices", "الفواتير"],
+    ["purchases", "المشتريات"],
     ["finance", "التقارير"],
     ["incomeExpenses", "الدخل والمصاريف"],
     ["settings", "الإعدادات"],
@@ -10385,6 +11996,7 @@ const leavingTime = addMinutesToDisplayTime(
     "clients",
     "schedule_rows",
     "daily_reports",
+    "purchases",
     "app_data",
     "gift_clients",
     "referred_clients",
@@ -10403,6 +12015,7 @@ const leavingTime = addMinutesToDisplayTime(
     ["availableAppointments", "المواعيد المتاحة"],
     ["printFrame", "طباعة اللوحة الترحيبية"],
     ["invoices", "الفواتير"],
+    ["purchases", "المشتريات"],
     ["finance", "التقارير"],
     ["incomeExpenses", "الدخل والمصاريف"],
     ["settings", "الإعدادات"],
@@ -10615,7 +12228,7 @@ const leavingTime = addMinutesToDisplayTime(
         })
         .eq("id", client.id)
         .select(
-          "id,name,arabic_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at"
+          "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at"
         )
         .single();
 
@@ -10877,6 +12490,76 @@ const leavingTime = addMinutesToDisplayTime(
             secondClient.last_order_at
           ).getTime()
       );
+
+
+  const inactiveFollowUpDays = 60;
+
+  const inactiveFollowUpClients =
+    inactiveClientsBase
+      .map(
+        applyInactiveClientServiceData
+      )
+      .filter(
+        (client) =>
+          Boolean(client.last_order_at)
+      )
+      .filter((client) => {
+        const lastOrderTime =
+          new Date(
+            client.last_order_at
+          ).getTime();
+
+        if (
+          !Number.isFinite(
+            lastOrderTime
+          )
+        ) {
+          return false;
+        }
+
+        const inactiveCycleStartedAt =
+          lastOrderTime +
+          inactiveFollowUpDays *
+            24 *
+            60 *
+            60 *
+            1000;
+
+        if (
+          Date.now() <=
+          inactiveCycleStartedAt
+        ) {
+          return false;
+        }
+
+        const lastContactedTime =
+          client.last_contacted_at
+            ? new Date(
+                client.last_contacted_at
+              ).getTime()
+            : 0;
+
+        return (
+          !Number.isFinite(
+            lastContactedTime
+          ) ||
+          lastContactedTime <
+            inactiveCycleStartedAt
+        );
+      })
+      .sort(
+        (firstClient, secondClient) =>
+          new Date(
+            firstClient.last_order_at
+          ).getTime() -
+          new Date(
+            secondClient.last_order_at
+          ).getTime()
+      );
+
+  const inactiveFollowUpCount =
+    inactiveFollowUpClients.length;
+
 
   const recentOrderClients =
     clients
@@ -12117,7 +13800,7 @@ const leavingTime = addMinutesToDisplayTime(
 
   const scheduleSummaryHeaderStyle = {
     background:
-      "linear-gradient(135deg, #a9876c 0%, #c3a287 100%)",
+      "linear-gradient(135deg, #b99a80 0%, #d2b69e 100%)",
     color: "#fffdf9",
     margin: 0,
     padding: "14px 18px",
@@ -12126,7 +13809,7 @@ const leavingTime = addMinutesToDisplayTime(
     fontWeight: "800",
     letterSpacing: "0.2px",
     boxShadow:
-      "inset 0 -1px 0 rgba(255,255,255,0.22)",
+      "inset 0 -1px 0 rgba(255,255,255,0.28)",
   };
 
   const scheduleSummaryRowStyle = {
@@ -12221,11 +13904,79 @@ const leavingTime = addMinutesToDisplayTime(
   };
 
   const scheduleSummaryFieldsGridStyle = {
+    display: "grid",
+    gridTemplateColumns:
+      "repeat(auto-fit, minmax(210px, 1fr))",
+    gap: "14px",
+  };
+
+  const scheduleExpenseSectionStyle = {
+    padding: "20px",
+    background:
+      "linear-gradient(145deg, #fffdf9 0%, #f3e6da 100%)",
+  };
+
+  const scheduleExpenseSectionTitleStyle = {
+    margin: "0 0 13px",
+    color: "#72513b",
+    fontSize: "13px",
+    fontWeight: "900",
+    letterSpacing: "0.8px",
+    textTransform: "uppercase",
+    textAlign: "center",
+  };
+
+  const scheduleExpenseItemStyle = {
+    padding: "14px",
+    borderRadius: "18px",
+    border:
+      "1px solid rgba(169,132,103,0.24)",
+    background:
+      "linear-gradient(145deg, #fffdf9, #f8efe7)",
+    boxShadow:
+      "0 8px 20px rgba(75,46,31,0.06)",
     display: "flex",
-    flexWrap: "wrap",
-    justifyContent: "center",
+    flexDirection: "column",
     alignItems: "stretch",
-    gap: "0",
+    gap: "10px",
+    boxSizing: "border-box",
+  };
+
+  const scheduleExpenseLabelStyle = {
+    color: "#5b4030",
+    fontSize: "13px",
+    fontWeight: "900",
+    textAlign: "center",
+    minHeight: "20px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  };
+
+  const schedulePurchaseStripStyle = {
+    padding: "14px 16px",
+    marginBottom: "20px",
+    borderRadius: "19px",
+    border:
+      "1px solid rgba(159,125,98,0.32)",
+    background:
+      "linear-gradient(135deg, #e4d0be 0%, #f8eee5 100%)",
+    boxShadow:
+      "0 9px 22px rgba(75,46,31,0.07)",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: "13px",
+  };
+
+  const scheduleCommissionGridStyle = {
+    display: "grid",
+    gridTemplateColumns:
+      "repeat(auto-fit, minmax(240px, 1fr))",
+    gap: "14px",
+    maxWidth: "720px",
+    margin: "0 auto",
   };
 
   const scheduleSummaryTotalRowStyle = {
@@ -16401,6 +18152,36 @@ const settingsFieldGridStyle = {
           <style>{`
             body { margin: 0; background: #ddd4c9; }
             @media (min-width: 1051px) {
+              .paradise-global-sidebar {
+                display: flex !important;
+                flex-direction: column !important;
+                overflow: hidden !important;
+              }
+
+              .paradise-global-logo {
+                flex: 0 0 auto !important;
+              }
+
+              .paradise-global-sidebar-buttons {
+                flex: 1 1 auto !important;
+                min-height: 0 !important;
+                overflow-y: auto !important;
+                overflow-x: hidden !important;
+                overscroll-behavior: contain !important;
+                scroll-behavior: smooth !important;
+                scrollbar-width: none !important;
+                -ms-overflow-style: none !important;
+                touch-action: pan-y !important;
+                padding: 2px 2px 18px !important;
+                box-sizing: border-box !important;
+              }
+
+              .paradise-global-sidebar-buttons::-webkit-scrollbar {
+                display: none !important;
+                width: 0 !important;
+                height: 0 !important;
+              }
+
               .paradise-global-page {
                 min-height: 100vh !important;
                 padding: 108px 28px 28px 270px !important;
@@ -16653,8 +18434,28 @@ const settingsFieldGridStyle = {
               <button
                 key={key}
                 onClick={() => setScreen(key)}
-                onMouseEnter={(e) => luxuryHover(e, true)}
-                onMouseLeave={(e) => luxuryHover(e, false)}
+                onMouseEnter={(event) => {
+                  event.currentTarget.style.transform =
+                    "translateY(-2px) scale(1.015)";
+
+                  event.currentTarget.style.boxShadow =
+                    "none";
+                }}
+                onMouseLeave={(event) => {
+                  event.currentTarget.style.transform =
+                    "translateY(0) scale(1)";
+
+                  event.currentTarget.style.boxShadow =
+                    "none";
+                }}
+                onMouseDown={(event) => {
+                  event.currentTarget.style.transform =
+                    "translateY(0) scale(0.99)";
+                }}
+                onMouseUp={(event) => {
+                  event.currentTarget.style.transform =
+                    "translateY(-2px) scale(1.015)";
+                }}
                 style={{
                   ...buttonStyle,
                   width: "100%",
@@ -16669,8 +18470,11 @@ const settingsFieldGridStyle = {
                   color: screen === key || ["finance", "incomeExpenses", "settings"].includes(key) ? "white" : "#4b2e1f",
                   border: "1px solid rgba(214,199,184,0.75)",
                   borderRadius: "18px",
-                  transition: "0.25s ease",
-                  boxShadow: "0 12px 30px rgba(75,46,31,0.10)",
+                  transition:
+                    "transform 0.18s ease, background 0.25s ease, color 0.25s ease",
+                  transform:
+                    "translateY(0) scale(1)",
+                  boxShadow: "none",
                   fontSize: "13px",
                 }}
               >
@@ -16867,6 +18671,209 @@ const settingsFieldGridStyle = {
             </div>
           </div>
         )}
+
+        <style>
+          {`
+            @keyframes paradiseFollowUpNoticeIn {
+              from {
+                opacity: 0;
+                transform: translateY(18px) scale(0.97);
+              }
+
+              to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+              }
+            }
+
+            .paradise-inactive-follow-up-notice {
+              position: fixed;
+              right: 24px;
+              bottom: 24px;
+              width: min(355px, calc(100vw - 48px));
+              z-index: 9700;
+              animation: paradiseFollowUpNoticeIn 0.32s ease-out;
+            }
+
+            @media (max-width: 700px) {
+              .paradise-inactive-follow-up-notice {
+                left: 10px;
+                right: 10px;
+                bottom: 98px;
+                width: auto;
+              }
+            }
+          `}
+        </style>
+
+        {showGlobalLayout &&
+          inactiveFollowUpNoticeVisible &&
+          inactiveFollowUpCount > 0 &&
+          clients.length > 0 &&
+          !inactiveFutureAppointmentsLoading &&
+          !inactiveServiceHistoryLoading && (
+            <div
+              className="paradise-inactive-follow-up-notice"
+              dir="rtl"
+              style={{
+                boxSizing: "border-box",
+                padding: "15px",
+                borderRadius: "22px",
+                border:
+                  "1px solid rgba(172,133,102,0.44)",
+                background:
+                  "linear-gradient(145deg, rgba(255,252,247,0.98), rgba(226,205,187,0.96))",
+                boxShadow:
+                  "0 22px 55px rgba(57,38,28,0.24), inset 0 1px 0 rgba(255,255,255,0.90)",
+                backdropFilter: "blur(16px)",
+                color: "#3f2b21",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() =>
+                  setInactiveFollowUpNoticeVisible(
+                    false
+                  )
+                }
+                title="إغلاق الإشعار"
+                aria-label="إغلاق الإشعار"
+                style={{
+                  position: "absolute",
+                  top: "9px",
+                  left: "9px",
+                  width: "27px",
+                  height: "27px",
+                  minHeight: "27px",
+                  padding: 0,
+                  borderRadius: "9px",
+                  border:
+                    "1px solid rgba(139,102,75,0.24)",
+                  background:
+                    "rgba(255,250,245,0.70)",
+                  color: "#6b4b39",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "15px",
+                  fontWeight: "900",
+                  cursor: "pointer",
+                }}
+              >
+                ×
+              </button>
+
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
+                  paddingLeft: "25px",
+                }}
+              >
+                <div
+                  style={{
+                    width: "48px",
+                    height: "48px",
+                    flex: "0 0 48px",
+                    borderRadius: "16px",
+                    background:
+                      "linear-gradient(145deg, #4b3327, #846047)",
+                    color: "#fffaf5",
+                    boxShadow:
+                      "0 10px 22px rgba(75,46,31,0.20)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "20px",
+                    fontWeight: "950",
+                  }}
+                >
+                  {inactiveFollowUpCount}
+                </div>
+
+                <div
+                  style={{
+                    minWidth: 0,
+                    flex: 1,
+                    textAlign: "right",
+                  }}
+                >
+                  <div
+                    style={{
+                      color: "#3f2b21",
+                      fontSize: "14px",
+                      fontWeight: "950",
+                      marginBottom: "4px",
+                    }}
+                  >
+                    متابعة العملاء
+                  </div>
+
+                  <div
+                    style={{
+                      color: "#785944",
+                      fontSize: "12px",
+                      lineHeight: "1.65",
+                      fontWeight: "800",
+                    }}
+                  >
+                    لديك{" "}
+                    <strong
+                      style={{
+                        color: "#4b2e1f",
+                        fontWeight: "950",
+                      }}
+                    >
+                      {inactiveFollowUpCount}
+                    </strong>{" "}
+                    من العملاء المنقطعين لم يتم التواصل معهم بعد.
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setInactiveClientsTab(
+                    "confirmed"
+                  );
+
+                  setInactiveClientsDays(
+                    "60"
+                  );
+
+                  setInactiveClientsSearch(
+                    ""
+                  );
+
+                  setScreen(
+                    "inactiveClients"
+                  );
+                }}
+                style={{
+                  width: "100%",
+                  minHeight: "38px",
+                  marginTop: "12px",
+                  padding: "8px 14px",
+                  boxSizing: "border-box",
+                  borderRadius: "13px",
+                  border:
+                    "1px solid rgba(70,45,33,0.26)",
+                  background:
+                    "linear-gradient(135deg, #4b3327, #76513b)",
+                  color: "#fffaf5",
+                  boxShadow:
+                    "0 8px 18px rgba(75,46,31,0.16)",
+                  fontSize: "12px",
+                  fontWeight: "950",
+                  cursor: "pointer",
+                }}
+              >
+                عرض العملاء المنقطعين
+              </button>
+            </div>
+          )}
 
         <div className="paradise-global-page">
           {showGlobalLayout ? (
@@ -17126,6 +19133,27 @@ if (!isLoggedIn) {
             }}
           >
             الفواتير
+          </button>
+
+          <button
+            onClick={() => setScreen("purchases")}
+            style={{
+              ...buttonStyle,
+              width: "85%",
+              padding: "17px 22px",
+              background:
+                "linear-gradient(135deg, #ead9ca, #c9aa8f)",
+              color: "#4b2e1f",
+              fontSize: "17px",
+              fontWeight: "900",
+              marginBottom: "16px",
+              borderRadius: "18px",
+              border: "1px solid #c7a98f",
+              boxShadow:
+                "0 10px 22px rgba(75,46,31,0.10)",
+            }}
+          >
+            المشتريات
           </button>
 
           <button
@@ -20374,60 +22402,782 @@ margin: "0 auto",
                 Daily Expenses & Commission
               </h3>
 
-              <div style={scheduleSummaryFieldsGridStyle}>
-                {[
-                  ["naft", "Naft"],
-                  ["uber", "Uber"],
-                  ["purchase", "Purchase"],
-                  [
-                    "staffSalary",
-                    "Staff Salary",
-                  ],
-                  ["houseRent", "House Rent"],
-                  ["carRent", "Car Rent"],
-                  [
-                    "governmentFees",
-                    "Government Fees",
-                  ],
-                  [
-                    "commissionJoce",
-                    "Joce Commission",
-                  ],
-                  [
-                    "commissionCaren",
-                    "Caren Commission",
-                  ],
-                ].map(([field, label]) => (
+              <div style={scheduleExpenseSectionStyle}>
+                <div
+                  style={{
+                    marginBottom: "22px",
+                  }}
+                >
+                  <h4
+                    style={
+                      scheduleExpenseSectionTitleStyle
+                    }
+                  >
+                    Daily Expenses
+                  </h4>
+
                   <div
-                    key={field}
+                    style={
+                      scheduleSummaryFieldsGridStyle
+                    }
+                  >
+                    {[
+                      ["naft", "Naft"],
+                      ["uber", "Uber"],
+                      [
+                        "staffSalary",
+                        "Staff Salary",
+                      ],
+                      [
+                        "houseRent",
+                        "House Rent",
+                      ],
+                      ["carRent", "Car Rent"],
+                      [
+                        "governmentFees",
+                        "Government Fees",
+                      ],
+                      ["purchase", "Purchase"],
+                    ].map(
+                      ([field, label]) => {
+                        const isPurchaseField =
+                          field === "purchase";
+
+                        const purchaseManagedByTable =
+                          Boolean(
+                            appointmentStats.manual
+                              .purchaseManagedByTable
+                          );
+
+                        return (
+                          <label
+                            key={field}
+                            style={
+                              scheduleExpenseItemStyle
+                            }
+                          >
+                            <span
+                              style={{
+                                ...scheduleExpenseLabelStyle,
+                                gap: "7px",
+                              }}
+                            >
+                              {label}
+
+                              {isPurchaseField &&
+                                purchaseManagedByTable && (
+                                  <span
+                                    style={{
+                                      padding:
+                                        "3px 7px",
+                                      borderRadius:
+                                        "999px",
+                                      background:
+                                        "#aa896e",
+                                      color:
+                                        "#fffdf9",
+                                      fontSize:
+                                        "9px",
+                                      fontWeight:
+                                        "900",
+                                    }}
+                                  >
+                                    Auto
+                                  </span>
+                                )}
+                            </span>
+
+                            <input
+                              value={
+                                appointmentStats
+                                  .manual[field]
+                              }
+                              readOnly={
+                                isPurchaseField &&
+                                purchaseManagedByTable
+                              }
+                              onChange={(event) => {
+                                if (
+                                  isPurchaseField &&
+                                  purchaseManagedByTable
+                                ) {
+                                  return;
+                                }
+
+                                updateManualForDate(
+                                  field,
+                                  event.target
+                                    .value
+                                );
+                              }}
+                              style={{
+                                ...scheduleSummaryInputStyle,
+                                width: "100%",
+                                maxWidth: "100%",
+                                boxSizing:
+                                  "border-box",
+                                fontSize: "15px",
+
+                                ...(isPurchaseField &&
+                                purchaseManagedByTable
+                                  ? {
+                                      background:
+                                        "#e6d8cb",
+                                      cursor:
+                                        "not-allowed",
+                                    }
+                                  : {}),
+                              }}
+                            />
+                          </label>
+                        );
+                      }
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <h4
                     style={{
-                      ...scheduleSummaryRowStyle,
-                      flex: "1 1 230px",
-                      maxWidth: "280px",
-                      width: "100%",
-                      borderTop: "none",
+                      ...scheduleExpenseSectionTitleStyle,
+                      textAlign: "center",
                     }}
                   >
-                    <strong>{label}</strong>
+                    Commission
+                  </h4>
 
-                    <input
-                      value={
-                        appointmentStats.manual[
-                          field
-                        ]
-                      }
-                      onChange={(e) =>
-                        updateManualForDate(
-                          field,
-                          e.target.value
-                        )
-                      }
-                      style={
-                        scheduleSummaryInputStyle
-                      }
-                    />
+                  <div
+                    style={
+                      scheduleCommissionGridStyle
+                    }
+                  >
+                    {[
+                      [
+                        "commissionJoce",
+                        "Joce Commission",
+                      ],
+                      [
+                        "commissionCaren",
+                        "Caren Commission",
+                      ],
+                    ].map(
+                      ([field, label]) => (
+                        <label
+                          key={field}
+                          style={
+                            scheduleExpenseItemStyle
+                          }
+                        >
+                          <span
+                            style={
+                              scheduleExpenseLabelStyle
+                            }
+                          >
+                            {label}
+                          </span>
+
+                          <input
+                            value={
+                              appointmentStats
+                                .manual[field]
+                            }
+                            onChange={(event) =>
+                              updateManualForDate(
+                                field,
+                                event.target.value
+                              )
+                            }
+                            style={{
+                              ...scheduleSummaryInputStyle,
+                              width: "100%",
+                              maxWidth: "100%",
+                              boxSizing:
+                                "border-box",
+                              fontSize: "15px",
+                            }}
+                          />
+                        </label>
+                      )
+                    )}
                   </div>
-                ))}
+                </div>
+              </div>
+            </div>
+
+            <div
+              style={{
+                ...scheduleSummaryWideCardStyle,
+                height: "auto",
+              }}
+            >
+              <h3 style={scheduleSummaryHeaderStyle}>
+                Purchases
+              </h3>
+
+              <div
+                style={{
+                  padding: "18px",
+                  background:
+                    "linear-gradient(145deg, #fffdf9 0%, #f4e7db 100%)",
+                }}
+              >
+                <div
+                  style={{
+                    overflowX: "auto",
+                    borderRadius: "18px",
+                    border:
+                      "1px solid rgba(169,132,103,0.24)",
+                    boxShadow:
+                      "0 10px 24px rgba(105,77,56,0.07)",
+                    background: "#fffaf5",
+                  }}
+                >
+                  <table
+                    style={{
+                      width: "100%",
+                      minWidth: "1040px",
+                      borderCollapse: "collapse",
+                      direction: "ltr",
+                      color: "#513a2b",
+                      fontSize: "13px",
+                    }}
+                  >
+                    <thead>
+                      <tr
+                        style={{
+                          background:
+                            "linear-gradient(135deg, #d9c4b1, #eadccf)",
+                        }}
+                      >
+                        {[
+                          "Product",
+                          "Quantity",
+                          "Total Price",
+                          "Supplier",
+                          "VAT Invoice",
+                          "VAT Amount",
+                          "Unit Price",
+                          "",
+                        ].map((heading) => (
+                          <th
+                            key={heading || "add-action"}
+                            style={{
+                              padding: "13px 10px",
+                              borderBottom:
+                                "1px solid rgba(169,132,103,0.30)",
+                              fontWeight: "900",
+                              whiteSpace: "nowrap",
+                              textAlign: "center",
+                            }}
+                          >
+                            {heading}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      <tr
+                        style={{
+                          background: "#fffdf9",
+                        }}
+                      >
+                        <td
+                          style={{
+                            padding: "10px",
+                            minWidth: "220px",
+                          }}
+                        >
+                          <input
+                            value={
+                              purchaseDraft.productName
+                            }
+                            onChange={(e) =>
+                              setPurchaseDraft(
+                                (previous) => ({
+                                  ...previous,
+
+                                  productName:
+                                    e.target.value,
+                                })
+                              )
+                            }
+                            placeholder="Product name"
+                            style={{
+                              ...scheduleSummaryInputStyle,
+                              width: "100%",
+                              maxWidth: "100%",
+                              boxSizing: "border-box",
+                            }}
+                          />
+                        </td>
+
+                        <td
+                          style={{
+                            padding: "10px",
+                          }}
+                        >
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={
+                              purchaseDraft.quantity
+                            }
+                            onChange={(e) =>
+                              setPurchaseDraft(
+                                (previous) => ({
+                                  ...previous,
+
+                                  quantity:
+                                    e.target.value,
+                                })
+                              )
+                            }
+                            style={{
+                              ...scheduleSummaryInputStyle,
+                              width: "100%",
+                              maxWidth: "100%",
+                              boxSizing: "border-box",
+                            }}
+                          />
+                        </td>
+
+                        <td
+                          style={{
+                            padding: "10px",
+                          }}
+                        >
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={
+                              purchaseDraft.totalPrice
+                            }
+                            onChange={(e) =>
+                              setPurchaseDraft(
+                                (previous) => ({
+                                  ...previous,
+
+                                  totalPrice:
+                                    e.target.value,
+                                })
+                              )
+                            }
+                            placeholder="0.00"
+                            style={{
+                              ...scheduleSummaryInputStyle,
+                              width: "100%",
+                              maxWidth: "100%",
+                              boxSizing: "border-box",
+                            }}
+                          />
+                        </td>
+
+                        <td
+                          style={{
+                            padding: "10px",
+                            minWidth: "180px",
+                          }}
+                        >
+                          <input
+                            value={
+                              purchaseDraft.supplierName
+                            }
+                            onChange={(e) =>
+                              setPurchaseDraft(
+                                (previous) => ({
+                                  ...previous,
+
+                                  supplierName:
+                                    e.target.value,
+                                })
+                              )
+                            }
+                            placeholder="Supplier"
+                            style={{
+                              ...scheduleSummaryInputStyle,
+                              width: "100%",
+                              maxWidth: "100%",
+                              boxSizing: "border-box",
+                            }}
+                          />
+                        </td>
+
+                        <td
+                          style={{
+                            padding: "10px",
+                            textAlign: "center",
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPurchaseDraft(
+                                (previous) => ({
+                                  ...previous,
+
+                                  vatInvoice:
+                                    !previous.vatInvoice,
+                                })
+                              )
+                            }
+                            aria-label="VAT Invoice"
+                            style={{
+                              width: "40px",
+                              height: "40px",
+                              borderRadius: "13px",
+                              border:
+                                "1px solid #b89578",
+
+                              background:
+                                purchaseDraft.vatInvoice
+                                  ? "#a9876c"
+                                  : "#eee0d3",
+
+                              color:
+                                purchaseDraft.vatInvoice
+                                  ? "#fffdf9"
+                                  : "#8a6c56",
+
+                              fontSize: "20px",
+                              fontWeight: "900",
+                              cursor: "pointer",
+                            }}
+                          >
+                            {purchaseDraft.vatInvoice
+                              ? "✓"
+                              : ""}
+                          </button>
+                        </td>
+
+                        <td
+                          style={{
+                            padding: "10px",
+                            textAlign: "center",
+                            fontWeight: "800",
+                          }}
+                        >
+                          {formatCurrency(
+                            calculatePurchaseVatAmount(
+                              purchaseDraft.totalPrice
+                            )
+                          )}
+                        </td>
+
+                        <td
+                          style={{
+                            padding: "10px",
+                            textAlign: "center",
+                            fontWeight: "800",
+                          }}
+                        >
+                          {formatCurrency(
+                            calculatePurchaseUnitPrice(
+                              purchaseDraft.totalPrice,
+                              purchaseDraft.quantity
+                            )
+                          )}
+                        </td>
+
+                        <td
+                          style={{
+                            padding: "10px",
+                            minWidth: "82px",
+                            textAlign: "center",
+                          }}
+                        >
+                          <button
+                            type="button"
+                            disabled={purchaseSaving}
+                            onClick={() =>
+                              createPurchase(
+                                selectedScheduleDate
+                              )
+                            }
+                            style={{
+                              minWidth: "62px",
+                              height: "40px",
+                              padding: "0 13px",
+                              border: "none",
+                              borderRadius: "13px",
+
+                              background:
+                                purchaseSaving
+                                  ? "#b9a99b"
+                                  : "linear-gradient(135deg, #9f7d62, #7f5d46)",
+
+                              color: "#fffdf9",
+                              fontSize: "13px",
+                              fontWeight: "900",
+
+                              boxShadow:
+                                "0 7px 16px rgba(75,46,31,0.14)",
+
+                              cursor:
+                                purchaseSaving
+                                  ? "wait"
+                                  : "pointer",
+                            }}
+                          >
+                            {purchaseSaving
+                              ? "..."
+                              : "Add"}
+                          </button>
+                        </td>
+                      </tr>
+
+                      {purchasesLoading ? (
+                        <tr>
+                          <td
+                            colSpan={8}
+                            style={{
+                              padding: "26px",
+                              textAlign: "center",
+                              color: "#8a6c56",
+                              fontSize: "15px",
+                              fontWeight: "800",
+                            }}
+                          >
+                            Loading purchases...
+                          </td>
+                        </tr>
+                      ) : purchases.filter(
+                          (purchase) =>
+                            purchase.purchaseDate ===
+                            selectedScheduleDate
+                        ).length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={8}
+                            style={{
+                              padding: "26px",
+                              textAlign: "center",
+                              color: "#9a806d",
+                              fontSize: "15px",
+                              fontWeight: "700",
+                            }}
+                          >
+                            No purchases recorded for this day.
+                          </td>
+                        </tr>
+                      ) : (
+                        purchases
+                          .filter(
+                            (purchase) =>
+                              purchase.purchaseDate ===
+                              selectedScheduleDate
+                          )
+                          .map((purchase) => (
+                            <tr
+                              key={purchase.id}
+                              style={{
+                                background: "#fffaf5",
+                                fontSize: "15px",
+                                fontWeight: "700",
+                              }}
+                            >
+                              <td
+                                style={{
+                                  padding: "14px 12px",
+                                  minWidth: "220px",
+                                  borderTop:
+                                    "1px solid rgba(169,132,103,0.16)",
+                                  textAlign: "center",
+                                }}
+                              >
+                                <strong
+                                  style={{
+                                    display: "block",
+                                    width: "100%",
+                                    fontSize: "16px",
+                                    fontWeight: "800",
+                                    lineHeight: 1.5,
+                                    color: "#4b2e1f",
+                                    textAlign: "center",
+                                  }}
+                                >
+                                  {purchase.productName}
+                                </strong>
+                              </td>
+
+                              <td
+                                style={{
+                                  padding: "14px 10px",
+                                  textAlign: "center",
+                                  fontSize: "15px",
+                                  fontWeight: "750",
+                                }}
+                              >
+                                {purchase.quantity}
+                              </td>
+
+                              <td
+                                style={{
+                                  padding: "14px 10px",
+                                  textAlign: "center",
+                                  fontSize: "15px",
+                                  fontWeight: "800",
+                                }}
+                              >
+                                {formatCurrency(
+                                  purchase.totalPrice
+                                )}
+                              </td>
+
+                              <td
+                                style={{
+                                  padding: "14px 10px",
+                                  textAlign: "center",
+                                  fontSize: "15px",
+                                  fontWeight: "700",
+                                }}
+                              >
+                                {purchase.supplierName ||
+                                  "-"}
+                              </td>
+
+                              <td
+                                style={{
+                                  padding: "14px 10px",
+                                  textAlign: "center",
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    width: "40px",
+                                    height: "40px",
+                                    borderRadius: "13px",
+                                    border:
+                                      "1px solid #b89578",
+
+                                    background:
+                                      purchase.vatInvoice
+                                        ? "#a9876c"
+                                        : "#eee0d3",
+
+                                    color:
+                                      purchase.vatInvoice
+                                        ? "#fffdf9"
+                                        : "#8a6c56",
+
+                                    fontSize: "20px",
+                                    fontWeight: "900",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    justifyContent:
+                                      "center",
+                                  }}
+                                >
+                                  {purchase.vatInvoice
+                                    ? "✓"
+                                    : ""}
+                                </span>
+                              </td>
+
+                              <td
+                                style={{
+                                  padding: "14px 10px",
+                                  textAlign: "center",
+                                  fontSize: "15px",
+                                  fontWeight: "900",
+                                }}
+                              >
+                                {formatCurrency(
+                                  purchase.vatAmount
+                                )}
+                              </td>
+
+                              <td
+                                style={{
+                                  padding: "14px 10px",
+                                  textAlign: "center",
+                                  fontSize: "15px",
+                                  fontWeight: "900",
+                                }}
+                              >
+                                {formatCurrency(
+                                  purchase.unitPrice
+                                )}
+                              </td>
+
+                              <td
+                                style={{
+                                  padding: "14px 10px",
+                                  textAlign: "center",
+                                }}
+                              >
+                                <button
+                                  type="button"
+                                  title="Delete purchase"
+                                  aria-label="Delete purchase"
+                                  disabled={
+                                    String(
+                                      purchaseDeletingId ||
+                                        ""
+                                    ) ===
+                                    String(purchase.id)
+                                  }
+                                  onClick={() =>
+                                    deletePurchase(
+                                      purchase
+                                    )
+                                  }
+                                  style={{
+                                    width: "34px",
+                                    minWidth: "34px",
+                                    height: "34px",
+                                    padding: 0,
+                                    border:
+                                      "1px solid #d7b4ab",
+                                    borderRadius: "11px",
+                                    background: "#fff4f1",
+                                    color: "#a34f43",
+                                    fontSize: "18px",
+                                    fontWeight: "900",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    cursor:
+                                      String(
+                                        purchaseDeletingId ||
+                                          ""
+                                      ) ===
+                                      String(purchase.id)
+                                        ? "wait"
+                                        : "pointer",
+                                  }}
+                                >
+                                  {String(
+                                    purchaseDeletingId ||
+                                      ""
+                                  ) ===
+                                  String(purchase.id)
+                                    ? "…"
+                                    : "×"}
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {purchasesError && (
+                  <div
+                    style={{
+                      marginTop: "12px",
+                      padding: "11px 13px",
+                      borderRadius: "12px",
+                      background: "#fff0ec",
+                      color: "#9b4f45",
+                      fontWeight: "800",
+                      textAlign: "center",
+                    }}
+                  >
+                    {purchasesError}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -22180,83 +24930,33 @@ if (screen === "invoices") {
         >
           <div
             style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: "14px",
-              flexWrap: "wrap",
-              marginBottom: "18px",
+              width: "100%",
+              textAlign: "center",
+              marginBottom: "34px",
             }}
           >
-            <div>
-              <h1
-                style={{
-                  margin: 0,
-                  fontSize: "34px",
-                  fontWeight: 950,
-                }}
-              >
-                الفواتير والإشعارات
-              </h1>
-
-              <div
-                style={{
-                  marginTop: "7px",
-                  color: "#7a5a43",
-                  fontWeight: 800,
-                }}
-              >
-                سجل المستندات الضريبية
-                للخدمات المكتملة
-              </div>
-            </div>
-
-            <div
+            <img
+              src={logo}
+              alt="logo"
               style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: "10px",
-                flexWrap: "wrap",
+                width:
+                  "clamp(88px, 8vw, 100px)",
+                display: "block",
+                margin: "0 auto 14px",
+              }}
+            />
+
+            <h2
+              style={{
+                margin: 0,
+                color: "#4b2e1f",
+                fontSize:
+                  "clamp(26px, 3vw, 28px)",
+                fontWeight: "900",
               }}
             >
-              <button
-                type="button"
-                onClick={previewInvoiceTemplate}
-                style={{
-                  ...buttonStyle,
-                  padding: "11px 20px",
-                  borderRadius: "15px",
-                  background: "#9b6b3f",
-                  color: "white",
-                  border:
-                    "1px solid #9b6b3f",
-                  fontWeight: 950,
-                  cursor: "pointer",
-                }}
-              >
-                معاينة نموذج الفاتورة
-              </button>
-
-              <button
-                type="button"
-                onClick={() =>
-                  setScreen("welcome")
-                }
-                style={{
-                  ...buttonStyle,
-                  padding: "11px 20px",
-                  borderRadius: "15px",
-                  background: "#fffaf3",
-                  color: "#4b2e1f",
-                  border:
-                    "1px solid #d6c7b8",
-                  fontWeight: 900,
-                }}
-              >
-                رجوع
-              </button>
-            </div>
+              الفواتير والإشعارات
+            </h2>
           </div>
 
           <div
@@ -22517,6 +25217,26 @@ if (screen === "invoices") {
                   : `تحديد الكل (${filteredInvoices.length})`}
               </button>
             )}
+
+            <button
+              type="button"
+              onClick={previewInvoiceTemplate}
+              style={{
+                ...buttonStyle,
+                padding: "12px 18px",
+                borderRadius: "15px",
+                background: "#e2cfbe",
+                color: "#4b2e1f",
+                border:
+                  "1px solid #c9aa8f",
+                fontWeight: "950",
+                boxShadow:
+                  "0 7px 16px rgba(75,46,31,0.07)",
+                cursor: "pointer",
+              }}
+            >
+              معاينة النموذج
+            </button>
 
             <button
               type="button"
@@ -23967,6 +26687,1233 @@ if (screen === "invoices") {
     );
   }
 
+
+if (screen === "purchases") {
+  const filteredPurchases =
+    purchases.filter(
+      (purchase) => {
+        if (
+          purchasesFromDate &&
+          purchase.purchaseDate <
+            purchasesFromDate
+        ) {
+          return false;
+        }
+
+        if (
+          purchasesToDate &&
+          purchase.purchaseDate >
+            purchasesToDate
+        ) {
+          return false;
+        }
+
+        return true;
+      }
+    );
+
+  const visiblePurchases =
+    filteredPurchases.slice(
+      0,
+      purchasesVisibleCount
+    );
+
+  const totalPurchasesAmount =
+    filteredPurchases.reduce(
+      (total, purchase) =>
+        total +
+        Number(
+          purchase.totalPrice || 0
+        ),
+      0
+    );
+
+  const totalPurchasesVat =
+    filteredPurchases.reduce(
+      (total, purchase) =>
+        total +
+        Number(
+          purchase.vatAmount || 0
+        ),
+      0
+    );
+
+  const registeredInvoicesVat =
+    filteredPurchases.reduce(
+      (total, purchase) =>
+        purchase.vatInvoice
+          ? total +
+            Number(
+              purchase.vatAmount || 0
+            )
+          : total,
+      0
+    );
+
+  const unregisteredInvoicesVat =
+    filteredPurchases.reduce(
+      (total, purchase) =>
+        !purchase.vatInvoice
+          ? total +
+            Number(
+              purchase.vatAmount || 0
+            )
+          : total,
+      0
+    );
+
+  const purchasePageCardStyle = {
+    background:
+      "rgba(255,255,255,0.88)",
+    border:
+      "1px solid #d6c7b8",
+    borderRadius: "24px",
+    boxShadow:
+      "0 16px 38px rgba(75,46,31,0.09)",
+  };
+
+  const purchasePageInputStyle = {
+    ...inputStyle,
+    width: "100%",
+    margin: 0,
+    boxSizing: "border-box",
+  };
+
+  const purchaseTableHeaderStyle = {
+    padding: "13px 8px",
+    borderBottom:
+      "1px solid rgba(255,255,255,0.20)",
+    color: "white",
+    textAlign: "center",
+    fontSize: "13px",
+    fontWeight: "950",
+    whiteSpace: "normal",
+  };
+
+  const purchaseTableCellStyle = {
+    padding: "11px 8px",
+    borderBottom:
+      "1px solid #eadfd5",
+    textAlign: "center",
+    color: "#4b2e1f",
+    fontSize: "13px",
+    fontWeight: "750",
+    verticalAlign: "middle",
+  };
+
+  const invalidPurchaseDateRange =
+    Boolean(
+      purchasesFromDate &&
+      purchasesToDate &&
+      purchasesFromDate >
+        purchasesToDate
+    );
+
+  const summaryCards = [
+    {
+      label: "إجمالي المشتريات",
+      value: formatCurrency(
+        totalPurchasesAmount
+      ),
+      dark: true,
+    },
+    {
+      label:
+        "إجمالي ضريبة المشتريات",
+      value: formatCurrency(
+        totalPurchasesVat
+      ),
+    },
+    {
+      label:
+        "ضريبة الفواتير باسم المؤسسة",
+      value: formatCurrency(
+        registeredInvoicesVat
+      ),
+    },
+    {
+      label:
+        "ضريبة الفواتير غير المسجلة",
+      value: formatCurrency(
+        unregisteredInvoicesVat
+      ),
+    },
+  ];
+
+  return withGreeting(
+    <div
+      style={{
+        minHeight: "100vh",
+        width: "100%",
+        background:
+          "radial-gradient(circle at top, #fffaf3, #ebe1d3 48%, #d8c5b3)",
+        padding: "24px",
+        boxSizing: "border-box",
+        fontFamily: "Arial",
+        color: "#4b2e1f",
+        direction: "rtl",
+      }}
+    >
+      <style>
+        {`
+          .purchases-page-filter-grid {
+            display: grid;
+            grid-template-columns:
+              minmax(210px, 1fr)
+              minmax(210px, 1fr)
+              minmax(170px, 0.65fr);
+            gap: 12px;
+            align-items: end;
+          }
+
+          .purchases-page-summary-grid {
+            display: grid;
+            grid-template-columns:
+              repeat(4, minmax(190px, 1fr));
+            gap: 12px;
+          }
+
+          @media (max-width: 1000px) {
+            .purchases-page-summary-grid {
+              grid-template-columns:
+                repeat(2, minmax(180px, 1fr));
+            }
+          }
+
+          @media (max-width: 760px) {
+            .purchases-page-filter-grid,
+            .purchases-page-summary-grid {
+              grid-template-columns: 1fr;
+            }
+
+            .purchases-page-header {
+              margin-bottom: 28px !important;
+            }
+
+            .purchases-page-header img {
+              width: 90px !important;
+              margin-bottom: 12px !important;
+            }
+
+            .purchases-page-title {
+              font-size: 27px !important;
+            }
+
+            .purchases-page-container {
+              padding: 6px !important;
+            }
+
+            .purchases-page-table-card {
+              padding: 12px !important;
+            }
+          }
+        `}
+      </style>
+
+      <div
+        className="purchases-page-container"
+        style={{
+          width: "min(1380px, 100%)",
+          margin: "0 auto",
+        }}
+      >
+        <div
+          className="purchases-page-header"
+          style={{
+            width: "100%",
+            textAlign: "center",
+            marginBottom: "34px",
+          }}
+        >
+          <img
+            src={logo}
+            alt="logo"
+            style={{
+              width:
+                "clamp(88px, 8vw, 100px)",
+              display: "block",
+              margin: "0 auto 14px",
+            }}
+          />
+
+          <h2
+            className="purchases-page-title"
+            style={{
+              margin: 0,
+              color: "#4b2e1f",
+              fontSize:
+                "clamp(26px, 3vw, 28px)",
+              fontWeight: "900",
+            }}
+          >
+            المشتريات
+          </h2>
+        </div>
+
+        <div
+          style={{
+            ...purchasePageCardStyle,
+            padding: "14px",
+            marginBottom: "14px",
+          }}
+        >
+          <div className="purchases-page-filter-grid">
+            <label
+              style={{
+                display: "grid",
+                gap: "7px",
+                color: "#604333",
+                fontSize: "14px",
+                fontWeight: "900",
+              }}
+            >
+              من تاريخ
+
+              <input
+                type="date"
+                value={purchasesFromDate}
+                onChange={(event) => {
+                  setPurchasesFromDate(
+                    event.target.value
+                  );
+
+                  setPurchasesVisibleCount(
+                    30
+                  );
+                }}
+                style={
+                  purchasePageInputStyle
+                }
+              />
+            </label>
+
+            <label
+              style={{
+                display: "grid",
+                gap: "7px",
+                color: "#604333",
+                fontSize: "14px",
+                fontWeight: "900",
+              }}
+            >
+              إلى تاريخ
+
+              <input
+                type="date"
+                value={purchasesToDate}
+                onChange={(event) => {
+                  setPurchasesToDate(
+                    event.target.value
+                  );
+
+                  setPurchasesVisibleCount(
+                    30
+                  );
+                }}
+                style={
+                  purchasePageInputStyle
+                }
+              />
+            </label>
+
+            <button
+              type="button"
+              onClick={() => {
+                const currentDate =
+                  getCurrentLocalDate();
+
+                const currentMonth =
+                  currentDate.slice(0, 7);
+
+                setPurchasesFromDate(
+                  `${currentMonth}-01`
+                );
+
+                setPurchasesToDate(
+                  currentDate
+                );
+
+                setPurchasesVisibleCount(
+                  30
+                );
+              }}
+              style={{
+                ...buttonStyle,
+                width: "100%",
+                minHeight: "46px",
+                padding: "12px 16px",
+                borderRadius: "15px",
+                background: "#5f3d29",
+                color: "#ffffff",
+                border:
+                  "1px solid #5f3d29",
+                fontSize: "14px",
+                fontWeight: "900",
+                boxShadow:
+                  "0 8px 18px rgba(75,46,31,0.16)",
+                cursor: "pointer",
+              }}
+            >
+              الشهر الحالي
+            </button>
+          </div>
+
+          {invalidPurchaseDateRange && (
+            <div
+              style={{
+                marginTop: "11px",
+                padding: "10px 13px",
+                borderRadius: "13px",
+                background: "#f8e3df",
+                border:
+                  "1px solid #d8aaa0",
+                color: "#8e3028",
+                textAlign: "center",
+                fontWeight: "900",
+              }}
+            >
+              تاريخ البداية يجب أن يكون
+              قبل تاريخ النهاية.
+            </div>
+          )}
+        </div>
+
+        <div
+          className="purchases-page-summary-grid"
+          style={{
+            marginBottom: "14px",
+          }}
+        >
+          {summaryCards.map(
+            (summaryCard) => (
+              <div
+                key={summaryCard.label}
+                style={{
+                  background:
+                    "rgba(255,255,255,0.9)",
+                  border:
+                    "1px solid #d6c7b8",
+                  borderRadius: "21px",
+                  padding: "16px",
+                  minHeight: "94px",
+                  boxSizing: "border-box",
+                  textAlign: "center",
+                  boxShadow:
+                    "0 12px 28px rgba(75,46,31,0.07)",
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "center",
+                }}
+              >
+                <div
+                  style={{
+                    color: "#8a6e59",
+                    fontSize: "13px",
+                    fontWeight: "850",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {summaryCard.label}
+                </div>
+
+                <div
+                  style={{
+                    marginTop: "8px",
+                    fontSize: "22px",
+                    fontWeight: "950",
+                    direction: "ltr",
+                    color: "#4b2e1f",
+                  }}
+                >
+                  {summaryCard.value}
+                </div>
+              </div>
+            )
+          )}
+        </div>
+
+        <div
+          className="purchases-page-table-card"
+          style={{
+            background:
+              "rgba(255,255,255,0.92)",
+            border:
+              "1px solid #d6c7b8",
+            borderRadius: "24px",
+            padding: "14px",
+            boxShadow:
+              "0 16px 38px rgba(75,46,31,0.09)",
+          }}
+        >
+          <style>
+            {`
+              .purchases-page-fit-table {
+                width: 100%;
+                table-layout: fixed;
+                border-collapse: collapse;
+              }
+
+              .purchases-page-fit-table th {
+                min-width: 0 !important;
+                padding: 11px 5px !important;
+                color: white !important;
+                font-size: 13px !important;
+                font-weight: 950 !important;
+                line-height: 1.35 !important;
+                white-space: normal !important;
+                overflow-wrap: anywhere;
+              }
+
+              .purchases-page-fit-table td {
+                min-width: 0 !important;
+                padding: 9px 5px !important;
+                color: #4b2e1f !important;
+                font-size: 14px !important;
+                font-weight: 750 !important;
+                line-height: 1.45 !important;
+                overflow-wrap: anywhere;
+              }
+
+              .purchases-page-fit-table input {
+                min-width: 0 !important;
+                width: 100% !important;
+                padding: 8px 5px !important;
+                font-size: 13px !important;
+                box-sizing: border-box;
+              }
+
+              @media (max-width: 900px) {
+                .purchases-page-fit-table th {
+                  padding: 8px 3px !important;
+                  font-size: 11px !important;
+                }
+
+                .purchases-page-fit-table td {
+                  padding: 7px 3px !important;
+                  font-size: 11px !important;
+                }
+
+                .purchases-page-fit-table button {
+                  padding-left: 5px !important;
+                  padding-right: 5px !important;
+                  font-size: 10px !important;
+                }
+              }
+            `}
+          </style>
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent:
+                "space-between",
+              alignItems: "center",
+              gap: "12px",
+              flexWrap: "wrap",
+              marginBottom: "12px",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "22px",
+                fontWeight: "950",
+                color: "#4b2e1f",
+              }}
+            >
+              سجل المشتريات
+            </div>
+
+            <div
+              style={{
+                padding: "7px 13px",
+                borderRadius: "999px",
+                background: "#f3e7dc",
+                border:
+                  "1px solid #d6c7b8",
+                color: "#4b2e1f",
+                fontSize: "13px",
+                fontWeight: "950",
+              }}
+            >
+              {filteredPurchases.length} سجل
+            </div>
+          </div>
+
+          {purchasesError && (
+            <div
+              style={{
+                marginBottom: "11px",
+                padding: "10px 13px",
+                borderRadius: "13px",
+                background: "#fff0ec",
+                border:
+                  "1px solid #e1a69d",
+                color: "#9b3528",
+                fontWeight: "900",
+                textAlign: "center",
+              }}
+            >
+              {purchasesError}
+            </div>
+          )}
+
+          <div
+            style={{
+              width: "100%",
+              overflow: "hidden",
+              borderRadius: "18px",
+              border:
+                "1px solid #d6c7b8",
+              background:
+                "rgba(255,255,255,0.96)",
+            }}
+          >
+            <table
+              className="purchases-page-fit-table"
+              style={{
+                direction: "rtl",
+              }}
+            >
+              <colgroup>
+                <col style={{ width: "10%" }} />
+                <col style={{ width: "15%" }} />
+                <col style={{ width: "7%" }} />
+                <col style={{ width: "10%" }} />
+                <col style={{ width: "13%" }} />
+                <col style={{ width: "13%" }} />
+                <col style={{ width: "10%" }} />
+                <col style={{ width: "9%" }} />
+                <col style={{ width: "13%" }} />
+              </colgroup>
+
+              <thead>
+                <tr
+                  style={{
+                    background: "#5f3d29",
+                    color: "white",
+                  }}
+                >
+                  {[
+                    "التاريخ",
+                    "المنتج",
+                    "الكمية",
+                    "السعر الإجمالي",
+                    "المورد",
+                    "فاتورة باسم المؤسسة",
+                    "قيمة الضريبة",
+                    "سعر الوحدة",
+                    "الإجراءات",
+                  ].map((heading) => (
+                    <th
+                      key={heading}
+                      style={
+                        purchaseTableHeaderStyle
+                      }
+                    >
+                      {heading}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+
+              <tbody>
+                {purchasesLoading ? (
+                  <tr>
+                    <td
+                      colSpan={9}
+                      style={{
+                        padding: "34px",
+                        textAlign: "center",
+                        color: "#8a6c56",
+                        fontWeight: "900",
+                      }}
+                    >
+                      جاري تحميل المشتريات...
+                    </td>
+                  </tr>
+                ) : visiblePurchases.length ===
+                  0 ? (
+                  <tr>
+                    <td
+                      colSpan={9}
+                      style={{
+                        padding: "38px",
+                        textAlign: "center",
+                        color: "#92745d",
+                        fontWeight: "850",
+                        background:
+                          "linear-gradient(145deg, #fffdf9, #f7eee5)",
+                      }}
+                    >
+                      لا توجد مشتريات في
+                      الفترة المحددة.
+                    </td>
+                  </tr>
+                ) : (
+                  visiblePurchases.map(
+                    (
+                      purchase,
+                      purchaseIndex
+                    ) => {
+                      const isEditing =
+                        String(
+                          editingPurchaseId ||
+                            ""
+                        ) ===
+                        String(
+                          purchase.id
+                        );
+
+                      const currentVatAmount =
+                        isEditing
+                          ? calculatePurchaseVatAmount(
+                              editingPurchaseDraft
+                                .totalPrice
+                            )
+                          : purchase.vatAmount;
+
+                      const currentUnitPrice =
+                        isEditing
+                          ? calculatePurchaseUnitPrice(
+                              editingPurchaseDraft
+                                .totalPrice,
+                              editingPurchaseDraft
+                                .quantity
+                            )
+                          : purchase.unitPrice;
+
+                      return (
+                        <tr
+                          key={purchase.id}
+                          style={{
+                            background:
+                              purchaseIndex %
+                                2 ===
+                              0
+                                ? "#fffdf9"
+                                : "#f8f0e8",
+                          }}
+                        >
+                          <td
+                            style={{
+                              ...purchaseTableCellStyle,
+                              direction: "ltr",
+                              whiteSpace:
+                                "nowrap",
+                            }}
+                          >
+                            {formatPurchasePageDate(
+                              purchase.purchaseDate
+                            )}
+                          </td>
+
+                          <td
+                            style={{
+                              ...purchaseTableCellStyle,
+                              minWidth: "190px",
+                            }}
+                          >
+                            {isEditing ? (
+                              <input
+                                value={
+                                  editingPurchaseDraft
+                                    .productName
+                                }
+                                onChange={(
+                                  event
+                                ) =>
+                                  setEditingPurchaseDraft(
+                                    (
+                                      previous
+                                    ) => ({
+                                      ...previous,
+                                      productName:
+                                        event
+                                          .target
+                                          .value,
+                                    })
+                                  )
+                                }
+                                style={
+                                  purchasePageInputStyle
+                                }
+                              />
+                            ) : (
+                              <strong>
+                                {
+                                  purchase.productName
+                                }
+                              </strong>
+                            )}
+                          </td>
+
+                          <td
+                            style={{
+                              ...purchaseTableCellStyle,
+                              minWidth: "110px",
+                            }}
+                          >
+                            {isEditing ? (
+                              <input
+                                type="number"
+                                min="0.001"
+                                step="0.001"
+                                value={
+                                  editingPurchaseDraft
+                                    .quantity
+                                }
+                                onChange={(
+                                  event
+                                ) =>
+                                  setEditingPurchaseDraft(
+                                    (
+                                      previous
+                                    ) => ({
+                                      ...previous,
+                                      quantity:
+                                        event
+                                          .target
+                                          .value,
+                                    })
+                                  )
+                                }
+                                style={{
+                                  ...purchasePageInputStyle,
+                                  textAlign:
+                                    "center",
+                                  direction:
+                                    "ltr",
+                                }}
+                              />
+                            ) : (
+                              formatPurchaseQuantity(
+                                purchase.quantity
+                              )
+                            )}
+                          </td>
+
+                          <td
+                            style={{
+                              ...purchaseTableCellStyle,
+                              minWidth: "140px",
+                              direction: "ltr",
+                              fontWeight: "900",
+                            }}
+                          >
+                            {isEditing ? (
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={
+                                  editingPurchaseDraft
+                                    .totalPrice
+                                }
+                                onChange={(
+                                  event
+                                ) =>
+                                  setEditingPurchaseDraft(
+                                    (
+                                      previous
+                                    ) => ({
+                                      ...previous,
+                                      totalPrice:
+                                        event
+                                          .target
+                                          .value,
+                                    })
+                                  )
+                                }
+                                style={{
+                                  ...purchasePageInputStyle,
+                                  textAlign:
+                                    "center",
+                                  direction:
+                                    "ltr",
+                                }}
+                              />
+                            ) : (
+                              formatCurrency(
+                                purchase.totalPrice
+                              )
+                            )}
+                          </td>
+
+                          <td
+                            style={{
+                              ...purchaseTableCellStyle,
+                              minWidth: "170px",
+                            }}
+                          >
+                            {isEditing ? (
+                              <input
+                                value={
+                                  editingPurchaseDraft
+                                    .supplierName
+                                }
+                                onChange={(
+                                  event
+                                ) =>
+                                  setEditingPurchaseDraft(
+                                    (
+                                      previous
+                                    ) => ({
+                                      ...previous,
+                                      supplierName:
+                                        event
+                                          .target
+                                          .value,
+                                    })
+                                  )
+                                }
+                                style={
+                                  purchasePageInputStyle
+                                }
+                              />
+                            ) : (
+                              purchase.supplierName ||
+                              "-"
+                            )}
+                          </td>
+
+                          <td
+                            style={{
+                              ...purchaseTableCellStyle,
+                              minWidth: "150px",
+                            }}
+                          >
+                            {isEditing ? (
+                              <button
+                                type="button"
+                                aria-pressed={
+                                  editingPurchaseDraft
+                                    .vatInvoice
+                                }
+                                onClick={() =>
+                                  setEditingPurchaseDraft(
+                                    (
+                                      previous
+                                    ) => ({
+                                      ...previous,
+                                      vatInvoice:
+                                        !previous.vatInvoice,
+                                    })
+                                  )
+                                }
+                                style={{
+                                  width: "30px",
+                                  height: "30px",
+                                  borderRadius:
+                                    "9px",
+                                  border:
+                                    "1px solid #b89578",
+
+                                  background:
+                                    editingPurchaseDraft
+                                      .vatInvoice
+                                      ? "#9d795d"
+                                      : "#eee0d3",
+
+                                  color:
+                                    editingPurchaseDraft
+                                      .vatInvoice
+                                      ? "#fffdf9"
+                                      : "#8a6c56",
+
+                                  fontSize: "15px",
+                                  fontWeight: "900",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                {editingPurchaseDraft
+                                  .vatInvoice
+                                  ? "✓"
+                                  : ""}
+                              </button>
+                            ) : (
+                              <span
+                                title={
+                                  purchase.vatInvoice
+                                    ? "الفاتورة مسجلة باسم المؤسسة"
+                                    : "الفاتورة غير مسجلة باسم المؤسسة"
+                                }
+                                style={{
+                                  width: "30px",
+                                  height: "30px",
+                                  borderRadius:
+                                    "9px",
+                                  border:
+                                    "1px solid #b89578",
+
+                                  background:
+                                    purchase.vatInvoice
+                                      ? "#9d795d"
+                                      : "#eee0d3",
+
+                                  color:
+                                    purchase.vatInvoice
+                                      ? "#fffdf9"
+                                      : "#8a6c56",
+
+                                  display:
+                                    "inline-flex",
+                                  alignItems:
+                                    "center",
+                                  justifyContent:
+                                    "center",
+                                  fontSize: "15px",
+                                  fontWeight: "900",
+                                }}
+                              >
+                                {purchase.vatInvoice
+                                  ? "✓"
+                                  : ""}
+                              </span>
+                            )}
+                          </td>
+
+                          <td
+                            style={{
+                              ...purchaseTableCellStyle,
+                              minWidth: "130px",
+                              direction: "ltr",
+                              fontWeight: "900",
+                              color: "#765039",
+                            }}
+                          >
+                            {formatCurrency(
+                              currentVatAmount
+                            )}
+                          </td>
+
+                          <td
+                            style={{
+                              ...purchaseTableCellStyle,
+                              minWidth: "130px",
+                              direction: "ltr",
+                              fontWeight: "900",
+                            }}
+                          >
+                            {formatCurrency(
+                              currentUnitPrice
+                            )}
+                          </td>
+
+                          <td
+                            style={{
+                              ...purchaseTableCellStyle,
+                              minWidth: "190px",
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: "flex",
+                                justifyContent:
+                                  "center",
+                                alignItems:
+                                  "center",
+                                gap: "7px",
+                                flexWrap: "wrap",
+                              }}
+                            >
+                              {isEditing ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    disabled={
+                                      purchaseSaving
+                                    }
+                                    onClick={() =>
+                                      savePurchaseEdit(
+                                        purchase.id
+                                      )
+                                    }
+                                    style={{
+                                      ...buttonStyle,
+                                      padding:
+                                        "8px 12px",
+                                      borderRadius:
+                                        "11px",
+                                      background:
+                                        "#5f4030",
+                                      color: "white",
+                                      fontWeight:
+                                        "900",
+                                      cursor:
+                                        purchaseSaving
+                                          ? "wait"
+                                          : "pointer",
+                                      opacity:
+                                        purchaseSaving
+                                          ? 0.65
+                                          : 1,
+                                    }}
+                                  >
+                                    حفظ
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    disabled={
+                                      purchaseSaving
+                                    }
+                                    onClick={
+                                      cancelEditPurchase
+                                    }
+                                    style={{
+                                      ...buttonStyle,
+                                      padding:
+                                        "8px 12px",
+                                      borderRadius:
+                                        "11px",
+                                      background:
+                                        "#eadfd5",
+                                      color:
+                                        "#4b2e1f",
+                                      fontWeight:
+                                        "900",
+                                    }}
+                                  >
+                                    إلغاء
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  {canEditData && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        startEditPurchase(
+                                          purchase
+                                        )
+                                      }
+                                      style={{
+                                        ...buttonStyle,
+                                        padding:
+                                          "8px 12px",
+                                        borderRadius:
+                                          "11px",
+                                        background:
+                                          "#d9c3ad",
+                                        color:
+                                          "#4b2e1f",
+                                        fontWeight:
+                                          "900",
+                                      }}
+                                    >
+                                      تعديل
+                                    </button>
+                                  )}
+
+                                  {canDeleteData && (
+                                    <button
+                                      type="button"
+                                      disabled={
+                                        String(
+                                          purchaseDeletingId ||
+                                            ""
+                                        ) ===
+                                        String(
+                                          purchase.id
+                                        )
+                                      }
+                                      onClick={() =>
+                                        deletePurchase(
+                                          purchase
+                                        )
+                                      }
+                                      style={{
+                                        ...buttonStyle,
+                                        padding:
+                                          "8px 12px",
+                                        borderRadius:
+                                          "11px",
+                                        background:
+                                          "#f4e3df",
+                                        color:
+                                          "#9b4f45",
+                                        border:
+                                          "1px solid #ddb9b0",
+                                        fontWeight:
+                                          "900",
+                                        cursor:
+                                          "pointer",
+                                      }}
+                                    >
+                                      {String(
+                                        purchaseDeletingId ||
+                                          ""
+                                      ) ===
+                                      String(
+                                        purchase.id
+                                      )
+                                        ? "..."
+                                        : "حذف"}
+                                    </button>
+                                  )}
+
+                                  {!canEditData &&
+                                    !canDeleteData && (
+                                      <span>
+                                        —
+                                      </span>
+                                    )}
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }
+                  )
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {visiblePurchases.length <
+            filteredPurchases.length && (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "center",
+                marginTop: "16px",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() =>
+                  setPurchasesVisibleCount(
+                    (currentCount) =>
+                      currentCount + 30
+                  )
+                }
+                style={{
+                  ...buttonStyle,
+                  minWidth: "190px",
+                  padding: "12px 20px",
+                  borderRadius: "15px",
+                  background:
+                    "linear-gradient(135deg, #d7bea8, #b99474)",
+                  color: "#4b2e1f",
+                  fontWeight: "950",
+                  boxShadow:
+                    "0 9px 20px rgba(75,46,31,0.10)",
+                }}
+              >
+                عرض المزيد
+              </button>
+            </div>
+          )}
+
+          {/* نهاية سجل المشتريات */}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 if (screen === "finance") {
     const financeMonths = getAvailableFinanceMonths();
     const activeFinanceMonth = financeMonths.includes(selectedFinanceMonth)
@@ -23974,55 +27921,143 @@ if (screen === "finance") {
       : financeMonths[financeMonths.length - 1] || "2026-05";
     const financeStats = getFinanceMonthStats(activeFinanceMonth);
     const financeCardStyle = {
-      background: "rgba(255,255,255,0.88)",
-      border: "1px solid rgba(214,199,184,0.88)",
-      borderRadius: "24px",
-      padding: "18px",
-      boxShadow: "0 14px 34px rgba(75,46,31,0.08)",
+      minWidth: 0,
+      height: "auto",
+      alignSelf: "start",
+      boxSizing: "border-box",
+      position: "relative",
+      overflow: "hidden",
+      padding: "16px",
+      borderRadius: "21px",
+      border:
+        "1px solid rgba(194,159,130,0.40)",
+      background:
+        "linear-gradient(145deg, #fffdf9 0%, #f5ece4 100%)",
+      boxShadow:
+        "0 11px 26px rgba(103,75,55,0.075), inset 0 1px 0 rgba(255,255,255,0.96)",
     };
+
     const financeSummaryCardStyle = {
-  ...financeCardStyle,
-  minHeight: "76px",
-  padding: "9px 8px",
-  display: "flex",
-  flexDirection: "column",
-  justifyContent: "center",
-  alignItems: "center",
-  textAlign: "center",
-  boxSizing: "border-box",
-};
-    const financeHeaderStyle = {
-      margin: "0 0 14px",
-      color: "#4b2e1f",
-      fontSize: "18px",
-      fontWeight: "900",
+      ...financeCardStyle,
+      minHeight: "84px",
+      padding: "11px",
+      display: "flex",
+      flexDirection: "column",
+      justifyContent: "center",
+      alignItems: "center",
       textAlign: "center",
     };
+
+    const financeHeaderStyle = {
+      margin: "0 0 11px",
+      paddingBottom: "10px",
+      borderBottom:
+        "1px solid rgba(194,159,130,0.30)",
+      color: "#49372c",
+      fontSize: "15px",
+      lineHeight: "1.35",
+      fontWeight: "950",
+      letterSpacing: "0.1px",
+      textAlign: "left",
+    };
+
     const financeRowStyle = {
+      minHeight: "40px",
+      padding: "7px 3px",
+      boxSizing: "border-box",
+      borderTop:
+        "1px solid rgba(204,177,154,0.30)",
       display: "flex",
       justifyContent: "space-between",
       alignItems: "center",
-      gap: "12px",
-      borderTop: "1px solid #eadfd5",
-      padding: "10px 0",
-      color: "#4b2e1f",
-      fontSize: "14px",
-      fontWeight: "700",
+      gap: "10px",
+      color: "#594437",
+      fontSize: "12px",
+      lineHeight: "1.35",
+      fontWeight: "800",
     };
+
     const financeSmallInputStyle = {
       ...scheduleSummaryInputStyle,
-      width: "110px",
-      height: "36px",
+      width: "116px",
+      maxWidth: "48%",
+      height: "38px",
+      minHeight: "38px",
       margin: 0,
+      padding: "7px 10px",
       boxSizing: "border-box",
+      borderRadius: "11px",
+      border:
+        "1px solid rgba(183,143,111,0.42)",
+      background:
+        "linear-gradient(145deg, #fffefa, #f4e8de)",
+      color: "#49372c",
+      boxShadow:
+        "inset 0 2px 5px rgba(93,65,47,0.04)",
+      textAlign: "center",
+      fontSize: "12px",
+      fontWeight: "900",
     };
+
     const renderFinanceRows = (rows) =>
-      rows.map(([label, value]) => (
-        <div key={label} style={financeRowStyle}>
-          <span>{label}</span>
-          <strong>{formatCurrency(value)}</strong>
-        </div>
-      ));
+      rows.map(
+        ([label, value]) => {
+          const isTotalRow =
+            String(label || "")
+              .toLowerCase()
+              .startsWith("total");
+
+          return (
+            <div
+              key={label}
+              style={{
+                ...financeRowStyle,
+
+                ...(isTotalRow
+                  ? {
+                      minHeight: "42px",
+                      marginTop: "5px",
+                      padding: "9px 11px",
+                      borderTop: "none",
+                      borderRadius: "12px",
+                      background:
+                        "linear-gradient(145deg, #dfc6b1, #c9a486)",
+                      color: "#49372c",
+                      boxShadow:
+                        "0 6px 14px rgba(112,82,60,0.11)",
+                    }
+                  : {}),
+              }}
+            >
+              <span
+                style={{
+                  minWidth: 0,
+                  color: isTotalRow
+                    ? "#5b4435"
+                    : "#7b604d",
+                  fontWeight: "850",
+                }}
+              >
+                {label}
+              </span>
+
+              <strong
+                style={{
+                  flexShrink: 0,
+                  color: "#49372c",
+                  fontSize: isTotalRow
+                    ? "13px"
+                    : "12px",
+                  fontWeight: "950",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {formatCurrency(value)}
+              </strong>
+            </div>
+          );
+        }
+      );
 
     return withGreeting(
       <div
@@ -24045,361 +28080,2195 @@ if (screen === "finance") {
           }}
         >
           <main style={{ direction: "ltr", paddingTop: 0 }}>
+            <style>
+              {`
+                .paradise-finance-header {
+                  position: relative;
+                  width: 100%;
+                  margin: 0 0 22px;
+                  box-sizing: border-box;
+
+                  background:
+                    radial-gradient(
+                      circle at top right,
+                      rgba(255,255,255,0.62),
+                      transparent 38%
+                    ),
+                    linear-gradient(
+                      135deg,
+                      #fffaf4 0%,
+                      #f4e7db 54%,
+                      #d9c1ab 100%
+                    ) !important;
+
+                  border-color:
+                    rgba(180,142,108,0.38) !important;
+
+                  color: #4b372a !important;
+
+                  box-shadow:
+                    0 18px 42px rgba(105,78,57,0.13),
+                    inset 0 1px 0 rgba(255,255,255,0.88) !important;
+                }
+
+                .paradise-finance-header-content {
+                  display: flex;
+                  align-items: center;
+                  justify-content: space-between;
+                  gap: 18px;
+                }
+
+                .paradise-finance-header-identity {
+                  display: flex;
+                  align-items: center;
+                  gap: 14px;
+                  min-width: 0;
+                }
+
+                .paradise-finance-header-identity
+                > div:first-child {
+                  border-color:
+                    rgba(119,105,92,0.24) !important;
+
+                  background:
+                    rgba(255,255,255,0.40) !important;
+
+                  box-shadow:
+                    inset 0 1px 0 rgba(255,255,255,0.76),
+                    0 7px 18px rgba(86,74,64,0.09) !important;
+                }
+
+                .paradise-finance-header img {
+                  filter: none !important;
+                  opacity: 0.88 !important;
+                }
+
+                .paradise-finance-header-identity
+                > div:last-child
+                > div:first-child {
+                  color: #786b60 !important;
+                }
+
+                .paradise-finance-header-title {
+                  color: #433b34 !important;
+                }
+
+                .paradise-finance-header-identity
+                > div:last-child
+                > div:last-child {
+                  background:
+                    linear-gradient(
+                      90deg,
+                      #998a7c,
+                      transparent
+                    ) !important;
+                }
+
+                .paradise-finance-header-actions {
+                  display: flex;
+                  align-items: center;
+                  justify-content: flex-end;
+                  gap: 10px;
+                  flex-shrink: 0;
+                }
+
+                .paradise-finance-header-select {
+                  border-color:
+                    rgba(125,111,98,0.27) !important;
+
+                  background:
+                    #fbf8f4 !important;
+
+                  color:
+                    #463d36 !important;
+
+                  box-shadow:
+                    0 8px 20px rgba(83,72,62,0.10) !important;
+                }
+
+                .paradise-finance-header-button {
+                  border-color:
+                    rgba(125,111,98,0.28) !important;
+
+                  background:
+                    linear-gradient(
+                      145deg,
+                      #d3c7bc,
+                      #b6a696
+                    ) !important;
+
+                  color:
+                    #413832 !important;
+
+                  box-shadow:
+                    0 8px 20px rgba(83,72,62,0.12) !important;
+                }
+
+                @media (max-width: 700px) {
+                  .paradise-finance-header {
+                    padding: 18px 15px !important;
+                    border-radius: 23px !important;
+                  }
+
+                  .paradise-finance-header-content {
+                    flex-direction: column;
+                    align-items: stretch;
+                    gap: 16px;
+                  }
+
+                  .paradise-finance-header-identity {
+                    align-items: center;
+                  }
+
+                  .paradise-finance-header-title {
+                    font-size: 23px !important;
+                    line-height: 1.25 !important;
+                    white-space: normal !important;
+                  }
+
+                  .paradise-finance-header-actions {
+                    display: grid;
+                    grid-template-columns: 1fr;
+                    width: 100%;
+                  }
+
+                  .paradise-finance-header-select,
+                  .paradise-finance-header-button {
+                    width: 100% !important;
+                  }
+                }
+              `}
+            </style>
+
             <div
+              className="paradise-finance-header"
               style={{
-                ...financeCardStyle,
-                position: "fixed",
-                top: "18px",
-                left: "24px",
-                right: "24px",
-                zIndex: 9999,
-                marginBottom: "22px",
-                background: "linear-gradient(135deg, rgba(75,46,31,0.98), rgba(138,106,80,0.94))",
-                color: "white",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                gap: "14px",
-                flexWrap: "nowrap",
+                padding: "21px 23px",
+                borderRadius: "28px",
+                border:
+                  "1px solid rgba(196,161,131,0.48)",
+                background:
+                  "radial-gradient(circle at top right, rgba(218,188,161,0.20), transparent 34%), linear-gradient(135deg, #3f2b21 0%, #654735 54%, #8b674e 100%)",
+                color: "#fffaf5",
+                boxShadow:
+                  "0 22px 52px rgba(58,38,28,0.22), inset 0 1px 0 rgba(255,255,255,0.13)",
                 overflow: "hidden",
-                boxSizing: "border-box",
               }}
             >
-              <div>
-                <div style={{ fontSize: "13px", opacity: 0.82, marginBottom: "6px" }}>
-                  Paradise Spa
-                </div>
-                <h2 style={{ margin: 0, fontSize: "28px", whiteSpace: "nowrap" }}>
-                  {getFinanceMonthLabel(activeFinanceMonth)} Reports
-                </h2>
-              </div>
+              <div
+                style={{
+                  position: "absolute",
+                  top: "-70px",
+                  right: "-45px",
+                  width: "180px",
+                  height: "180px",
+                  borderRadius: "50%",
+                  background:
+                    "radial-gradient(circle, rgba(255,255,255,0.11), transparent 68%)",
+                  pointerEvents: "none",
+                }}
+              />
 
+              <div
+                className="paradise-finance-header-content"
+                style={{
+                  position: "relative",
+                  zIndex: 1,
+                }}
+              >
+                <div className="paradise-finance-header-identity">
+                  <div
+                    style={{
+                      width: "58px",
+                      height: "58px",
+                      flex: "0 0 58px",
+                      borderRadius: "18px",
+                      border:
+                        "1px solid rgba(255,255,255,0.20)",
+                      background:
+                        "rgba(255,250,245,0.10)",
+                      boxShadow:
+                        "inset 0 1px 0 rgba(255,255,255,0.14)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <img
+                      src={logo}
+                      alt="Paradise Spa"
+                      style={{
+                        width: "47px",
+                        height: "47px",
+                        objectFit: "contain",
+                        filter:
+                          "brightness(0) invert(1)",
+                        opacity: 0.92,
+                      }}
+                    />
+                  </div>
+
+                  <div
+                    style={{
+                      minWidth: 0,
+                      textAlign: "left",
+                    }}
+                  >
+                    <div
+                      style={{
+                        marginBottom: "5px",
+                        color:
+                          "rgba(255,250,245,0.72)",
+                        fontSize: "11px",
+                        fontWeight: "900",
+                        letterSpacing: "1.7px",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      Paradise Spa
+                    </div>
+
+                    <h2
+                      className="paradise-finance-header-title"
+                      style={{
+                        margin: 0,
+                        color: "#fffaf5",
+                        fontSize: "29px",
+                        lineHeight: "1.2",
+                        fontWeight: "950",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {getFinanceMonthLabel(
+                        activeFinanceMonth
+                      )}{" "}
+                      Reports
+                    </h2>
+
+                    <div
+                      style={{
+                        width: "52px",
+                        height: "2px",
+                        marginTop: "9px",
+                        borderRadius: "999px",
+                        background:
+                          "linear-gradient(90deg, #d8b89c, transparent)",
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className="paradise-finance-header-actions">
+                  <select
+                    className="paradise-finance-header-select"
+                    value={
+                      activeFinanceMonth
+                    }
+                    onChange={(event) =>
+                      setSelectedFinanceMonth(
+                        event.target.value
+                      )
+                    }
+                    style={{
+                      ...inputStyle,
+                      width: "210px",
+                      height: "48px",
+                      minHeight: "48px",
+                      padding: "0 16px",
+                      margin: 0,
+                      boxSizing: "border-box",
+                      borderRadius: "15px",
+                      border:
+                        "1px solid rgba(255,255,255,0.24)",
+                      background: "#fffaf5",
+                      color: "#4b3327",
+                      boxShadow:
+                        "0 9px 22px rgba(31,20,15,0.16)",
+                      textAlign: "center",
+                      fontSize: "14px",
+                      fontWeight: "900",
+                      lineHeight: "1",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {financeMonths.map(
+                      (monthKey) => (
+                        <option
+                          key={monthKey}
+                          value={monthKey}
+                        >
+                          {getFinanceMonthLabel(
+                            monthKey
+                          )}
+                        </option>
+                      )
+                    )}
+                  </select>
+
+                  <button
+                    type="button"
+                    className="paradise-finance-header-button"
+                    onClick={() =>
+                      exportFinanceMonthToExcel(
+                        activeFinanceMonth
+                      )
+                    }
+                    style={{
+                      height: "48px",
+                      minHeight: "48px",
+                      padding: "0 19px",
+                      margin: 0,
+                      boxSizing: "border-box",
+                      borderRadius: "15px",
+                      border:
+                        "1px solid rgba(255,255,255,0.23)",
+                      background:
+                        "linear-gradient(145deg, #f8eadd, #d7b89d)",
+                      color: "#432f24",
+                      boxShadow:
+                        "0 9px 22px rgba(31,20,15,0.17)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "7px",
+                      fontSize: "12px",
+                      fontWeight: "950",
+                      whiteSpace: "nowrap",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: "14px",
+                        lineHeight: 1,
+                      }}
+                    >
+                      ↓
+                    </span>
+
+                    تحميل Excel
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div
+              style={{
+                width: "100%",
+                marginBottom: "22px",
+                padding: "18px",
+                boxSizing: "border-box",
+                borderRadius: "27px",
+                border:
+                  "1px solid rgba(180,145,116,0.36)",
+                background:
+                  "linear-gradient(145deg, rgba(255,253,249,0.98), rgba(231,214,199,0.88))",
+                boxShadow:
+                  "0 16px 38px rgba(75,46,31,0.09), inset 0 1px 0 rgba(255,255,255,0.92)",
+              }}
+            >
               <div
                 style={{
                   display: "flex",
                   alignItems: "center",
                   gap: "10px",
-                  flexShrink: 0,
+                  marginBottom: "15px",
+                  paddingBottom: "13px",
+                  borderBottom:
+                    "1px solid rgba(180,145,116,0.28)",
                 }}
               >
-                <select
-                  value={activeFinanceMonth}
-                  onChange={(event) => setSelectedFinanceMonth(event.target.value)}
+                <div
                   style={{
-                    ...inputStyle,
-                    width: "210px",
-                    height: "52px",
-                    minHeight: "52px",
-                    borderRadius: "18px",
-                    textAlign: "center",
-                    fontWeight: "900",
-                    fontSize: "15px",
-                    lineHeight: "1",
-                    color: "#4b2e1f",
-                    backgroundColor: "#fffaf3",
-                    padding: "0 18px",
-                    margin: 0,
-                    boxSizing: "border-box",
-                  }}
-                >
-                  {financeMonths.map((monthKey) => (
-                    <option key={monthKey} value={monthKey}>
-                      {getFinanceMonthLabel(monthKey)}
-                    </option>
-                  ))}
-                </select>
-
-                <button
-                  onClick={() => exportFinanceMonthToExcel(activeFinanceMonth)}
-                  style={{
-                    ...buttonStyle,
-                    background: "white",
-                    color: "#4b2e1f",
-                    height: "52px",
-                    minHeight: "52px",
-                    borderRadius: "18px",
-                    padding: "0 22px",
-                    margin: 0,
-                    lineHeight: "1",
+                    width: "31px",
+                    height: "31px",
+                    flex: "0 0 31px",
+                    borderRadius: "10px",
+                    background:
+                      "linear-gradient(145deg, #c9a889, #987054)",
+                    color: "#fffaf5",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    boxShadow: "0 12px 28px rgba(0,0,0,0.12)",
-                    whiteSpace: "nowrap",
-                    boxSizing: "border-box",
+                    fontSize: "12px",
+                    fontWeight: "900",
+                    boxShadow:
+                      "0 7px 15px rgba(75,46,31,0.13)",
                   }}
                 >
-                  تحميل Excel
-                </button>
-              </div>
-            </div>
+                  ◈
+                </div>
 
-            <div style={{ height: "116px", flexShrink: 0 }} />
-
-            <div
-  style={{
-    width: "100%",
-    maxWidth: "100%",
-    overflowX: "auto",
-    overflowY: "hidden",
-    marginBottom: "22px",
-    boxSizing: "border-box",
-  }}
->
-  <div
-    style={{
-      display: "grid",
-      gridTemplateColumns:
-        "repeat(7, minmax(112px, 1fr))",
-      gap: "10px",
-      minWidth: "844px",
-    }}
-  >
-    {[
-      ["Total Income", financeStats.totalIncome],
-      ["Total Expenses", financeStats.totalExpenses],
-      ["VAT 15%", financeStats.totalVat],
-      ["Total Net Profit", financeStats.totalNetProfit],
-      ["AVG Daily Income", financeStats.averageDailyIncome],
-      ["AVG Daily Expenses", financeStats.averageDailyExpenses],
-      ["AVG Daily Net Income", financeStats.averageDailyNetIncome],
-    ].map(([label, value]) => (
-      <div
-        key={label}
-        style={financeSummaryCardStyle}
-      >
-        <div
-          style={{
-            width: "100%",
-            color: "#8a7a68",
-            fontSize: "10px",
-            fontWeight: "800",
-            whiteSpace: "nowrap",
-            textAlign: "center",
-          }}
-        >
-          {label}
-        </div>
-
-        <strong
-          style={{
-            display: "block",
-            width: "100%",
-            fontSize: "19px",
-            marginTop: "4px",
-            textAlign: "center",
-          }}
-        >
-          {formatCurrency(value)}
-        </strong>
-      </div>
-    ))}
-  </div>
-</div>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(270px, 1fr))",
-                gap: "18px",
-                marginBottom: "22px",
-              }}
-            >
-              <div style={financeCardStyle}>
-                <h3 style={financeHeaderStyle}>Monthly Settings</h3>
-                {[
-                  ["monthlyTarget", "May Target"],
-                  ["staffSalary", "Staff Salary"],
-                  ["houseRent", "House Rent"],
-                  ["carRent", "Car Rent"],
-                  ["governmentFees", "Government Fees"],
-                ].map(([field, label]) => (
-                  <div key={field} style={financeRowStyle}>
-                    <span>{label}</span>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={
-                        financeMonthlySettings[activeFinanceMonth]?.[field] ??
-                        financeStats.monthlySettings[field] ??
-                        ""
-                      }
-                      onChange={(event) =>
-                        updateFinanceMonthlySetting(activeFinanceMonth, field, event.target.value)
-                      }
-                      style={financeSmallInputStyle}
-                    />
+                <div
+                  style={{
+                    textAlign: "left",
+                  }}
+                >
+                  <div
+                    style={{
+                      color: "#3f2b21",
+                      fontSize: "15px",
+                      fontWeight: "950",
+                    }}
+                  >
+                    Financial Overview
                   </div>
-                ))}
+
+                  <div
+                    style={{
+                      marginTop: "2px",
+                      color: "#96755e",
+                      fontSize: "10px",
+                      fontWeight: "800",
+                    }}
+                  >
+                    Monthly performance summary
+                  </div>
+                </div>
               </div>
 
-              <div style={financeCardStyle}>
-                <h3 style={financeHeaderStyle}>Payment Method</h3>
-                {renderFinanceRows([
-                  ["Cash", financeStats.paymentTotals.Cash],
-                  ["Debit", financeStats.paymentTotals.Debit],
-                  ["Credit", financeStats.paymentTotals.Credit],
-                  ["Tabby", financeStats.paymentTotals.Tabby],
-                  ["Tamara", financeStats.paymentTotals.Tamara],
-                  ["Bank Transfer", financeStats.paymentTotals["Bank Transfer"]],
-                  ["Total", financeStats.paymentTotal],
-                ])}
-              </div>
+              <style>
+                {`
+                  .paradise-finance-overview-grid {
+                    display: grid;
+                    grid-template-columns:
+                      repeat(7, minmax(0, 1fr));
+                    gap: 8px;
+                    align-items: stretch;
+                  }
 
-              <div style={financeCardStyle}>
-                <h3 style={financeHeaderStyle}>Operating Expenses</h3>
-                {renderFinanceRows([
-                  ["Gas Station", financeStats.operatingExpenses["Gas Station"]],
-                  ["Commission", financeStats.operatingExpenses.Commission],
-                  ["Purchase", financeStats.operatingExpenses.Purchase],
-                  ["House Rent", financeStats.operatingExpenses["House Rent"]],
-                  ["Car Rent", financeStats.operatingExpenses["Car Rent"]],
-                  ["Uber", financeStats.operatingExpenses.Uber],
-                  ["Laundry", financeStats.operatingExpenses.Laundry],
-                  ["Food", financeStats.operatingExpenses.Food],
-                  ["Government Fees", financeStats.operatingExpenses["Government Fees"]],
-                  ["Salary", financeStats.operatingExpenses.Salary],
+                  @media (max-width: 900px) {
+                    .paradise-finance-overview-grid {
+                      grid-template-columns:
+                        repeat(4, minmax(0, 1fr));
+                    }
+                  }
+
+                  @media (max-width: 700px) {
+                    .paradise-finance-overview-grid {
+                      grid-template-columns:
+                        repeat(2, minmax(0, 1fr));
+                    }
+                  }
+
+                  @media (max-width: 410px) {
+                    .paradise-finance-overview-grid {
+                      grid-template-columns: 1fr;
+                    }
+                  }
+                `}
+              </style>
+
+              <div className="paradise-finance-overview-grid">
+                {[
                   [
-                    "Total",
-                    Object.values(financeStats.operatingExpenses).reduce(
-                      (total, value) => total + parseAmount(value),
-                      0
-                    ),
+                    "↗",
+                    "Total Income",
+                    financeStats.totalIncome,
+                    false,
                   ],
-                ])}
-              </div>
+                  [
+                    "↘",
+                    "Total Expenses",
+                    financeStats.totalExpenses,
+                    false,
+                  ],
+                  [
+                    "%",
+                    "VAT 15%",
+                    financeStats.totalVat,
+                    false,
+                  ],
+                  [
+                    "◆",
+                    "Total Net Profit",
+                    financeStats.totalNetProfit,
+                    true,
+                  ],
+                  [
+                    "I",
+                    "AVG Daily Income",
+                    financeStats.averageDailyIncome,
+                    false,
+                  ],
+                  [
+                    "E",
+                    "AVG Daily Expenses",
+                    financeStats.averageDailyExpenses,
+                    false,
+                  ],
+                  [
+                    "N",
+                    "AVG Daily Net Income",
+                    financeStats.averageDailyNetIncome,
+                    false,
+                  ],
+                ].map(
+                  ([
+                    icon,
+                    label,
+                    value,
+                    highlighted,
+                  ]) => (
+                    <div
+                      key={label}
+                      style={{
+                        minWidth: 0,
+                        minHeight: "84px",
+                        padding: "10px",
+                        boxSizing: "border-box",
+                        borderRadius: "15px",
+                        border: highlighted
+                          ? "1px solid rgba(161,122,92,0.42)"
+                          : "1px solid rgba(201,169,143,0.38)",
+                        background: highlighted
+                          ? "linear-gradient(145deg, #c6a386, #aa8164)"
+                          : "linear-gradient(145deg, #fffefa, #f5ebe3)",
+                        boxShadow: highlighted
+                          ? "0 7px 16px rgba(115,83,61,0.13)"
+                          : "0 5px 13px rgba(115,83,61,0.05)",
+                        display: "flex",
+                        flexDirection: "column",
+                        justifyContent: "space-between",
+                        gap: "8px",
+                        textAlign: "left",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: "9px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            color: highlighted
+                              ? "rgba(255,250,245,0.74)"
+                              : "#8b6a53",
+                            fontSize: "11px",
+                            lineHeight: "1.35",
+                            fontWeight: "900",
+                          }}
+                        >
+                          {label}
+                        </div>
 
-              <div style={financeCardStyle}>
-                <h3 style={financeHeaderStyle}>Services</h3>
-                {renderFinanceRows([
-                  ["Massage", financeStats.servicesTotals.Massage],
-                  ["Mani & Pedi", financeStats.servicesTotals["Mani & Pedi"]],
-                  ["Moroccan Bath", financeStats.servicesTotals["Moroccan Bath"]],
-                  ["Package", financeStats.servicesTotals.Package],
-                  ["Total Services", financeStats.totalServices],
-                ])}
-              </div>
+                        <div
+                          style={{
+                            width: "27px",
+                            height: "27px",
+                            flex: "0 0 27px",
+                            borderRadius: "9px",
+                            background: highlighted
+                              ? "rgba(255,255,255,0.12)"
+                              : "linear-gradient(145deg, #dec5b0, #bd9879)",
+                            color: highlighted
+                              ? "#fffaf5"
+                              : "#4f372a",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: "10px",
+                            fontWeight: "950",
+                          }}
+                        >
+                          {icon}
+                        </div>
+                      </div>
 
-              <div style={financeCardStyle}>
-                <h3 style={financeHeaderStyle}>Commission</h3>
-                {renderFinanceRows([
-                  ["Joce", financeStats.commissionJoce],
-                  ["Caren", financeStats.commissionCaren],
-                  ["Total", financeStats.operatingExpenses.Commission],
-                ])}
-              </div>
-
-              <div style={financeCardStyle}>
-                <h3 style={financeHeaderStyle}>Target</h3>
-                {renderFinanceRows([
-                  ["May Target", financeStats.monthlyTarget],
-                  ["Target by service", financeStats.targetByService],
-                  ["Remaining Services", financeStats.remainingServicesToTarget],
-                  ["AVG Service Price", financeStats.averageServicePrice],
-                  ["Total Services", financeStats.totalServices],
-                ])}
-              </div>
-
-              <div style={financeCardStyle}>
-                <h3 style={financeHeaderStyle}>Clients</h3>
-                {renderFinanceRows([
-                  ["New Clients", financeStats.newClients],
-                  ["Loyal Clients", financeStats.loyalClients],
-                ])}
-              </div>
-
-              <div style={financeCardStyle}>
-                <h3 style={financeHeaderStyle}>Gifts</h3>
-                {renderFinanceRows([
-                  ["Gifts Added", financeStats.giftsAdded],
-                  ["Gifts Received", financeStats.giftsReceived],
-                ])}
-              </div>
-
-              <div style={financeCardStyle}>
-                <h3 style={financeHeaderStyle}>Loyalty Card Gifts</h3>
-                {renderFinanceRows([
-                  ["1 Service", financeStats.freeGifts],
-                  ["2 Service", financeStats.twoFreeGifts],
-                ])}
-              </div>
-
-              <div style={financeCardStyle}>
-                <h3 style={financeHeaderStyle}>Transportation</h3>
-                {renderFinanceRows([["Transportation", financeStats.totalTransportation]])}
-              </div>
-
-              <div style={financeCardStyle}>
-                <h3 style={financeHeaderStyle}>Cancelled Appointments</h3>
-                {renderFinanceRows([
-                  ["Cancelled Appointments", financeStats.clientsTurnedAway],
-                  ["Lost Revenue", financeStats.lostRevenue],
-                  ["Potential Revenue", financeStats.potentialRevenue],
-                ])}
+                      <strong
+                        style={{
+                          display: "block",
+                          width: "100%",
+                          color: highlighted
+                            ? "#fffaf5"
+                            : "#3f2b21",
+                          fontSize: highlighted
+                            ? "22px"
+                            : "20px",
+                          lineHeight: "1.2",
+                          fontWeight: "950",
+                          overflowWrap: "anywhere",
+                        }}
+                      >
+                        {formatCurrency(value)}
+                      </strong>
+                    </div>
+                  )
+                )}
               </div>
             </div>
 
+            <style>
+              {`
+                .paradise-finance-details-layout {
+                  display: grid;
+                  grid-template-columns:
+                    repeat(12, minmax(0, 1fr));
+                  gap: 14px;
+                  width: 100%;
+                  margin-bottom: 22px;
+                  align-items: start;
+                }
+
+                .paradise-finance-details-column {
+                  display: contents;
+                }
+
+                .paradise-finance-details-group-title {
+                  display: none;
+                }
+
+                .paradise-finance-details-column
+                > div:not(.paradise-finance-details-group-title) {
+                  min-width: 0 !important;
+                  width: 100% !important;
+                  height: auto !important;
+                  align-self: start !important;
+                  box-sizing: border-box !important;
+                  padding: 16px !important;
+                  border-radius: 22px !important;
+                  border:
+                    1px solid rgba(194,159,130,0.40) !important;
+                  background:
+                    linear-gradient(
+                      145deg,
+                      #fffdfa 0%,
+                      #f5ece4 100%
+                    ) !important;
+                  box-shadow:
+                    0 10px 24px rgba(105,78,59,0.07),
+                    inset 0 1px 0 rgba(255,255,255,0.96) !important;
+
+                  display: grid !important;
+                  align-items: stretch;
+                  gap: 9px;
+                }
+
+                .paradise-finance-details-column
+                > div:not(.paradise-finance-details-group-title)
+                > h3 {
+                  grid-column: 1 / -1;
+                  min-height: 40px;
+                  margin: 0 0 3px !important;
+                  padding: 10px 13px !important;
+                  box-sizing: border-box;
+                  border: none !important;
+                  border-radius: 13px;
+                  background:
+                    linear-gradient(
+                      145deg,
+                      #dcc2ab,
+                      #c8a589
+                    );
+                  color: #4f3d31 !important;
+                  display: flex;
+                  align-items: center;
+                  font-size: 14px !important;
+                  line-height: 1.25 !important;
+                  font-weight: 950 !important;
+                  text-align: left !important;
+                }
+
+                .paradise-finance-details-column
+                > div:not(.paradise-finance-details-group-title)
+                > div {
+                  min-width: 0;
+                  min-height: 68px !important;
+                  padding: 10px 11px !important;
+                  margin: 0 !important;
+                  box-sizing: border-box;
+                  border: none !important;
+                  border-radius: 14px !important;
+                  background: #faf4ee !important;
+                  box-shadow:
+                    inset 0 0 0 1px
+                    rgba(204,175,151,0.33);
+
+                  display: flex !important;
+                  flex-direction: column !important;
+                  align-items: flex-start !important;
+                  justify-content: center !important;
+                  gap: 6px !important;
+                  text-align: left !important;
+                }
+
+                .paradise-finance-details-column
+                > div:not(.paradise-finance-details-group-title)
+                > div
+                > span {
+                  width: 100%;
+                  color: #826652 !important;
+                  font-size: 10px !important;
+                  line-height: 1.3 !important;
+                  font-weight: 850 !important;
+                  white-space: normal !important;
+                }
+
+                .paradise-finance-details-column
+                > div:not(.paradise-finance-details-group-title)
+                > div
+                > strong {
+                  width: 100%;
+                  color: #49392f !important;
+                  font-size: 15px !important;
+                  line-height: 1.2 !important;
+                  font-weight: 950 !important;
+                  white-space: normal !important;
+                  text-align: left !important;
+                }
+
+                .paradise-finance-details-column
+                > div:not(.paradise-finance-details-group-title)
+                > div
+                > input {
+                  width: 100% !important;
+                  max-width: 100% !important;
+                  height: 37px !important;
+                  min-height: 37px !important;
+                  margin: 0 !important;
+                  padding: 7px 9px !important;
+                  box-sizing: border-box !important;
+                  border-radius: 10px !important;
+                  background: #fffdfa !important;
+                  color: #49392f !important;
+                  text-align: center !important;
+                  font-size: 12px !important;
+                  font-weight: 950 !important;
+                }
+
+                /* طرق الدفع */
+                .paradise-finance-details-column:nth-child(2)
+                > div:nth-child(2) {
+                  order: 1;
+                  grid-column: 1 / -1;
+                  grid-template-columns:
+                    repeat(7, minmax(0, 1fr));
+                }
+
+                /* الخدمات */
+                .paradise-finance-details-column:nth-child(2)
+                > div:nth-child(3) {
+                  order: 2;
+                  grid-column: 1 / -1;
+                  grid-template-columns:
+                    repeat(5, minmax(0, 1fr));
+                }
+
+                /* أداء الهدف */
+                .paradise-finance-details-column:nth-child(1)
+                > div:nth-child(3) {
+                  order: 3;
+                  grid-column: 1 / -1;
+                  grid-template-columns:
+                    repeat(5, minmax(0, 1fr));
+                }
+
+                /* المصروفات التشغيلية */
+                .paradise-finance-details-column:nth-child(3)
+                > div:nth-child(2) {
+                  order: 4;
+                  grid-column: 1 / -1;
+                  grid-template-columns:
+                    repeat(5, minmax(0, 1fr));
+                }
+
+                /* الإعدادات الشهرية */
+                .paradise-finance-details-column:nth-child(1)
+                > div:nth-child(2) {
+                  order: 5;
+                  grid-column: 1 / -1;
+                  grid-template-columns:
+                    repeat(5, minmax(0, 1fr));
+                }
+
+                /* العملاء */
+                .paradise-finance-details-column:nth-child(4)
+                > div:nth-child(2) {
+                  order: 6;
+                  grid-column: span 4;
+                  grid-template-columns:
+                    repeat(2, minmax(0, 1fr));
+                }
+
+                /* الهدايا */
+                .paradise-finance-details-column:nth-child(4)
+                > div:nth-child(3) {
+                  order: 7;
+                  grid-column: span 4;
+                  grid-template-columns:
+                    repeat(2, minmax(0, 1fr));
+                }
+
+                /* هدايا الولاء */
+                .paradise-finance-details-column:nth-child(4)
+                > div:nth-child(4) {
+                  order: 8;
+                  grid-column: span 4;
+                  grid-template-columns:
+                    repeat(2, minmax(0, 1fr));
+                }
+
+                /* العمولات */
+                .paradise-finance-details-column:nth-child(1)
+                > div:nth-child(4) {
+                  order: 9;
+                  grid-column: span 4;
+                  grid-template-columns:
+                    repeat(3, minmax(0, 1fr));
+                }
+
+                /* التوصيل */
+                .paradise-finance-details-column:nth-child(3)
+                > div:nth-child(3) {
+                  order: 10;
+                  grid-column: span 4;
+                  grid-template-columns: 1fr;
+                }
+
+                /* المواعيد الملغاة */
+                .paradise-finance-details-column:nth-child(4)
+                > div:nth-child(5) {
+                  order: 11;
+                  grid-column: span 4;
+                  grid-template-columns:
+                    repeat(3, minmax(0, 1fr));
+                }
+
+                /* صفوف الإجماليات */
+                .paradise-finance-details-column:nth-child(2)
+                > div:nth-child(2)
+                > div:last-child,
+
+                .paradise-finance-details-column:nth-child(2)
+                > div:nth-child(3)
+                > div:last-child,
+
+                .paradise-finance-details-column:nth-child(1)
+                > div:nth-child(3)
+                > div:last-child,
+
+                .paradise-finance-details-column:nth-child(3)
+                > div:nth-child(2)
+                > div:last-child,
+
+                .paradise-finance-details-column:nth-child(1)
+                > div:nth-child(4)
+                > div:last-child {
+                  background:
+                    linear-gradient(
+                      145deg,
+                      #dcc1a9,
+                      #cda98c
+                    ) !important;
+                  box-shadow:
+                    0 6px 14px rgba(112,82,61,0.10) !important;
+                }
+
+                .paradise-finance-details-column:nth-child(3)
+                > div:nth-child(2)
+                > div:last-child {
+                  grid-column: 1 / -1;
+                  min-height: 48px !important;
+                  flex-direction: row !important;
+                  align-items: center !important;
+                  justify-content: space-between !important;
+                }
+
+                .paradise-finance-details-column:nth-child(3)
+                > div:nth-child(2)
+                > div:last-child
+                > span,
+
+                .paradise-finance-details-column:nth-child(3)
+                > div:nth-child(2)
+                > div:last-child
+                > strong {
+                  width: auto !important;
+                }
+
+
+                /* ألوان Paradise البيج المحايدة */
+
+                .paradise-finance-details-column
+                > div:not(.paradise-finance-details-group-title) {
+                  border-color:
+                    rgba(190,151,117,0.34) !important;
+
+                  background:
+                    linear-gradient(
+                      145deg,
+                      #fffaf5 0%,
+                      #f4e8dd 100%
+                    ) !important;
+
+                  box-shadow:
+                    0 10px 25px rgba(105,78,57,0.07),
+                    inset 0 1px 0 rgba(255,255,255,0.94) !important;
+                }
+
+                .paradise-finance-details-column
+                > div:not(.paradise-finance-details-group-title)
+                > h3 {
+                  background:
+                    linear-gradient(
+                      145deg,
+                      #d8c1ac,
+                      #c2a58b
+                    ) !important;
+
+                  color:
+                    #4b372a !important;
+
+                  box-shadow:
+                    inset 0 1px 0 rgba(255,255,255,0.50) !important;
+                }
+
+                .paradise-finance-details-column
+                > div:not(.paradise-finance-details-group-title)
+                > div {
+                  background:
+                    #fffaf6 !important;
+
+                  box-shadow:
+                    inset 0 0 0 1px
+                    rgba(198,161,130,0.27) !important;
+                }
+
+                .paradise-finance-details-column
+                > div:not(.paradise-finance-details-group-title)
+                > div
+                > span {
+                  color:
+                    #866851 !important;
+                }
+
+                .paradise-finance-details-column
+                > div:not(.paradise-finance-details-group-title)
+                > div
+                > strong {
+                  color:
+                    #4b372a !important;
+                }
+
+                .paradise-finance-details-column
+                > div:not(.paradise-finance-details-group-title)
+                > div
+                > input {
+                  border-color:
+                    rgba(184,143,109,0.35) !important;
+
+                  background:
+                    #fffdf9 !important;
+
+                  color:
+                    #4b372a !important;
+                }
+
+                .paradise-finance-details-column:nth-child(2)
+                > div:nth-child(2)
+                > div:last-child,
+
+                .paradise-finance-details-column:nth-child(2)
+                > div:nth-child(3)
+                > div:last-child,
+
+                .paradise-finance-details-column:nth-child(1)
+                > div:nth-child(3)
+                > div:last-child,
+
+                .paradise-finance-details-column:nth-child(3)
+                > div:nth-child(2)
+                > div:last-child,
+
+                .paradise-finance-details-column:nth-child(1)
+                > div:nth-child(4)
+                > div:last-child {
+                  background:
+                    linear-gradient(
+                      145deg,
+                      #d4bba4,
+                      #bfa087
+                    ) !important;
+
+                  color:
+                    #493428 !important;
+
+                  box-shadow:
+                    0 6px 14px rgba(105,77,56,0.11) !important;
+                }
+
+                .paradise-finance-overview-grid
+                > div {
+                  border-color:
+                    rgba(190,151,117,0.33) !important;
+
+                  background:
+                    linear-gradient(
+                      145deg,
+                      #fffaf5,
+                      #f3e6da
+                    ) !important;
+
+                  box-shadow:
+                    0 6px 15px rgba(105,78,57,0.055) !important;
+                }
+
+                .paradise-finance-overview-grid
+                > div:nth-child(4) {
+                  border-color:
+                    rgba(171,128,94,0.39) !important;
+
+                  background:
+                    linear-gradient(
+                      145deg,
+                      #d1b69e,
+                      #b89578
+                    ) !important;
+
+                  box-shadow:
+                    0 8px 18px rgba(105,76,55,0.13) !important;
+                }
+
+                .paradise-finance-overview-grid
+                > div:nth-child(4)
+                * {
+                  color:
+                    #493428 !important;
+                }
+
+                .paradise-finance-overview-grid
+                > div
+                > div
+                > div:last-child {
+                  background:
+                    linear-gradient(
+                      145deg,
+                      #e1cebd,
+                      #cbb09a
+                    ) !important;
+
+                  color:
+                    #4b372a !important;
+                }
+
+                @media (max-width: 1180px) {
+                  .paradise-finance-details-column:nth-child(2)
+                  > div:nth-child(2),
+
+                  .paradise-finance-details-column:nth-child(2)
+                  > div:nth-child(3),
+
+                  .paradise-finance-details-column:nth-child(1)
+                  > div:nth-child(3),
+
+                  .paradise-finance-details-column:nth-child(3)
+                  > div:nth-child(2),
+
+                  .paradise-finance-details-column:nth-child(1)
+                  > div:nth-child(2) {
+                    grid-template-columns:
+                      repeat(3, minmax(0, 1fr));
+                  }
+
+                  .paradise-finance-details-column:nth-child(4)
+                  > div:nth-child(2),
+
+                  .paradise-finance-details-column:nth-child(4)
+                  > div:nth-child(3),
+
+                  .paradise-finance-details-column:nth-child(4)
+                  > div:nth-child(4),
+
+                  .paradise-finance-details-column:nth-child(1)
+                  > div:nth-child(4),
+
+                  .paradise-finance-details-column:nth-child(3)
+                  > div:nth-child(3),
+
+                  .paradise-finance-details-column:nth-child(4)
+                  > div:nth-child(5) {
+                    grid-column: span 6;
+                  }
+                }
+
+                @media (max-width: 700px) {
+                  .paradise-finance-details-layout {
+                    gap: 12px;
+                  }
+
+                  .paradise-finance-details-column
+                  > div:not(.paradise-finance-details-group-title) {
+                    grid-column: 1 / -1 !important;
+                    padding: 13px !important;
+                    grid-template-columns:
+                      repeat(2, minmax(0, 1fr)) !important;
+                  }
+
+                  .paradise-finance-details-column
+                  > div:not(.paradise-finance-details-group-title)
+                  > h3 {
+                    min-height: 38px;
+                    padding: 9px 11px !important;
+                    font-size: 13px !important;
+                  }
+
+                  .paradise-finance-details-column
+                  > div:not(.paradise-finance-details-group-title)
+                  > div {
+                    min-height: 65px !important;
+                  }
+
+                  .paradise-finance-details-column:nth-child(3)
+                  > div:nth-child(2)
+                  > div:last-child {
+                    grid-column: 1 / -1;
+                  }
+                }
+
+                @media (max-width: 420px) {
+                  .paradise-finance-details-column
+                  > div:not(.paradise-finance-details-group-title) {
+                    grid-template-columns: 1fr !important;
+                  }
+
+                  .paradise-finance-details-column:nth-child(3)
+                  > div:nth-child(2)
+                  > div:last-child {
+                    grid-column: auto;
+                  }
+                }
+              `}
+            </style>
+
+            <div className="paradise-finance-details-layout">
+              <div className="paradise-finance-details-column">
+                <div className="paradise-finance-details-group-title">
+                  Planning &amp; Goals
+                </div>
+
+                <div
+                  style={{
+                    ...financeCardStyle,
+                    width: "100%",
+                    alignSelf: "stretch",
+                  }}
+                >
+                  <h3 style={financeHeaderStyle}>
+                    Monthly Settings
+                  </h3>
+
+                  {[
+                    [
+                      "monthlyTarget",
+                      `${getFinanceMonthLabel(
+                        activeFinanceMonth
+                      )} Target`,
+                    ],
+                    [
+                      "staffSalary",
+                      "Staff Salary",
+                    ],
+                    [
+                      "houseRent",
+                      "House Rent",
+                    ],
+                    [
+                      "carRent",
+                      "Car Rent",
+                    ],
+                    [
+                      "governmentFees",
+                      "Government Fees",
+                    ],
+                  ].map(
+                    ([field, label]) => (
+                      <div
+                        key={field}
+                        style={financeRowStyle}
+                      >
+                        <span>{label}</span>
+
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={
+                            financeMonthlySettings[
+                              activeFinanceMonth
+                            ]?.[field] ??
+                            financeStats
+                              .monthlySettings[
+                                field
+                              ] ??
+                            ""
+                          }
+                          onChange={(
+                            event
+                          ) =>
+                            updateFinanceMonthlySetting(
+                              activeFinanceMonth,
+                              field,
+                              event.target.value
+                            )
+                          }
+                          style={
+                            financeSmallInputStyle
+                          }
+                        />
+                      </div>
+                    )
+                  )}
+                </div>
+
+                <div
+                  style={{
+                    ...financeCardStyle,
+                    width: "100%",
+                    alignSelf: "stretch",
+                  }}
+                >
+                  <h3 style={financeHeaderStyle}>
+                    Target Performance
+                  </h3>
+
+                  {renderFinanceRows([
+                    [
+                      `${getFinanceMonthLabel(
+                        activeFinanceMonth
+                      )} Target`,
+                      financeStats.monthlyTarget,
+                    ],
+                    [
+                      "Target by service",
+                      financeStats.targetByService,
+                    ],
+                    [
+                      "Remaining Services",
+                      financeStats.remainingServicesToTarget,
+                    ],
+                    [
+                      "AVG Service Price",
+                      financeStats.averageServicePrice,
+                    ],
+                    [
+                      "Total Services",
+                      financeStats.totalServices,
+                    ],
+                  ])}
+                </div>
+
+                <div
+                  style={{
+                    ...financeCardStyle,
+                    width: "100%",
+                    alignSelf: "stretch",
+                  }}
+                >
+                  <h3 style={financeHeaderStyle}>
+                    Commission
+                  </h3>
+
+                  {renderFinanceRows([
+                    [
+                      "Joce",
+                      financeStats.commissionJoce,
+                    ],
+                    [
+                      "Caren",
+                      financeStats.commissionCaren,
+                    ],
+                    [
+                      "Total",
+                      financeStats
+                        .operatingExpenses
+                        .Commission,
+                    ],
+                  ])}
+                </div>
+              </div>
+
+              <div className="paradise-finance-details-column">
+                <div className="paradise-finance-details-group-title">
+                  Revenue &amp; Services
+                </div>
+
+                <div
+                  style={{
+                    ...financeCardStyle,
+                    width: "100%",
+                    alignSelf: "stretch",
+                  }}
+                >
+                  <h3 style={financeHeaderStyle}>
+                    Payment Method
+                  </h3>
+
+                  {renderFinanceRows([
+                    [
+                      "Cash",
+                      financeStats
+                        .paymentTotals.Cash,
+                    ],
+                    [
+                      "Debit",
+                      financeStats
+                        .paymentTotals.Debit,
+                    ],
+                    [
+                      "Credit",
+                      financeStats
+                        .paymentTotals.Credit,
+                    ],
+                    [
+                      "Tabby",
+                      financeStats
+                        .paymentTotals.Tabby,
+                    ],
+                    [
+                      "Tamara",
+                      financeStats
+                        .paymentTotals.Tamara,
+                    ],
+                    [
+                      "Bank Transfer",
+                      financeStats
+                        .paymentTotals[
+                          "Bank Transfer"
+                        ],
+                    ],
+                    [
+                      "Total",
+                      financeStats.paymentTotal,
+                    ],
+                  ])}
+                </div>
+
+                <div
+                  style={{
+                    ...financeCardStyle,
+                    width: "100%",
+                    alignSelf: "stretch",
+                  }}
+                >
+                  <h3 style={financeHeaderStyle}>
+                    Services
+                  </h3>
+
+                  {renderFinanceRows([
+                    [
+                      "Massage",
+                      financeStats
+                        .servicesTotals
+                        .Massage,
+                    ],
+                    [
+                      "Mani & Pedi",
+                      financeStats
+                        .servicesTotals[
+                          "Mani & Pedi"
+                        ],
+                    ],
+                    [
+                      "Moroccan Bath",
+                      financeStats
+                        .servicesTotals[
+                          "Moroccan Bath"
+                        ],
+                    ],
+                    [
+                      "Package",
+                      financeStats
+                        .servicesTotals
+                        .Package,
+                    ],
+                    [
+                      "Total Services",
+                      financeStats.totalServices,
+                    ],
+                  ])}
+                </div>
+              </div>
+
+              <div className="paradise-finance-details-column">
+                <div className="paradise-finance-details-group-title">
+                  Expenses
+                </div>
+
+                <div
+                  style={{
+                    ...financeCardStyle,
+                    width: "100%",
+                    alignSelf: "stretch",
+                  }}
+                >
+                  <h3 style={financeHeaderStyle}>
+                    Operating Expenses
+                  </h3>
+
+                  {renderFinanceRows([
+                    [
+                      "Gas Station",
+                      financeStats
+                        .operatingExpenses[
+                          "Gas Station"
+                        ],
+                    ],
+                    [
+                      "Commission",
+                      financeStats
+                        .operatingExpenses
+                        .Commission,
+                    ],
+                    [
+                      "Purchase",
+                      financeStats
+                        .operatingExpenses
+                        .Purchase,
+                    ],
+                    [
+                      "House Rent",
+                      financeStats
+                        .operatingExpenses[
+                          "House Rent"
+                        ],
+                    ],
+                    [
+                      "Car Rent",
+                      financeStats
+                        .operatingExpenses[
+                          "Car Rent"
+                        ],
+                    ],
+                    [
+                      "Uber",
+                      financeStats
+                        .operatingExpenses
+                        .Uber,
+                    ],
+                    [
+                      "Laundry",
+                      financeStats
+                        .operatingExpenses
+                        .Laundry,
+                    ],
+                    [
+                      "Food",
+                      financeStats
+                        .operatingExpenses
+                        .Food,
+                    ],
+                    [
+                      "Government Fees",
+                      financeStats
+                        .operatingExpenses[
+                          "Government Fees"
+                        ],
+                    ],
+                    [
+                      "Salary",
+                      financeStats
+                        .operatingExpenses
+                        .Salary,
+                    ],
+                    [
+                      "Total",
+                      Object.values(
+                        financeStats
+                          .operatingExpenses
+                      ).reduce(
+                        (
+                          total,
+                          value
+                        ) =>
+                          total +
+                          parseAmount(value),
+                        0
+                      ),
+                    ],
+                  ])}
+                </div>
+
+                <div
+                  style={{
+                    ...financeCardStyle,
+                    width: "100%",
+                    alignSelf: "stretch",
+                  }}
+                >
+                  <h3 style={financeHeaderStyle}>
+                    Transportation
+                  </h3>
+
+                  {renderFinanceRows([
+                    [
+                      "Transportation",
+                      financeStats
+                        .totalTransportation,
+                    ],
+                  ])}
+                </div>
+              </div>
+
+              <div className="paradise-finance-details-column">
+                <div className="paradise-finance-details-group-title">
+                  Clients &amp; Gifts
+                </div>
+
+                <div
+                  style={{
+                    ...financeCardStyle,
+                    width: "100%",
+                    alignSelf: "stretch",
+                  }}
+                >
+                  <h3 style={financeHeaderStyle}>
+                    Clients
+                  </h3>
+
+                  {renderFinanceRows([
+                    [
+                      "New Clients",
+                      financeStats.newClients,
+                    ],
+                    [
+                      "Loyal Clients",
+                      financeStats.loyalClients,
+                    ],
+                  ])}
+                </div>
+
+                <div
+                  style={{
+                    ...financeCardStyle,
+                    width: "100%",
+                    alignSelf: "stretch",
+                  }}
+                >
+                  <h3 style={financeHeaderStyle}>
+                    Gifts
+                  </h3>
+
+                  {renderFinanceRows([
+                    [
+                      "Gifts Added",
+                      financeStats.giftsAdded,
+                    ],
+                    [
+                      "Gifts Received",
+                      financeStats
+                        .giftsReceived,
+                    ],
+                  ])}
+                </div>
+
+                <div
+                  style={{
+                    ...financeCardStyle,
+                    width: "100%",
+                    alignSelf: "stretch",
+                  }}
+                >
+                  <h3 style={financeHeaderStyle}>
+                    Loyalty Card Gifts
+                  </h3>
+
+                  {renderFinanceRows([
+                    [
+                      "1 Service",
+                      financeStats.freeGifts,
+                    ],
+                    [
+                      "2 Service",
+                      financeStats
+                        .twoFreeGifts,
+                    ],
+                  ])}
+                </div>
+
+                <div
+                  style={{
+                    ...financeCardStyle,
+                    width: "100%",
+                    alignSelf: "stretch",
+                  }}
+                >
+                  <h3 style={financeHeaderStyle}>
+                    Cancelled Appointments
+                  </h3>
+
+                  {renderFinanceRows([
+                    [
+                      "Cancelled Appointments",
+                      financeStats
+                        .clientsTurnedAway,
+                    ],
+                    [
+                      "Lost Revenue",
+                      financeStats.lostRevenue,
+                    ],
+                    [
+                      "Potential Revenue",
+                      financeStats
+                        .potentialRevenue,
+                    ],
+                  ])}
+                </div>
+              </div>
+            </div>
+
+            <style>
+              {`
+                .paradise-finance-daily-scroll {
+                  width: 100%;
+                  overflow-x: auto;
+                  overflow-y: hidden;
+                  overscroll-behavior-x: contain;
+                  scrollbar-width: none;
+                  -ms-overflow-style: none;
+                }
+
+                .paradise-finance-daily-scroll::-webkit-scrollbar {
+                  display: none;
+                  width: 0;
+                  height: 0;
+                }
+
+                .paradise-finance-daily-table th:first-child,
+                .paradise-finance-daily-table td:first-child {
+                  position: sticky;
+                  left: 0;
+                  z-index: 2;
+                }
+
+                .paradise-finance-daily-table thead th:first-child {
+                  z-index: 4;
+                }
+
+                .paradise-finance-daily-table thead tr,
+                .paradise-finance-daily-table thead th {
+                  background: #cfb096 !important;
+                  color: #49372c !important;
+                  border-color:
+                    rgba(158,120,91,0.26) !important;
+                }
+
+                .paradise-finance-daily-table
+                tbody
+                tr:not(:last-child)
+                td:not(:last-child) {
+                  background: #f8f1ea !important;
+                  color: #5d493c !important;
+                  border-color:
+                    rgba(202,174,150,0.32) !important;
+                }
+
+                .paradise-finance-daily-table
+                tbody
+                tr:not(:last-child)
+                td:last-child {
+                  background: #f8f1ea !important;
+                  border-color:
+                    rgba(202,174,150,0.32) !important;
+                }
+
+                .paradise-finance-daily-table
+                tbody
+                tr:last-child
+                td {
+                  background: #dbc1aa !important;
+                  border-color:
+                    rgba(158,120,91,0.28) !important;
+                }
+
+                .paradise-finance-daily-table
+                tbody
+                tr:last-child
+                td:not(:last-child) {
+                  color: #49372c !important;
+                }
+
+                @media (max-width: 700px) {
+                  .paradise-finance-daily-card {
+                    padding: 15px !important;
+                    border-radius: 22px !important;
+                  }
+
+                  .paradise-finance-daily-title {
+                    font-size: 14px !important;
+                  }
+
+                  .paradise-finance-daily-table {
+                    min-width: 700px !important;
+                  }
+
+                  .paradise-finance-daily-table th {
+                    padding: 12px 9px !important;
+                    font-size: 11px !important;
+                  }
+
+                  .paradise-finance-daily-table td {
+                    padding: 12px 9px !important;
+                    font-size: 11px !important;
+                  }
+                }
+              `}
+            </style>
+
             <div
+              className="paradise-finance-daily-card"
               style={{
                 ...financeCardStyle,
                 marginBottom: "22px",
+                padding: "19px",
                 overflow: "hidden",
               }}
             >
-              <h3 style={financeHeaderStyle}>Daily Income / Expenses / Net Profit</h3>
-              <div style={{ overflowX: "auto" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
+                  gap: "12px",
+                  marginBottom: "16px",
+                  paddingBottom: "14px",
+                  borderBottom:
+                    "1px solid rgba(180,145,116,0.27)",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "32px",
+                      height: "32px",
+                      flex: "0 0 32px",
+                      borderRadius: "10px",
+                      background:
+                        "linear-gradient(145deg, #c9a789, #987054)",
+                      color: "#fffaf5",
+                      boxShadow:
+                        "0 7px 15px rgba(75,46,31,0.14)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "13px",
+                      fontWeight: "950",
+                    }}
+                  >
+                    ≡
+                  </div>
+
+                  <div
+                    style={{
+                      textAlign: "left",
+                    }}
+                  >
+                    <h3
+                      className="paradise-finance-daily-title"
+                      style={{
+                        margin: 0,
+                        color: "#3f2b21",
+                        fontSize: "16px",
+                        lineHeight: "1.35",
+                        fontWeight: "950",
+                      }}
+                    >
+                      Daily Income / Expenses / Net Profit
+                    </h3>
+
+                    <div
+                      style={{
+                        marginTop: "3px",
+                        color: "#96755e",
+                        fontSize: "10px",
+                        fontWeight: "800",
+                      }}
+                    >
+                      {getFinanceMonthLabel(
+                        activeFinanceMonth
+                      )}{" "}
+                      daily performance
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    minHeight: "30px",
+                    padding: "5px 11px",
+                    boxSizing: "border-box",
+                    borderRadius: "999px",
+                    border:
+                      "1px solid rgba(157,119,90,0.26)",
+                    background:
+                      "linear-gradient(145deg, #fffaf5, #ead8c8)",
+                    color: "#654735",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "10px",
+                    fontWeight: "900",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {financeStats.dayStats.length} Days
+                </div>
+              </div>
+
+              <div
+                className="paradise-finance-daily-scroll"
+                style={{
+                  borderRadius: "18px",
+                  border:
+                    "1px solid rgba(177,141,112,0.31)",
+                  background: "#fffdf9",
+                  boxShadow:
+                    "0 10px 24px rgba(75,46,31,0.065)",
+                }}
+              >
                 <table
+                  className="paradise-finance-daily-table"
                   style={{
                     width: "100%",
-                    borderCollapse: "collapse",
-                    minWidth: "620px",
-                    color: "#4b2e1f",
+                    minWidth: "720px",
+                    borderCollapse: "separate",
+                    borderSpacing: 0,
+                    color: "#432f24",
                   }}
                 >
                   <thead>
-                    <tr style={{ background: "#cbb7a4", color: "#111" }}>
-                      {["Date", "Income", "Expenses", "VAT 15%", "Net Profit"].map((heading) => (
-                        <th
-                          key={heading}
-                          style={{
-                            padding: "14px 10px",
-                            textAlign: "center",
-                            fontSize: "14px",
-                            fontWeight: "900",
-                            border: "1px solid #d6c7b8",
-                          }}
-                        >
-                          {heading}
-                        </th>
-                      ))}
+                    <tr
+                      style={{
+                        background:
+                          "linear-gradient(135deg, #493126, #76513b)",
+                        color: "#fffaf5",
+                      }}
+                    >
+                      {[
+                        "Date",
+                        "Income",
+                        "Expenses",
+                        "VAT 15%",
+                        "Net Profit",
+                      ].map(
+                        (
+                          heading,
+                          headingIndex
+                        ) => (
+                          <th
+                            key={heading}
+                            style={{
+                              padding:
+                                "14px 11px",
+                              background:
+                                headingIndex === 0
+                                  ? "linear-gradient(135deg, #493126, #5e4030)"
+                                  : "transparent",
+                              textAlign:
+                                "center",
+                              fontSize:
+                                "12px",
+                              lineHeight:
+                                "1.3",
+                              fontWeight:
+                                "950",
+                              letterSpacing:
+                                "0.2px",
+                              borderRight:
+                                headingIndex <
+                                4
+                                  ? "1px solid rgba(255,255,255,0.11)"
+                                  : "none",
+                              borderBottom:
+                                "1px solid rgba(255,255,255,0.12)",
+                              whiteSpace:
+                                "nowrap",
+                            }}
+                          >
+                            {heading}
+                          </th>
+                        )
+                      )}
                     </tr>
                   </thead>
+
                   <tbody>
-                    {financeStats.dayStats.map((day) => (
-                      <tr key={day.date}>
-                        <td style={{ padding: "12px 10px", textAlign: "center", border: "1px solid #eadfd5", fontWeight: "800" }}>
-                          {day.date}
-                        </td>
-                        <td style={{ padding: "12px 10px", textAlign: "center", border: "1px solid #eadfd5" }}>
-                          {formatCurrency(day.income)}
-                        </td>
-                        <td style={{ padding: "12px 10px", textAlign: "center", border: "1px solid #eadfd5" }}>
-                          {formatCurrency(day.expenses)}
-                        </td>
-                        <td style={{ padding: "12px 10px", textAlign: "center", border: "1px solid #eadfd5" }}>
-  {formatCurrency(day.vatAmount)}
-</td>
-                        <td style={{ padding: "12px 10px", textAlign: "center", border: "1px solid #eadfd5", fontWeight: "900" }}>
-                          {formatCurrency(day.netProfit)}
-                        </td>
-                      </tr>
-                    ))}
-                    <tr style={{ background: "#ead8c9", fontWeight: "900" }}>
-                      <td style={{ padding: "12px 10px", textAlign: "center", border: "1px solid #d6c7b8" }}>Total</td>
-                      <td style={{ padding: "12px 10px", textAlign: "center", border: "1px solid #d6c7b8" }}>{formatCurrency(financeStats.totalIncome)}</td>
-                      <td style={{ padding: "12px 10px", textAlign: "center", border: "1px solid #d6c7b8" }}>{formatCurrency(financeStats.totalExpenses)}</td>
-                      <td style={{ padding: "12px 10px", textAlign: "center", border: "1px solid #d6c7b8" }}>{formatCurrency(financeStats.totalVat)}</td>
-                      <td style={{ padding: "12px 10px", textAlign: "center", border: "1px solid #d6c7b8" }}>{formatCurrency(financeStats.totalNetProfit)}</td>
+                    {financeStats.dayStats.map(
+                      (day, dayIndex) => {
+                        const dayNetProfit =
+                          Number(
+                            day.netProfit || 0
+                          );
+
+                        const rowBackground =
+                          dayIndex % 2 === 0
+                            ? "#fffdf9"
+                            : "#f7eee6";
+
+                        return (
+                          <tr
+                            key={day.date}
+                            style={{
+                              background:
+                                rowBackground,
+                            }}
+                          >
+                            <td
+                              style={{
+                                padding:
+                                  "13px 11px",
+                                background:
+                                  dayIndex % 2 ===
+                                  0
+                                    ? "#f3e3d5"
+                                    : "#ead5c3",
+                                color:
+                                  "#50372a",
+                                textAlign:
+                                  "center",
+                                fontSize:
+                                  "12px",
+                                fontWeight:
+                                  "950",
+                                whiteSpace:
+                                  "nowrap",
+                                borderRight:
+                                  "1px solid rgba(190,157,130,0.25)",
+                                borderBottom:
+                                  "1px solid rgba(190,157,130,0.22)",
+                              }}
+                            >
+                              {day.date}
+                            </td>
+
+                            <td
+                              style={{
+                                padding:
+                                  "13px 11px",
+                                textAlign:
+                                  "center",
+                                color:
+                                  "#45684c",
+                                fontSize:
+                                  "12px",
+                                fontWeight:
+                                  "900",
+                                whiteSpace:
+                                  "nowrap",
+                                borderRight:
+                                  "1px solid rgba(190,157,130,0.22)",
+                                borderBottom:
+                                  "1px solid rgba(190,157,130,0.22)",
+                              }}
+                            >
+                              {formatCurrency(
+                                day.income
+                              )}
+                            </td>
+
+                            <td
+                              style={{
+                                padding:
+                                  "13px 11px",
+                                textAlign:
+                                  "center",
+                                color:
+                                  "#855542",
+                                fontSize:
+                                  "12px",
+                                fontWeight:
+                                  "900",
+                                whiteSpace:
+                                  "nowrap",
+                                borderRight:
+                                  "1px solid rgba(190,157,130,0.22)",
+                                borderBottom:
+                                  "1px solid rgba(190,157,130,0.22)",
+                              }}
+                            >
+                              {formatCurrency(
+                                day.expenses
+                              )}
+                            </td>
+
+                            <td
+                              style={{
+                                padding:
+                                  "13px 11px",
+                                textAlign:
+                                  "center",
+                                color:
+                                  "#775b47",
+                                fontSize:
+                                  "12px",
+                                fontWeight:
+                                  "850",
+                                whiteSpace:
+                                  "nowrap",
+                                borderRight:
+                                  "1px solid rgba(190,157,130,0.22)",
+                                borderBottom:
+                                  "1px solid rgba(190,157,130,0.22)",
+                              }}
+                            >
+                              {formatCurrency(
+                                day.vatAmount
+                              )}
+                            </td>
+
+                            <td
+                              style={{
+                                padding:
+                                  "13px 11px",
+                                textAlign:
+                                  "center",
+                                color:
+                                  dayNetProfit >=
+                                  0
+                                    ? "#3f684a"
+                                    : "#8b443b",
+                                background:
+                                  dayNetProfit >=
+                                  0
+                                    ? "rgba(110,157,119,0.09)"
+                                    : "rgba(173,96,83,0.08)",
+                                fontSize:
+                                  "13px",
+                                fontWeight:
+                                  "950",
+                                whiteSpace:
+                                  "nowrap",
+                                borderBottom:
+                                  "1px solid rgba(190,157,130,0.22)",
+                              }}
+                            >
+                              {formatCurrency(
+                                day.netProfit
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      }
+                    )}
+
+                    <tr
+                      style={{
+                        background:
+                          "linear-gradient(135deg, #493126, #76513b)",
+                        color: "#fffaf5",
+                        fontWeight: "950",
+                      }}
+                    >
+                      <td
+                        style={{
+                          position:
+                            "sticky",
+                          left: 0,
+                          zIndex: 3,
+                          padding:
+                            "14px 11px",
+                          background:
+                            "linear-gradient(135deg, #493126, #5e4030)",
+                          textAlign:
+                            "center",
+                          fontSize:
+                            "12px",
+                          borderRight:
+                            "1px solid rgba(255,255,255,0.12)",
+                          whiteSpace:
+                            "nowrap",
+                        }}
+                      >
+                        Total
+                      </td>
+
+                      <td
+                        style={{
+                          padding:
+                            "14px 11px",
+                          textAlign:
+                            "center",
+                          fontSize:
+                            "13px",
+                          borderRight:
+                            "1px solid rgba(255,255,255,0.12)",
+                          whiteSpace:
+                            "nowrap",
+                        }}
+                      >
+                        {formatCurrency(
+                          financeStats.totalIncome
+                        )}
+                      </td>
+
+                      <td
+                        style={{
+                          padding:
+                            "14px 11px",
+                          textAlign:
+                            "center",
+                          fontSize:
+                            "13px",
+                          borderRight:
+                            "1px solid rgba(255,255,255,0.12)",
+                          whiteSpace:
+                            "nowrap",
+                        }}
+                      >
+                        {formatCurrency(
+                          financeStats.totalExpenses
+                        )}
+                      </td>
+
+                      <td
+                        style={{
+                          padding:
+                            "14px 11px",
+                          textAlign:
+                            "center",
+                          fontSize:
+                            "13px",
+                          borderRight:
+                            "1px solid rgba(255,255,255,0.12)",
+                          whiteSpace:
+                            "nowrap",
+                        }}
+                      >
+                        {formatCurrency(
+                          financeStats.totalVat
+                        )}
+                      </td>
+
+                      <td
+                        style={{
+                          padding:
+                            "14px 11px",
+                          textAlign:
+                            "center",
+                          color:
+                            financeStats.totalNetProfit >=
+                            0
+                              ? "#d9f0de"
+                              : "#ffd4cf",
+                          fontSize:
+                            "14px",
+                          whiteSpace:
+                            "nowrap",
+                        }}
+                      >
+                        {formatCurrency(
+                          financeStats.totalNetProfit
+                        )}
+                      </td>
                     </tr>
                   </tbody>
                 </table>
@@ -26392,220 +32261,1011 @@ if (screen === "availableAppointments") {
 
   if (screen === "clientProfile" && selectedClient) {
     return withGreeting(
-      <div style={luxuryPageStyle}>
+      <div
+        id="paradise-client-profile"
+        style={{
+          ...luxuryPageStyle,
+          alignItems: "flex-start",
+          padding: "34px 16px 70px",
+          boxSizing: "border-box",
+          background:
+            "radial-gradient(circle at top right, rgba(199,168,140,0.34), transparent 34%), radial-gradient(circle at bottom left, rgba(88,61,45,0.16), transparent 31%), linear-gradient(145deg, #f8f1e9 0%, #ead8c7 48%, #d5b99f 100%)",
+        }}
+      >
+        <style>
+          {`
+            #paradise-client-profile {
+              line-height: 1.5;
+            }
+
+            #paradise-client-profile div[style*="font-size: 9px"]:not([style*="width:"]),
+            #paradise-client-profile span[style*="font-size: 9px"]:not([style*="width:"]),
+            #paradise-client-profile label[style*="font-size: 9px"] {
+              font-size: 12px !important;
+            }
+
+            #paradise-client-profile div[style*="font-size: 10px"]:not([style*="width:"]),
+            #paradise-client-profile span[style*="font-size: 10px"]:not([style*="width:"]),
+            #paradise-client-profile label[style*="font-size: 10px"] {
+              font-size: 13px !important;
+            }
+
+            #paradise-client-profile div[style*="font-size: 11px"]:not([style*="width:"]),
+            #paradise-client-profile span[style*="font-size: 11px"]:not([style*="width:"]),
+            #paradise-client-profile label[style*="font-size: 11px"],
+            #paradise-client-profile strong[style*="font-size: 11px"] {
+              font-size: 14px !important;
+            }
+
+            #paradise-client-profile div[style*="font-size: 12px"]:not([style*="width:"]),
+            #paradise-client-profile span[style*="font-size: 12px"]:not([style*="width:"]),
+            #paradise-client-profile label[style*="font-size: 12px"],
+            #paradise-client-profile strong[style*="font-size: 12px"] {
+              font-size: 15px !important;
+            }
+
+            #paradise-client-profile div[style*="font-size: 13px"]:not([style*="width:"]),
+            #paradise-client-profile span[style*="font-size: 13px"]:not([style*="width:"]),
+            #paradise-client-profile label[style*="font-size: 13px"],
+            #paradise-client-profile strong[style*="font-size: 13px"] {
+              font-size: 16px !important;
+            }
+
+            #paradise-client-profile button {
+              font-size: 14px !important;
+            }
+
+            #paradise-client-profile input,
+            #paradise-client-profile textarea {
+              font-size: 15px !important;
+            }
+
+            #paradise-client-profile h3 {
+              font-size: 18px !important;
+            }
+          `}
+        </style>
+
         <div
           style={{
-            width: "620px",
-            backgroundColor: "#ffffffe6",
-            borderRadius: "36px",
-            padding: "30px",
-            boxShadow: "0 25px 65px rgba(75,46,31,0.18)",
+            width: "min(1040px, 100%)",
+            maxWidth: "1040px",
+            boxSizing: "border-box",
+            background:
+              "linear-gradient(180deg, rgba(255,253,249,0.97) 0%, rgba(246,236,226,0.96) 100%)",
+            borderRadius: "34px",
+            padding: "24px",
+            boxShadow:
+              "0 30px 80px rgba(61,42,32,0.20), inset 0 1px 0 rgba(255,255,255,0.95)",
             textAlign: "center",
-            border: "1px solid #ffffffbf",
-            backdropFilter: "blur(10px)",
+            border:
+              "1px solid rgba(183,148,118,0.42)",
+            backdropFilter: "blur(16px)",
             position: "relative",
+            overflow: "hidden",
+            color: "#3f2b21",
           }}
         >
-          <button
-            onClick={() => setScreen(previousScreenRef.current || "clients")}
+          <div
             style={{
               position: "absolute",
-              top: "18px",
-              left: "18px",
-              ...buttonStyle,
-              backgroundColor: "#faf7f2",
-              color: "#4b2e1f",
-              padding: "8px 16px",
-              border: "1px solid #d6c7b8",
-              borderRadius: "16px",
-              fontSize: "13px",
-            }}
-          >
-            Back
-          </button>
-
-          <img
-            src={logo}
-            alt="logo"
-            style={{
-              width: "105px",
-              marginBottom: "20px",
+              top: "-110px",
+              right: "-90px",
+              width: "260px",
+              height: "260px",
+              borderRadius: "50%",
+              background:
+                "radial-gradient(circle, rgba(194,157,126,0.22), rgba(194,157,126,0))",
+              pointerEvents: "none",
             }}
           />
 
           <div
-            id={`card-${selectedClient.id}`}
             style={{
-              width: "360px",
-              height: "222px",
-              margin: "0 auto 32px",
-              borderRadius: "0px",
-              overflow: "hidden",
+              position: "absolute",
+              bottom: "-125px",
+              left: "-100px",
+              width: "290px",
+              height: "290px",
+              borderRadius: "50%",
+              background:
+                "radial-gradient(circle, rgba(91,62,46,0.12), rgba(91,62,46,0))",
+              pointerEvents: "none",
+            }}
+          />
+          <div
+            style={{
               position: "relative",
-              boxShadow: "0 18px 38px rgba(75,46,31,0.22)",
-              backgroundColor: "white",
+              zIndex: 1,
+              display: "grid",
+              gridTemplateColumns: "72px 1fr 72px",
+              alignItems: "center",
+              gap: "14px",
+              width: "100%",
+              boxSizing: "border-box",
+              padding: "4px 4px 20px",
+              marginBottom: "24px",
+              borderBottom:
+                "1px solid rgba(182,148,119,0.34)",
             }}
           >
-            <img
-              src={getCardImage(selectedClient.visits)}
-              alt="loyalty card"
-              crossOrigin="anonymous"
+            <button
+              type="button"
+              onClick={() =>
+                setScreen(
+                  previousScreenRef.current ||
+                    "clients"
+                )
+              }
+              aria-label="الرجوع"
+              title="الرجوع"
               style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-                borderRadius: "0px",
+                width: "42px",
+                height: "42px",
+                padding: 0,
+                border:
+                  "1px solid rgba(166,132,104,0.48)",
+                borderRadius: "14px",
+                background:
+                  "linear-gradient(145deg, #fffdf9, #e7d4c2)",
+                color: "#4a3327",
+                boxShadow:
+                  "0 8px 18px rgba(75,46,31,0.11)",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "19px",
+                fontWeight: "900",
+                cursor: "pointer",
               }}
-            />
+            >
+              ←
+            </button>
 
             <div
               style={{
-                position: "absolute",
-                top: "14px",
-                right: "14px",
-                backgroundColor: "rgba(255,255,255,0.88)",
-                padding: "7px 12px",
-                borderRadius: "12px",
-                fontWeight: "bold",
-                fontSize: "14px",
-                color: "#4b2e1f",
+                minWidth: 0,
+                textAlign: "center",
               }}
             >
-              {selectedClient.name}
+              <div
+                style={{
+                  color: "#9b7659",
+                  fontSize: "10px",
+                  fontWeight: "900",
+                  letterSpacing: "2.2px",
+                  textTransform: "uppercase",
+                  marginBottom: "5px",
+                }}
+              >
+                Paradise Home Spa
+              </div>
+
+              <div
+                style={{
+                  color: "#3f2b21",
+                  fontSize: "23px",
+                  fontWeight: "950",
+                  letterSpacing: "0.2px",
+                }}
+              >
+                Client Profile
+              </div>
+
+              <div
+                style={{
+                  width: "52px",
+                  height: "2px",
+                  margin: "9px auto 0",
+                  borderRadius: "999px",
+                  background:
+                    "linear-gradient(90deg, transparent, #b88e6d, transparent)",
+                }}
+              />
+            </div>
+
+            <div
+              style={{
+                width: "66px",
+                height: "66px",
+                justifySelf: "end",
+                borderRadius: "20px",
+                background:
+                  "linear-gradient(145deg, #fffdf9, #ead8c7)",
+                border:
+                  "1px solid rgba(180,145,116,0.38)",
+                boxShadow:
+                  "0 10px 22px rgba(75,46,31,0.10)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxSizing: "border-box",
+              }}
+            >
+              <img
+                src={logo}
+                alt="logo"
+                style={{
+                  width: "52px",
+                  height: "52px",
+                  objectFit: "contain",
+                }}
+              />
             </div>
           </div>
 
-          <button
-            onClick={() => sendWhatsApp(selectedClient)}
+          <div
             style={{
-              ...buttonStyle,
-              width: "35%",
-              margin: "0 auto 18px",
-              display: "block",
-              background: "linear-gradient(135deg, #1f9f54, #25D366)",
-              color: "white",
-              borderRadius: "18px",
-              boxShadow: "0 12px 26px rgba(37,211,102,0.22)",
-              fontSize: "15px",
+              position: "relative",
+              zIndex: 1,
+              width: "100%",
+              margin: "0 auto 20px",
+              padding: "20px",
+              boxSizing: "border-box",
+              borderRadius: "26px",
+              border:
+                "1px solid rgba(178,143,114,0.36)",
+              background:
+                "linear-gradient(145deg, rgba(255,253,249,0.98), rgba(225,204,185,0.82))",
+              boxShadow:
+                "0 16px 36px rgba(75,46,31,0.10), inset 0 1px 0 rgba(255,255,255,0.92)",
             }}
           >
-            WhatsApp + Copy Card
-          </button>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "12px",
+                marginBottom: "17px",
+                direction: "rtl",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  minWidth: 0,
+                }}
+              >
+                <div
+                  style={{
+                    width: "31px",
+                    height: "31px",
+                    flex: "0 0 31px",
+                    borderRadius: "10px",
+                    background:
+                      "linear-gradient(145deg, #c6a385, #977054)",
+                    color: "#fffaf5",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "11px",
+                    fontWeight: "900",
+                    boxShadow:
+                      "0 7px 15px rgba(75,46,31,0.14)",
+                  }}
+                >
+                  ✦
+                </div>
 
-          <h2
+                <div
+                  style={{
+                    minWidth: 0,
+                    textAlign: "right",
+                  }}
+                >
+                  <div
+                    style={{
+                      color: "#3f2b21",
+                      fontSize: "15px",
+                      fontWeight: "950",
+                      marginBottom: "2px",
+                    }}
+                  >
+                    كرت الولاء
+                  </div>
+
+                  <div
+                    style={{
+                      color: "#94745d",
+                      fontSize: "10px",
+                      fontWeight: "800",
+                      letterSpacing: "0.2px",
+                    }}
+                  >
+                    Paradise Loyalty Card
+                  </div>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  minHeight: "29px",
+                  padding: "5px 10px",
+                  boxSizing: "border-box",
+                  borderRadius: "999px",
+                  border:
+                    "1px solid rgba(157,119,90,0.28)",
+                  background:
+                    "rgba(255,250,245,0.72)",
+                  color: "#604332",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "10px",
+                  fontWeight: "900",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {getVisitLabel(
+                  selectedClient.visits
+                )}
+              </div>
+            </div>
+
+            <div
+              id={`card-${selectedClient.id}`}
+              style={{
+                width: "360px",
+                maxWidth: "100%",
+                aspectRatio: "360 / 222",
+                margin: "0 auto",
+                borderRadius: "17px",
+                overflow: "hidden",
+                position: "relative",
+                border:
+                  "1px solid rgba(128,92,67,0.24)",
+                boxShadow:
+                  "0 20px 42px rgba(62,42,31,0.22), 0 4px 12px rgba(62,42,31,0.10)",
+                backgroundColor: "#ffffff",
+              }}
+            >
+              <img
+                src={getCardImage(
+                  selectedClient.visits
+                )}
+                alt="loyalty card"
+                crossOrigin="anonymous"
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  display: "block",
+                  objectFit: "cover",
+                  borderRadius: "17px",
+                }}
+              />
+
+              <div
+                style={{
+                  position: "absolute",
+                  top: "12px",
+                  right: "12px",
+                  maxWidth:
+                    "calc(100% - 24px)",
+                  boxSizing: "border-box",
+                  padding: "7px 13px",
+                  borderRadius: "11px",
+                  border:
+                    "1px solid rgba(255,255,255,0.64)",
+                  background:
+                    "linear-gradient(145deg, rgba(255,255,255,0.94), rgba(245,232,220,0.90))",
+                  color: "#432f24",
+                  boxShadow:
+                    "0 7px 18px rgba(75,46,31,0.12)",
+                  backdropFilter: "blur(7px)",
+                  fontSize: "13px",
+                  lineHeight: "1.35",
+                  fontWeight: "900",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {selectedClient.loyaltyCardName ||
+                  selectedClient.name}
+              </div>
+            </div>
+          </div>
+
+          {canEditData && (
+            <div
+              style={{
+                position: "relative",
+                zIndex: 1,
+                width: "100%",
+                margin: "0 auto 22px",
+                padding: "17px 18px",
+                boxSizing: "border-box",
+                borderRadius: "22px",
+                border:
+                  "1px solid rgba(178,143,114,0.34)",
+                background:
+                  "linear-gradient(145deg, rgba(249,240,232,0.94), rgba(229,210,193,0.88))",
+                boxShadow:
+                  "0 12px 28px rgba(75,46,31,0.08), inset 0 1px 0 rgba(255,255,255,0.90)",
+                direction: "rtl",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
+                  gap: "10px",
+                  marginBottom: "11px",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "9px",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "27px",
+                      height: "27px",
+                      flex: "0 0 27px",
+                      borderRadius: "9px",
+                      border:
+                        "1px solid rgba(158,120,91,0.24)",
+                      background:
+                        "linear-gradient(145deg, #ead8c8, #ceb096)",
+                      color: "#533a2d",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "11px",
+                      fontWeight: "900",
+                    }}
+                  >
+                    Aa
+                  </div>
+
+                  <label
+                    style={{
+                      color: "#4b3327",
+                      fontSize: "12px",
+                      fontWeight: "950",
+                      textAlign: "right",
+                    }}
+                  >
+                    اسم العميلة في كرت الولاء
+                  </label>
+                </div>
+
+                <div
+                  style={{
+                    minHeight: "25px",
+                    padding: "4px 9px",
+                    boxSizing: "border-box",
+                    borderRadius: "999px",
+                    background:
+                      "rgba(255,250,245,0.68)",
+                    border:
+                      "1px solid rgba(164,127,98,0.22)",
+                    color: "#8a6750",
+                    fontSize: "9px",
+                    fontWeight: "900",
+                    display: "inline-flex",
+                    alignItems: "center",
+                  }}
+                >
+                  خاص بالكرت
+                </div>
+              </div>
+
+              <input
+                key={`${selectedClient.id}-${selectedClient.loyaltyCardName || ""}`}
+                defaultValue={
+                  selectedClient.loyaltyCardName ||
+                  selectedClient.name ||
+                  ""
+                }
+                placeholder="اكتبي الاسم الذي يظهر على الكرت"
+                onBlur={async (event) => {
+                  const inputElement =
+                    event.currentTarget;
+
+                  const enteredCardName =
+                    inputElement.value;
+
+                  inputElement.disabled =
+                    true;
+
+                  const saved =
+                    await updateClientLoyaltyCardName(
+                      selectedClient,
+                      enteredCardName
+                    );
+
+                  if (!saved) {
+                    inputElement.value =
+                      selectedClient.loyaltyCardName ||
+                      selectedClient.name ||
+                      "";
+                  }
+
+                  inputElement.disabled =
+                    false;
+                }}
+                onKeyDown={(event) => {
+                  if (
+                    event.key === "Enter"
+                  ) {
+                    event.preventDefault();
+                    event.currentTarget.blur();
+                  }
+                }}
+                style={{
+                  width: "100%",
+                  minHeight: "49px",
+                  padding: "12px 16px",
+                  boxSizing: "border-box",
+                  borderRadius: "15px",
+                  border:
+                    "1px solid rgba(164,127,98,0.48)",
+                  background:
+                    "linear-gradient(145deg, #fffdf9, #f8eee5)",
+                  color: "#3f2b21",
+                  fontSize: "15px",
+                  lineHeight: "1.4",
+                  fontWeight: "900",
+                  textAlign: "center",
+                  outline: "none",
+                  boxShadow:
+                    "inset 0 2px 7px rgba(75,46,31,0.045), 0 6px 15px rgba(75,46,31,0.055)",
+                }}
+              />
+            </div>
+          )}
+
+          <div
             style={{
-              color: "#4b2e1f",
-              fontSize: "30px",
-              marginBottom: "8px",
+              position: "relative",
+              zIndex: 1,
+              width: "100%",
+              margin: "4px auto 18px",
+              padding: "20px 22px",
+              boxSizing: "border-box",
+              borderRadius: "26px",
+              border:
+                "1px solid rgba(178,143,114,0.38)",
+              background:
+                "linear-gradient(145deg, rgba(255,253,249,0.98), rgba(232,215,200,0.86))",
+              boxShadow:
+                "0 16px 36px rgba(75,46,31,0.10), inset 0 1px 0 rgba(255,255,255,0.95)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              flexWrap: "wrap",
+              gap: "18px",
+              direction: "rtl",
             }}
           >
-            {selectedClient.name}
-          </h2>
-<button
-  onClick={() => startEditClient(selectedClient)}
-  style={{
-    background: "linear-gradient(135deg, #4b2e1f, #8b6a54)",
-    color: "#fff",
-    border: "none",
-    borderRadius: "18px",
-    padding: "12px 28px",
-    fontSize: "15px",
-    fontWeight: "700",
-    cursor: "pointer",
-    boxShadow: "0 6px 18px rgba(75,46,31,0.25)",
-    transition: "0.2s",
-    marginBottom: "16px",
-  }}
->
-  ✏️ تعديل البيانات
-</button>
+            <div
+              style={{
+                minWidth: "220px",
+                flex: "1 1 280px",
+                textAlign: "right",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  marginBottom: "7px",
+                  color: "#9b7659",
+                  fontSize: "10px",
+                  fontWeight: "900",
+                  letterSpacing: "1.8px",
+                  textTransform: "uppercase",
+                }}
+              >
+                <span
+                  style={{
+                    width: "7px",
+                    height: "7px",
+                    borderRadius: "50%",
+                    background: "#b88e6d",
+                    boxShadow:
+                      "0 0 0 4px rgba(184,142,109,0.13)",
+                  }}
+                />
+
+                Client Identity
+              </div>
+
+              <h2
+                style={{
+                  margin: 0,
+                  color: "#3f2b21",
+                  fontSize: "clamp(23px, 4vw, 32px)",
+                  lineHeight: "1.25",
+                  fontWeight: "950",
+                  overflowWrap: "anywhere",
+                }}
+              >
+                {selectedClient.name}
+              </h2>
+
+              <div
+                style={{
+                  width: "46px",
+                  height: "2px",
+                  marginTop: "10px",
+                  borderRadius: "999px",
+                  background:
+                    "linear-gradient(90deg, #a97d5f, transparent)",
+                }}
+              />
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "flex-start",
+                flexWrap: "wrap",
+                gap: "9px",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() =>
+                  startEditClient(
+                    selectedClient
+                  )
+                }
+                title="تعديل بيانات العميلة"
+                aria-label="تعديل بيانات العميلة"
+                style={{
+                  minHeight: "40px",
+                  padding: "9px 14px",
+                  borderRadius: "13px",
+                  border:
+                    "1px solid rgba(137,101,76,0.38)",
+                  background:
+                    "linear-gradient(145deg, #f8eee5, #dec5b0)",
+                  color: "#4a3327",
+                  boxShadow:
+                    "0 7px 16px rgba(75,46,31,0.10)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "7px",
+                  fontSize: "12px",
+                  fontWeight: "900",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: "13px",
+                    lineHeight: 1,
+                  }}
+                >
+                  ✎
+                </span>
+
+                تعديل البيانات
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  sendWhatsApp(
+                    selectedClient
+                  )
+                }
+                style={{
+                  minHeight: "40px",
+                  padding: "9px 15px",
+                  borderRadius: "13px",
+                  border:
+                    "1px solid rgba(31,159,84,0.34)",
+                  background:
+                    "linear-gradient(135deg, #1d8749, #25b962)",
+                  color: "#ffffff",
+                  boxShadow:
+                    "0 8px 18px rgba(37,185,98,0.20)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "7px",
+                  fontSize: "12px",
+                  fontWeight: "900",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                <span
+                  style={{
+                    width: "17px",
+                    height: "17px",
+                    borderRadius: "50%",
+                    background:
+                      "rgba(255,255,255,0.18)",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "9px",
+                    lineHeight: 1,
+                  }}
+                >
+                  WA
+                </span>
+
+                إرسال ونسخ الكرت
+              </button>
+            </div>
+          </div>
 {editingId === selectedClient.id && (
   <div
     style={{
-      maxWidth: "560px",
-      margin: "12px auto 22px",
-      padding: "18px",
+      position: "relative",
+      zIndex: 1,
+      width: "100%",
+      margin: "0 auto 22px",
+      padding: "19px",
+      boxSizing: "border-box",
       borderRadius: "24px",
-      background: "linear-gradient(135deg, #fffaf7, #f3e7dc)",
-      border: "1px solid #d8c5b3",
-      boxShadow: "0 12px 30px rgba(75,46,31,0.10)",
+      border:
+        "1px solid rgba(177,141,112,0.36)",
+      background:
+        "linear-gradient(145deg, rgba(255,253,249,0.98), rgba(229,211,195,0.88))",
+      boxShadow:
+        "0 14px 32px rgba(75,46,31,0.09), inset 0 1px 0 rgba(255,255,255,0.92)",
       display: "grid",
-      gridTemplateColumns: "1fr 1fr",
-      gap: "12px",
+      gridTemplateColumns:
+        "repeat(auto-fit, minmax(220px, 1fr))",
+      gap: "13px",
       direction: "rtl",
     }}
   >
-    <input
-      value={editedName}
-      onChange={(e) => setEditedName(e.target.value)}
-      placeholder="الاسم"
-      style={{
-        padding: "12px 14px",
-        borderRadius: "16px",
-        border: "1px solid #d8c5b3",
-        background: "#fff",
-        color: "#4b2e1f",
-        fontWeight: "bold",
-        outline: "none",
-      }}
-    />
-
-    <input
-      value={editedPhone}
-      onChange={(e) => setEditedPhone(e.target.value)}
-      placeholder="رقم الجوال"
-      style={{
-        padding: "12px 14px",
-        borderRadius: "16px",
-        border: "1px solid #d8c5b3",
-        background: "#fff",
-        color: "#4b2e1f",
-        fontWeight: "bold",
-        outline: "none",
-      }}
-    />
-
-    <input
-      value={editedAddress}
-      onChange={(e) => setEditedAddress(e.target.value)}
-      placeholder="الحي"
+    <div
       style={{
         gridColumn: "1 / -1",
-        padding: "12px 14px",
-        borderRadius: "16px",
-        border: "1px solid #d8c5b3",
-        background: "#fff",
-        color: "#4b2e1f",
-        fontWeight: "bold",
-        outline: "none",
-      }}
-    />
-
-    <button
-      onClick={() => saveEditClient(selectedClient.id)}
-      style={{
-        padding: "12px",
-        borderRadius: "16px",
-        border: "none",
-        background: "#4b2e1f",
-        color: "white",
-        fontWeight: "bold",
-        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        gap: "9px",
+        paddingBottom: "12px",
+        marginBottom: "2px",
+        borderBottom:
+          "1px solid rgba(177,141,112,0.28)",
       }}
     >
-      حفظ
+      <div
+        style={{
+          width: "29px",
+          height: "29px",
+          flex: "0 0 29px",
+          borderRadius: "9px",
+          background:
+            "linear-gradient(145deg, #d2b398, #a77c5d)",
+          color: "#fffaf5",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: "12px",
+          fontWeight: "900",
+          boxShadow:
+            "0 6px 13px rgba(75,46,31,0.13)",
+        }}
+      >
+        ✎
+      </div>
+
+      <div
+        style={{
+          textAlign: "right",
+        }}
+      >
+        <div
+          style={{
+            color: "#3f2b21",
+            fontSize: "14px",
+            fontWeight: "950",
+          }}
+        >
+          تعديل بيانات العميلة
+        </div>
+
+        <div
+          style={{
+            color: "#96755e",
+            fontSize: "9px",
+            fontWeight: "800",
+            marginTop: "2px",
+          }}
+        >
+          Client Information
+        </div>
+      </div>
+    </div>
+
+    <label
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: "7px",
+        textAlign: "right",
+      }}
+    >
+      <span
+        style={{
+          color: "#80614c",
+          fontSize: "10px",
+          fontWeight: "900",
+        }}
+      >
+        اسم العميلة
+      </span>
+
+      <input
+        value={editedName}
+        onChange={(e) =>
+          setEditedName(e.target.value)
+        }
+        placeholder="الاسم"
+        style={{
+          width: "100%",
+          minHeight: "47px",
+          padding: "11px 14px",
+          boxSizing: "border-box",
+          borderRadius: "14px",
+          border:
+            "1px solid rgba(169,130,100,0.42)",
+          background:
+            "linear-gradient(145deg, #fffdf9, #f8eee5)",
+          color: "#3f2b21",
+          fontSize: "14px",
+          fontWeight: "850",
+          outline: "none",
+          boxShadow:
+            "inset 0 2px 6px rgba(75,46,31,0.04)",
+        }}
+      />
+    </label>
+
+    <label
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: "7px",
+        textAlign: "right",
+      }}
+    >
+      <span
+        style={{
+          color: "#80614c",
+          fontSize: "10px",
+          fontWeight: "900",
+        }}
+      >
+        رقم الجوال
+      </span>
+
+      <input
+        value={editedPhone}
+        onChange={(e) =>
+          setEditedPhone(e.target.value)
+        }
+        placeholder="رقم الجوال"
+        style={{
+          width: "100%",
+          minHeight: "47px",
+          padding: "11px 14px",
+          boxSizing: "border-box",
+          borderRadius: "14px",
+          border:
+            "1px solid rgba(169,130,100,0.42)",
+          background:
+            "linear-gradient(145deg, #fffdf9, #f8eee5)",
+          color: "#3f2b21",
+          fontSize: "14px",
+          fontWeight: "850",
+          outline: "none",
+          boxShadow:
+            "inset 0 2px 6px rgba(75,46,31,0.04)",
+        }}
+      />
+    </label>
+
+    <label
+      style={{
+        gridColumn: "1 / -1",
+        display: "flex",
+        flexDirection: "column",
+        gap: "7px",
+        textAlign: "right",
+      }}
+    >
+      <span
+        style={{
+          color: "#80614c",
+          fontSize: "10px",
+          fontWeight: "900",
+        }}
+      >
+        الحي
+      </span>
+
+      <input
+        value={editedAddress}
+        onChange={(e) =>
+          setEditedAddress(e.target.value)
+        }
+        placeholder="الحي"
+        style={{
+          width: "100%",
+          minHeight: "47px",
+          padding: "11px 14px",
+          boxSizing: "border-box",
+          borderRadius: "14px",
+          border:
+            "1px solid rgba(169,130,100,0.42)",
+          background:
+            "linear-gradient(145deg, #fffdf9, #f8eee5)",
+          color: "#3f2b21",
+          fontSize: "14px",
+          fontWeight: "850",
+          outline: "none",
+          boxShadow:
+            "inset 0 2px 6px rgba(75,46,31,0.04)",
+        }}
+      />
+    </label>
+
+    <button
+      type="button"
+      onClick={() =>
+        saveEditClient(
+          selectedClient.id
+        )
+      }
+      style={{
+        minHeight: "43px",
+        padding: "10px 16px",
+        borderRadius: "14px",
+        border:
+          "1px solid rgba(67,44,33,0.25)",
+        background:
+          "linear-gradient(135deg, #4b3327, #75523d)",
+        color: "#fffaf5",
+        fontSize: "12px",
+        fontWeight: "900",
+        cursor: "pointer",
+        boxShadow:
+          "0 8px 17px rgba(75,46,31,0.16)",
+      }}
+    >
+      حفظ التعديلات
     </button>
 
     <button
+      type="button"
       onClick={cancelEditClient}
       style={{
-        padding: "12px",
-        borderRadius: "16px",
-        border: "1px solid #d8c5b3",
-        background: "#f7efe7",
-        color: "#4b2e1f",
-        fontWeight: "bold",
+        minHeight: "43px",
+        padding: "10px 16px",
+        borderRadius: "14px",
+        border:
+          "1px solid rgba(169,130,100,0.34)",
+        background:
+          "linear-gradient(145deg, #fffaf7, #ead9ca)",
+        color: "#50372a",
+        fontSize: "12px",
+        fontWeight: "900",
         cursor: "pointer",
+        boxShadow:
+          "0 7px 15px rgba(75,46,31,0.07)",
       }}
     >
       إلغاء
@@ -26614,166 +33274,378 @@ if (screen === "availableAppointments") {
 )}
           <div
             style={{
-              display: "flex",
-              justifyContent: "center",
-              gap: "8px",
-              flexWrap: "wrap",
-              marginBottom: "16px",
-            }}
-          >
-            {profileBlacklist && (
-              <div
-                style={{
-                  display: "inline-block",
-                  backgroundColor: "#2b1f1a",
-                  color: "white",
-                  padding: "7px 14px",
-                  borderRadius: "999px",
-                  fontSize: "13px",
-                }}
-              >
-                ⚠ Blacklist
-              </div>
-            )}
-
-            {profileFrame && (
-              <div
-                style={{
-                  display: "inline-block",
-                  backgroundColor: "#cbb7a4",
-                  color: "#4b2e1f",
-                  padding: "7px 14px",
-                  borderRadius: "999px",
-                  fontSize: "13px",
-                  fontWeight: "bold",
-                }}
-              >
-                🖼️ اللوحة الترحيبية
-              </div>
-            )}
-          </div>
-
-          <div
-  style={{
-    width: "93%",
-    margin: "18px auto 24px",
-    display: "grid",
-    gridTemplateColumns: "repeat(4, 1fr)",
-    gap: "14px",
-  }}
->
-  {[
-    ["رقم الجوال", selectedClient.phone],
-    ["الحي", selectedClient.address || "-"],
-    ["عدد الخدمات", getVisitLabel(selectedClient.visits)],
-    ["الحالة", profileBlacklist ? "Blacklist" : "Active"],
-  ].map(([label, value]) => (
-    <div
-      key={label}
-      style={{
-        background: "linear-gradient(135deg, #fffaf7, #f5ede5)",
-        border: "1px solid #d8c5b3",
-        borderRadius: "18px",
-        padding: "13px 12px",
-        textAlign: "center",
-        minHeight: "35px",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "center",
-      }}
-    >
-      <div
-        style={{
-          color: "#8a7a68",
-          fontSize: "16px",
-          fontWeight: "700",
-          marginBottom: "6px",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {label}
-      </div>
-
-      {label === "عدد الخدمات" ? (
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            gap: "10px",
-            whiteSpace: "nowrap",
-          }}
-        >
-          <button
-            onClick={() => removeVisit(selectedClient.id)}
-            style={{
-              width: "24px",
-              height: "24px",
-              borderRadius: "50%",
-              border: "none",
-              backgroundColor: "#d8c5b3",
-              color: "#4b2e1f",
-              fontSize: "13px",
-              fontWeight: "bold",
-              cursor: "pointer",
-              padding: 0,
-            }}
-          >
-            -
-          </button>
-
-          <strong style={{ color: "#4b2e1f", fontSize: "19px" }}>
-            {value}
-          </strong>
-
-          <button
-            onClick={() => addVisit(selectedClient.id)}
-            style={{
-              width: "24px",
-              height: "24px",
-              borderRadius: "50%",
-              border: "none",
-              backgroundColor: "#4b2e1f",
-              color: "white",
-              fontSize: "13px",
-              fontWeight: "bold",
-              cursor: "pointer",
-              padding: 0,
-            }}
-          >
-            +
-          </button>
-        </div>
-      ) : (
-        <strong
-          style={{
-            color: "#4b2e1f",
-            fontSize: "19px",
-            fontWeight: "700",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {value}
-        </strong>
-      )}
-    </div>
-  ))}
-
-
-
-            
-          </div>
-
-          <div
-            style={{
-              width: "90%",
-              margin: "0 auto 20px",
-              background:
-                "linear-gradient(135deg, #fffaf3, #f3e8df)",
-              border: "1px solid #d6c7b8",
-              borderRadius: "24px",
+              position: "relative",
+              zIndex: 1,
+              width: "100%",
+              margin: "0 auto 24px",
               padding: "18px",
-              boxShadow: "0 10px 24px rgba(75,46,31,0.08)",
+              boxSizing: "border-box",
+              borderRadius: "26px",
+              border:
+                "1px solid rgba(178,143,114,0.34)",
+              background:
+                "linear-gradient(145deg, rgba(250,242,234,0.94), rgba(226,205,187,0.80))",
+              boxShadow:
+                "0 14px 34px rgba(75,46,31,0.09), inset 0 1px 0 rgba(255,255,255,0.86)",
+              direction: "rtl",
+            }}
+          >
+            {(profileBlacklist ||
+              profileFrame) && (
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent:
+                    "flex-start",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: "7px",
+                  marginBottom: "14px",
+                }}
+              >
+                {profileBlacklist && (
+                  <div
+                    style={{
+                      minHeight: "27px",
+                      padding: "5px 10px",
+                      boxSizing:
+                        "border-box",
+                      borderRadius:
+                        "999px",
+                      background:
+                        "linear-gradient(135deg, #3a2921, #241914)",
+                      color: "#fff9f3",
+                      display:
+                        "inline-flex",
+                      alignItems:
+                        "center",
+                      gap: "6px",
+                      fontSize: "10px",
+                      fontWeight: "900",
+                      letterSpacing:
+                        "0.2px",
+                      boxShadow:
+                        "0 6px 14px rgba(43,31,26,0.16)",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: "10px",
+                        lineHeight: 1,
+                      }}
+                    >
+                      !
+                    </span>
+
+                    Blacklist
+                  </div>
+                )}
+
+                {profileFrame && (
+                  <div
+                    style={{
+                      minHeight: "27px",
+                      padding: "5px 10px",
+                      boxSizing:
+                        "border-box",
+                      borderRadius:
+                        "999px",
+                      border:
+                        "1px solid rgba(159,121,91,0.28)",
+                      background:
+                        "rgba(255,250,245,0.72)",
+                      color: "#604332",
+                      display:
+                        "inline-flex",
+                      alignItems:
+                        "center",
+                      gap: "6px",
+                      fontSize: "10px",
+                      fontWeight: "900",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: "10px",
+                        lineHeight: 1,
+                      }}
+                    >
+                      ◇
+                    </span>
+
+                    اللوحة الترحيبية
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(175px, 1fr))",
+                gap: "11px",
+              }}
+            >
+              {[
+                [
+                  "☎",
+                  "رقم الجوال",
+                  selectedClient.phone,
+                ],
+                [
+                  "⌂",
+                  "الحي",
+                  selectedClient.address ||
+                    "-",
+                ],
+                [
+                  "◆",
+                  "عدد الخدمات",
+                  getVisitLabel(
+                    selectedClient.visits
+                  ),
+                ],
+                [
+                  "●",
+                  "الحالة",
+                  profileBlacklist
+                    ? "Blacklist"
+                    : "Active",
+                ],
+              ].map(
+                ([
+                  icon,
+                  label,
+                  value,
+                ]) => (
+                  <div
+                    key={label}
+                    style={{
+                      minHeight: "92px",
+                      padding:
+                        "14px 15px",
+                      boxSizing:
+                        "border-box",
+                      borderRadius:
+                        "18px",
+                      border:
+                        "1px solid rgba(186,153,126,0.32)",
+                      background:
+                        "linear-gradient(145deg, rgba(255,253,250,0.96), rgba(239,224,211,0.88))",
+                      boxShadow:
+                        "0 8px 20px rgba(75,46,31,0.06), inset 0 1px 0 rgba(255,255,255,0.92)",
+                      display: "flex",
+                      alignItems:
+                        "center",
+                      gap: "11px",
+                      textAlign:
+                        "right",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "30px",
+                        height: "30px",
+                        flex: "0 0 30px",
+                        borderRadius:
+                          "10px",
+                        background:
+                          "linear-gradient(145deg, #d7bba3, #b88e6d)",
+                        color: "#fffaf5",
+                        display: "flex",
+                        alignItems:
+                          "center",
+                        justifyContent:
+                          "center",
+                        fontSize: "11px",
+                        fontWeight:
+                          "900",
+                        boxShadow:
+                          "0 6px 12px rgba(106,72,52,0.13)",
+                      }}
+                    >
+                      {icon}
+                    </div>
+
+                    <div
+                      style={{
+                        minWidth: 0,
+                        flex: 1,
+                      }}
+                    >
+                      <div
+                        style={{
+                          color:
+                            "#96765f",
+                          fontSize:
+                            "10px",
+                          fontWeight:
+                            "900",
+                          marginBottom:
+                            "5px",
+                          letterSpacing:
+                            "0.25px",
+                        }}
+                      >
+                        {label}
+                      </div>
+
+                      {label ===
+                      "عدد الخدمات" ? (
+                        <div
+                          style={{
+                            display:
+                              "flex",
+                            alignItems:
+                              "center",
+                            justifyContent:
+                              "flex-start",
+                            gap: "8px",
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() =>
+                              removeVisit(
+                                selectedClient.id
+                              )
+                            }
+                            title="إنقاص خدمة"
+                            aria-label="إنقاص خدمة"
+                            style={{
+                              width:
+                                "25px",
+                              height:
+                                "25px",
+                              padding: 0,
+                              borderRadius:
+                                "8px",
+                              border:
+                                "1px solid rgba(151,115,87,0.30)",
+                              background:
+                                "#ead8c8",
+                              color:
+                                "#563b2d",
+                              display:
+                                "inline-flex",
+                              alignItems:
+                                "center",
+                              justifyContent:
+                                "center",
+                              fontSize:
+                                "13px",
+                              fontWeight:
+                                "900",
+                              cursor:
+                                "pointer",
+                            }}
+                          >
+                            −
+                          </button>
+
+                          <strong
+                            style={{
+                              color:
+                                "#3f2b21",
+                              fontSize:
+                                "17px",
+                              fontWeight:
+                                "950",
+                              whiteSpace:
+                                "nowrap",
+                            }}
+                          >
+                            {value}
+                          </strong>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              addVisit(
+                                selectedClient.id
+                              )
+                            }
+                            title="إضافة خدمة"
+                            aria-label="إضافة خدمة"
+                            style={{
+                              width:
+                                "25px",
+                              height:
+                                "25px",
+                              padding: 0,
+                              borderRadius:
+                                "8px",
+                              border:
+                                "1px solid rgba(75,46,31,0.26)",
+                              background:
+                                "#4b3327",
+                              color:
+                                "#fffaf5",
+                              display:
+                                "inline-flex",
+                              alignItems:
+                                "center",
+                              justifyContent:
+                                "center",
+                              fontSize:
+                                "13px",
+                              fontWeight:
+                                "900",
+                              cursor:
+                                "pointer",
+                            }}
+                          >
+                            +
+                          </button>
+                        </div>
+                      ) : (
+                        <strong
+                          style={{
+                            display:
+                              "block",
+                            color:
+                              label ===
+                                "الحالة" &&
+                              !profileBlacklist
+                                ? "#53745b"
+                                : "#3f2b21",
+                            fontSize:
+                              "15px",
+                            lineHeight:
+                              "1.35",
+                            fontWeight:
+                              "900",
+                            overflowWrap:
+                              "anywhere",
+                          }}
+                        >
+                          {value}
+                        </strong>
+                      )}
+                    </div>
+                  </div>
+                )
+              )}
+            </div>
+          </div>
+
+          <div
+            style={{
+              position: "relative",
+              zIndex: 1,
+              width: "100%",
+              margin: "0 auto 22px",
+              padding: "19px",
+              boxSizing: "border-box",
+              borderRadius: "25px",
+              border:
+                "1px solid rgba(177,141,112,0.35)",
+              background:
+                "linear-gradient(145deg, rgba(255,253,249,0.97), rgba(226,207,190,0.86))",
+              boxShadow:
+                "0 15px 34px rgba(75,46,31,0.09), inset 0 1px 0 rgba(255,255,255,0.92)",
               textAlign: "right",
               direction: "rtl",
             }}
@@ -26783,44 +33655,127 @@ if (screen === "availableAppointments") {
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
-                gap: "10px",
+                gap: "12px",
                 flexWrap: "wrap",
-                marginBottom: "14px",
+                marginBottom: "16px",
+                paddingBottom: "14px",
+                borderBottom:
+                  "1px solid rgba(177,141,112,0.27)",
               }}
             >
-              <h3
+              <div
                 style={{
-                  margin: 0,
-                  color: "#4b2e1f",
-                  fontSize: "18px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
                 }}
               >
-                سجل الخدمات
-              </h3>
+                <div
+                  style={{
+                    width: "31px",
+                    height: "31px",
+                    flex: "0 0 31px",
+                    borderRadius: "10px",
+                    background:
+                      "linear-gradient(145deg, #d1b095, #9d7355)",
+                    color: "#fffaf5",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "12px",
+                    fontWeight: "900",
+                    boxShadow:
+                      "0 7px 15px rgba(75,46,31,0.13)",
+                  }}
+                >
+                  ≡
+                </div>
+
+                <div>
+                  <h3
+                    style={{
+                      margin: 0,
+                      color: "#3f2b21",
+                      fontSize: "15px",
+                      fontWeight: "950",
+                    }}
+                  >
+                    سجل الخدمات
+                  </h3>
+
+                  <div
+                    style={{
+                      marginTop: "3px",
+                      color: "#98765e",
+                      fontSize: "9px",
+                      fontWeight: "800",
+                    }}
+                  >
+                    Service History
+                  </div>
+                </div>
+              </div>
 
               <div
                 style={{
-                  backgroundColor: "#4b2e1f",
-                  color: "white",
+                  minHeight: "32px",
+                  padding: "6px 12px",
+                  boxSizing: "border-box",
                   borderRadius: "999px",
-                  padding: "8px 14px",
-                  fontWeight: "bold",
-                  fontSize: "13px",
+                  background:
+                    "linear-gradient(135deg, #4b3327, #76543f)",
+                  color: "#fffaf5",
+                  boxShadow:
+                    "0 7px 16px rgba(75,46,31,0.15)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px",
+                  fontWeight: "900",
+                  fontSize: "10px",
+                  whiteSpace: "nowrap",
                 }}
               >
-                إجمالي المدفوعات: {selectedClientServiceSummary.totalPaid} SAR
+                <span
+                  style={{
+                    color: "#d9baa0",
+                    fontSize: "9px",
+                  }}
+                >
+                  SAR
+                </span>
+
+                {selectedClientServiceSummary.totalPaid}
+
+                <span
+                  style={{
+                    color: "rgba(255,250,245,0.70)",
+                    fontSize: "9px",
+                  }}
+                >
+                  إجمالي المدفوعات
+                </span>
               </div>
             </div>
 
             {selectedClientServiceSummary.serviceHistory.length === 0 ? (
               <div
                 style={{
-                  backgroundColor: "white",
-                  borderRadius: "16px",
-                  padding: "14px",
+                  minHeight: "78px",
+                  padding: "18px",
+                  boxSizing: "border-box",
+                  borderRadius: "17px",
+                  border:
+                    "1px dashed rgba(170,132,103,0.38)",
+                  background:
+                    "rgba(255,250,245,0.65)",
+                  color: "#92725a",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
                   textAlign: "center",
-                  color: "#8a7a68",
-                  border: "1px solid #eadfd5",
+                  fontSize: "12px",
+                  fontWeight: "850",
                 }}
               >
                 لا توجد خدمات مرتبطة من جدول المواعيد حتى الآن
@@ -26828,435 +33783,890 @@ if (screen === "availableAppointments") {
             ) : (
               <div
                 style={{
-                  backgroundColor: "white",
-                  border: "1px solid #eadfd5",
+                  width: "100%",
+                  overflowX: "auto",
                   borderRadius: "18px",
-                  overflow: "hidden",
-                  boxShadow: "0 10px 24px rgba(75, 46, 31, 0.06)",
+                  border:
+                    "1px solid rgba(177,141,112,0.31)",
+                  background: "#fffdf9",
+                  boxShadow:
+                    "0 10px 24px rgba(75,46,31,0.065)",
                 }}
               >
                 <div
                   style={{
-                    display: "grid",
-                    gridTemplateColumns: "0.9fr 0.8fr 0.9fr 1.6fr",
-                    gap: "0",
-                    alignItems: "center",
-                    background: "linear-gradient(135deg, #4b2e1f, #6b472f)",
-                    color: "white",
-                    fontWeight: "bold",
-                    fontSize: "13px",
-                    textAlign: "center",
-                    direction: "ltr",
+                    minWidth: "680px",
                   }}
                 >
-                  {["Date", "Order No.", "Therapist", "Services"].map((header) => (
-                    <div
-                      key={header}
-                      style={{
-                        padding: "11px 10px",
-                        borderRight: header !== "Services" ? "1px solid rgba(255,255,255,0.16)" : "none",
-                      }}
-                    >
-                      {header}
-                    </div>
-                  ))}
-                </div>
-
-                <div
-                  style={{
-                    maxHeight: "260px",
-                    overflowY: "auto",
-                  }}
-                >
-                  {selectedClientServiceSummary.serviceHistory.map((service, index) => (
-                    <div
-                      key={`${service.date}-${service.serviceTime}-${index}`}
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "0.9fr 0.8fr 0.9fr 1.6fr",
-                        gap: "0",
-                        alignItems: "center",
-                        backgroundColor: index % 2 === 0 ? "#fffdfb" : "#fbf5ef",
-                        color: "#4b2e1f",
-                        direction: "ltr",
-                        textAlign: "center",
-                        borderTop: "1px solid #eadfd5",
-                        minHeight: "48px",
-                      }}
-                    >
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "0.9fr 0.9fr 1fr 1.8fr",
+                      alignItems: "center",
+                      background:
+                        "linear-gradient(135deg, #4a3226, #76513b)",
+                      color: "#fffaf5",
+                      fontWeight: "900",
+                      fontSize: "10px",
+                      textAlign: "center",
+                      direction: "ltr",
+                      letterSpacing: "0.3px",
+                    }}
+                  >
+                    {[
+                      "Date",
+                      "Order No.",
+                      "Therapist",
+                      "Services",
+                    ].map((header) => (
                       <div
+                        key={header}
                         style={{
                           padding: "12px 10px",
-                          color: "#4b2e1f",
-                          fontWeight: "bold",
-                          fontSize: "15px",
-                          whiteSpace: "nowrap",
-                          borderRight: "1px solid #eadfd5",
+                          borderRight:
+                            header !== "Services"
+                              ? "1px solid rgba(255,255,255,0.12)"
+                              : "none",
                         }}
                       >
-                        {service.date || "-"}
+                        {header}
                       </div>
+                    ))}
+                  </div>
 
-                      <div
-                        style={{
-                          padding: "12px 10px",
-                          fontWeight: "bold",
-                          color: "#4b2e1f",
-                          borderRight: "1px solid #eadfd5",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {formatServiceOrderNumber(service.order, index)}
-                      </div>
-
-                      <div
-                        style={{
-                          padding: "12px 10px",
-                          fontWeight: "bold",
-                          borderRight: "1px solid #eadfd5",
-                        }}
-                      >
-                        {service.therapist || "-"}
-                      </div>
-
-                      <div
-                        style={{
-                          padding: "10px 8px",
-                          fontWeight: "bold",
-                          textAlign: "center",
-                          overflowWrap: "anywhere",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          flexWrap: "wrap",
-                          gap: "7px",
-                          minWidth: 0,
-                          boxSizing: "border-box",
-                        }}
-                      >
-                        <span
+                  <div
+                    style={{
+                      maxHeight: "300px",
+                      overflowY: "auto",
+                    }}
+                  >
+                    {selectedClientServiceSummary.serviceHistory.map(
+                      (service, index) => (
+                        <div
+                          key={`${service.date}-${service.serviceTime}-${index}`}
                           style={{
-                            minWidth: 0,
-                            overflowWrap: "anywhere",
+                            display: "grid",
+                            gridTemplateColumns:
+                              "0.9fr 0.9fr 1fr 1.8fr",
+                            alignItems: "stretch",
+                            background:
+                              index % 2 === 0
+                                ? "#fffdf9"
+                                : "#f7eee6",
+                            color: "#432f24",
+                            direction: "ltr",
+                            textAlign: "center",
+                            borderTop:
+                              "1px solid rgba(190,157,130,0.24)",
+                            minHeight: "54px",
                           }}
                         >
-                          {service.services || "-"}
-                        </span>
-
-                        {service.invoiceLink?.invoiceId && (
-                          <button
-                            type="button"
-                            title="فتح الفاتورة"
-                            aria-label="فتح الفاتورة"
-                            onClick={() =>
-                              openServiceHistoryInvoice(
-                                service.invoiceLink
-                              )
-                            }
+                          <div
                             style={{
-                              width: "32px",
-                              height: "32px",
-                              minWidth: "32px",
-                              padding: 0,
-                              border: "1px solid #d7bea7",
-                              borderRadius: "10px",
-                              background: "#f3e7dc",
-                              color: "#4b2e1f",
-                              fontSize: "17px",
-                              cursor: "pointer",
-                              display: "inline-flex",
+                              padding: "13px 10px",
+                              display: "flex",
                               alignItems: "center",
                               justifyContent: "center",
-                              flexShrink: 0,
+                              color: "#5c4031",
+                              fontWeight: "900",
+                              fontSize: "12px",
+                              whiteSpace: "nowrap",
+                              borderRight:
+                                "1px solid rgba(190,157,130,0.24)",
+                            }}
+                          >
+                            {service.date || "-"}
+                          </div>
+
+                          <div
+                            style={{
+                              padding: "13px 10px",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              color: "#6c4b39",
+                              fontWeight: "900",
+                              fontSize: "11px",
+                              whiteSpace: "nowrap",
+                              borderRight:
+                                "1px solid rgba(190,157,130,0.24)",
+                            }}
+                          >
+                            {formatServiceOrderNumber(
+                              service.order,
+                              index
+                            )}
+                          </div>
+
+                          <div
+                            style={{
+                              padding: "13px 10px",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              color: "#553b2e",
+                              fontWeight: "850",
+                              fontSize: "11px",
+                              borderRight:
+                                "1px solid rgba(190,157,130,0.24)",
+                              overflowWrap: "anywhere",
+                            }}
+                          >
+                            {service.therapist || "-"}
+                          </div>
+
+                          <div
+                            style={{
+                              padding: "12px 13px",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              flexWrap: "wrap",
+                              gap: "8px",
+                              minWidth: 0,
+                              color: "#432f24",
+                              fontWeight: "900",
+                              fontSize: "14px",
+                              lineHeight: "1.55",
+                              overflowWrap: "anywhere",
                               boxSizing: "border-box",
                             }}
                           >
-                            🧾
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                            <span
+                              style={{
+                                minWidth: 0,
+                                overflowWrap: "anywhere",
+                              }}
+                            >
+                              {service.services || "-"}
+                            </span>
+
+                            {service.invoiceLink?.invoiceId && (
+                              <button
+                                type="button"
+                                title="فتح الفاتورة"
+                                aria-label="فتح الفاتورة"
+                                onClick={() =>
+                                  openServiceHistoryInvoice(
+                                    service.invoiceLink
+                                  )
+                                }
+                                style={{
+                                  width: "27px",
+                                  height: "27px",
+                                  minWidth: "27px",
+                                  padding: 0,
+                                  border:
+                                    "1px solid rgba(157,117,87,0.35)",
+                                  borderRadius: "9px",
+                                  background:
+                                    "linear-gradient(145deg, #f4e6da, #d9bea7)",
+                                  color: "#4b3327",
+                                  boxShadow:
+                                    "0 5px 11px rgba(75,46,31,0.09)",
+                                  fontSize: "12px",
+                                  fontWeight: "900",
+                                  cursor: "pointer",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  flexShrink: 0,
+                                  boxSizing: "border-box",
+                                }}
+                              >
+                                ▤
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    )}
+                  </div>
                 </div>
               </div>
             )}
           </div>
 
           <div
-  style={{
-    width: "93%",
-    margin: "0 auto 18px",
-    display: "grid",
-    gridTemplateColumns: "repeat(2, 1fr)",
-    gap: "14px",
-  }}
->
-  <label
-    style={{
-      background: profileBlacklist
-        ? "linear-gradient(135deg,#4b2e1f,#6a3f28)"
-        : "linear-gradient(135deg,#fffaf7,#f5ece3)",
-      border: "1px solid #d8c5b3",
-      borderRadius: "22px",
-      padding: "18px",
-      cursor: "pointer",
-      boxShadow: "0 10px 25px rgba(75,46,31,0.10)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-    }}
-  >
-    <div>
-      <div
-        style={{
-          fontSize: "12px",
-          color: profileBlacklist ? "#ffffffcc" : "#8a7a68",
-          marginBottom: "4px",
-        }}
-      >
-        
-      </div>
-
-      <div
-        style={{
-          fontSize: "18px",
-          fontWeight: "700",
-          color: profileBlacklist ? "white" : "#4b2e1f",
-        }}
-      >
-        Blacklist
-      </div>
-    </div>
-
-    <input
-      type="checkbox"
-      checked={profileBlacklist}
-      onChange={(e) => setProfileBlacklist(e.target.checked)}
-      style={{
-        width: "22px",
-        height: "22px",
-        cursor: "pointer",
-      }}
-    />
-  </label>
-
-  <label
-    style={{
-      background: profileFrame
-        ? "linear-gradient(135deg,#cbb7a4,#e6d8ca)"
-        : "linear-gradient(135deg,#fffaf7,#f5ece3)",
-      border: "1px solid #d8c5b3",
-      borderRadius: "22px",
-      padding: "18px",
-      cursor: "pointer",
-      boxShadow: "0 10px 25px rgba(75,46,31,0.10)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-    }}
-  >
-    <div>
-      <div
-        style={{
-          fontSize: "12px",
-          color: "#8a7a68",
-          marginBottom: "4px",
-        }}
-      >
-        
-      </div>
-
-      <div
-        style={{
-          fontSize: "18px",
-          fontWeight: "700",
-          color: "#4b2e1f",
-        }}
-      >
-        Frame
-      </div>
-    </div>
-
-    <input
-      type="checkbox"
-      checked={profileFrame}
-      onChange={(e) => {
-        setProfileFrame(e.target.checked);
-        updateClientFrame(selectedClient.id, e.target.checked);
-      }}
-      style={{
-        width: "22px",
-        height: "22px",
-        cursor: "pointer",
-      }}
-    />
-  </label>
-</div>
-
-          <div
             style={{
-              width: "90%",
-              margin: "0 auto 18px",
-              backgroundColor: "#fffaf3",
-              border: "1px solid #d6c7b8",
-              borderRadius: "22px",
-              padding: "16px",
-              boxShadow: "0 8px 20px rgba(75,46,31,0.07)",
+              position: "relative",
+              zIndex: 1,
+              width: "100%",
+              margin: "0 auto 22px",
+              padding: "18px",
+              boxSizing: "border-box",
+              borderRadius: "24px",
+              border:
+                "1px solid rgba(178,143,114,0.34)",
+              background:
+                "linear-gradient(145deg, rgba(249,240,232,0.94), rgba(228,209,192,0.86))",
+              boxShadow:
+                "0 13px 30px rgba(75,46,31,0.08), inset 0 1px 0 rgba(255,255,255,0.90)",
+              direction: "rtl",
             }}
           >
             <div
-  style={{
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: "14px",
-    color: "#4b2e1f",
-    fontWeight: "bold",
-  }}
->
-  <button
-    onClick={addProfileReferral}
-    style={{
-      ...buttonStyle,
-      backgroundColor: "#4b2e1f",
-      color: "white",
-      padding: "8px 14px",
-      fontSize: "13px",
-      borderRadius: "16px",
-    }}
-  >
-    + إضافة رقم
-  </button>
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "9px",
+                marginBottom: "13px",
+                textAlign: "right",
+              }}
+            >
+              <div
+                style={{
+                  width: "28px",
+                  height: "28px",
+                  flex: "0 0 28px",
+                  borderRadius: "9px",
+                  background:
+                    "linear-gradient(145deg, #d3b69d, #a87d5e)",
+                  color: "#fffaf5",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "11px",
+                  fontWeight: "900",
+                }}
+              >
+                ⚙
+              </div>
 
-  <span style={{ fontSize: "16px" }}>
-    العملاء المرشحين
-  </span>
-</div>
+              <div>
+                <div
+                  style={{
+                    color: "#3f2b21",
+                    fontSize: "13px",
+                    fontWeight: "950",
+                  }}
+                >
+                  إعدادات العميلة
+                </div>
 
-{profileReferrals.length === 0 && (
-  <div
-    style={{
-      color: "#8a7a68",
-      fontSize: "15px",
-      textAlign: "center",
-      padding: "14px",
-    }}
-  >
-    لا توجد أرقام مرشحة حتى الآن
-  </div>
-)}
+                <div
+                  style={{
+                    color: "#98775f",
+                    fontSize: "9px",
+                    fontWeight: "800",
+                    marginTop: "2px",
+                  }}
+                >
+                  Client Settings
+                </div>
+              </div>
+            </div>
 
-{profileReferrals.map((referral) => (
-  <div
-    key={referral.id}
-    style={{
-      display: "grid",
-      gridTemplateColumns: canDeleteData ? "1fr 1fr auto" : "1fr 1fr",
-      gap: "10px",
-      alignItems: "center",
-      marginBottom: "10px",
-      direction: "rtl",
-    }}
-  >
-    <input
-      placeholder="اسم العميلة"
-      value={referral.name}
-      onChange={(e) =>
-        updateProfileReferral(referral.id, "name", e.target.value)
-      }
-      style={{
-        fontSize: "16px",
-        fontWeight: "600",
-        padding: "12px 14px",
-        borderRadius: "16px",
-        border: "1px solid #d6c7b8",
-        backgroundColor: "white",
-        outline: "none",
-        color: "#4b2e1f",
-      }}
-    />
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: "11px",
+              }}
+            >
+              <label
+                style={{
+                  minHeight: "74px",
+                  padding: "13px 14px",
+                  boxSizing: "border-box",
+                  borderRadius: "17px",
+                  border: profileBlacklist
+                    ? "1px solid rgba(65,41,30,0.42)"
+                    : "1px solid rgba(177,141,112,0.30)",
+                  background: profileBlacklist
+                    ? "linear-gradient(135deg, #443026, #281c17)"
+                    : "linear-gradient(145deg, #fffdf9, #efe1d5)",
+                  boxShadow: profileBlacklist
+                    ? "0 10px 22px rgba(43,30,24,0.20)"
+                    : "0 8px 18px rgba(75,46,31,0.06)",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "12px",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    minWidth: 0,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "29px",
+                      height: "29px",
+                      flex: "0 0 29px",
+                      borderRadius: "9px",
+                      background: profileBlacklist
+                        ? "rgba(255,255,255,0.12)"
+                        : "#ead7c7",
+                      color: profileBlacklist
+                        ? "#fffaf5"
+                        : "#5b4031",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "12px",
+                      fontWeight: "900",
+                    }}
+                  >
+                    !
+                  </div>
 
-    <input
-      placeholder="رقم الجوال"
-      value={referral.phone}
-      onChange={(e) =>
-        updateProfileReferral(referral.id, "phone", e.target.value)
-      }
-      style={{
-        fontSize: "16px",
-        fontWeight: "600",
-        padding: "12px 14px",
-        borderRadius: "16px",
-        border: "1px solid #d6c7b8",
-        backgroundColor: "white",
-        outline: "none",
-        color: "#4b2e1f",
-      }}
-    />
+                  <div
+                    style={{
+                      textAlign: "right",
+                    }}
+                  >
+                    <div
+                      style={{
+                        color: profileBlacklist
+                          ? "#fffaf5"
+                          : "#3f2b21",
+                        fontSize: "13px",
+                        fontWeight: "950",
+                      }}
+                    >
+                      Blacklist
+                    </div>
 
-    {canDeleteData && (
-      <button
-        onClick={() => removeProfileReferral(referral.id)}
-        style={{
-          ...buttonStyle,
-          backgroundColor: "#f3e8df",
-          color: "#4b2e1f",
-          padding: "11px 16px",
-          borderRadius: "16px",
-          fontSize: "13px",
-          whiteSpace: "nowrap",
-        }}
-      >
-        حذف
-      </button>
-    )}
-  </div>
-))}
+                    <div
+                      style={{
+                        color: profileBlacklist
+                          ? "rgba(255,250,245,0.68)"
+                          : "#9a7b64",
+                        fontSize: "9px",
+                        fontWeight: "800",
+                        marginTop: "3px",
+                      }}
+                    >
+                      القائمة السوداء
+                    </div>
+                  </div>
+                </div>
+
+                <input
+                  type="checkbox"
+                  checked={profileBlacklist}
+                  onChange={(e) =>
+                    setProfileBlacklist(
+                      e.target.checked
+                    )
+                  }
+                  style={{
+                    width: "18px",
+                    height: "18px",
+                    flex: "0 0 18px",
+                    cursor: "pointer",
+                    accentColor: "#4b3327",
+                  }}
+                />
+              </label>
+
+              <label
+                style={{
+                  minHeight: "74px",
+                  padding: "13px 14px",
+                  boxSizing: "border-box",
+                  borderRadius: "17px",
+                  border: profileFrame
+                    ? "1px solid rgba(153,113,84,0.42)"
+                    : "1px solid rgba(177,141,112,0.30)",
+                  background: profileFrame
+                    ? "linear-gradient(145deg, #dbc2ac, #b99172)"
+                    : "linear-gradient(145deg, #fffdf9, #efe1d5)",
+                  boxShadow: profileFrame
+                    ? "0 10px 22px rgba(93,62,44,0.15)"
+                    : "0 8px 18px rgba(75,46,31,0.06)",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "12px",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    minWidth: 0,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "29px",
+                      height: "29px",
+                      flex: "0 0 29px",
+                      borderRadius: "9px",
+                      background: profileFrame
+                        ? "rgba(255,255,255,0.32)"
+                        : "#ead7c7",
+                      color: "#533a2d",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "11px",
+                      fontWeight: "900",
+                    }}
+                  >
+                    ◇
+                  </div>
+
+                  <div
+                    style={{
+                      textAlign: "right",
+                    }}
+                  >
+                    <div
+                      style={{
+                        color: "#3f2b21",
+                        fontSize: "13px",
+                        fontWeight: "950",
+                      }}
+                    >
+                      Frame
+                    </div>
+
+                    <div
+                      style={{
+                        color: "#765642",
+                        fontSize: "9px",
+                        fontWeight: "800",
+                        marginTop: "3px",
+                      }}
+                    >
+                      اللوحة الترحيبية
+                    </div>
+                  </div>
+                </div>
+
+                <input
+                  type="checkbox"
+                  checked={profileFrame}
+                  onChange={(e) => {
+                    setProfileFrame(
+                      e.target.checked
+                    );
+
+                    updateClientFrame(
+                      selectedClient.id,
+                      e.target.checked
+                    );
+                  }}
+                  style={{
+                    width: "18px",
+                    height: "18px",
+                    flex: "0 0 18px",
+                    cursor: "pointer",
+                    accentColor: "#6d4a36",
+                  }}
+                />
+              </label>
+            </div>
           </div>
 
-          <textarea
-            placeholder="اكتب الملاحظات هنا..."
-            value={profileNotes}
-            onChange={(e) => setProfileNotes(e.target.value)}
-            style={{
-              width: "90%",
-              minHeight: "130px",
-              padding: "16px",
-              borderRadius: "20px",
-              border: "1px solid #d6c7b8",
-              backgroundColor: "#faf7f2",
-              outline: "none",
-              fontSize: "15px",
-              color: "#4b2e1f",
-              resize: "vertical",
-              marginBottom: "18px",
-              fontFamily: "Arial",
+          <div
+            onBlurCapture={() => {
+              saveClientProfile(false);
             }}
-          />
+            style={{
+              position: "relative",
+              zIndex: 1,
+              width: "100%",
+              margin: "0 auto 22px",
+              display: "grid",
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(300px, 1fr))",
+              gap: "14px",
+              direction: "rtl",
+            }}
+          >
+            <div
+              style={{
+                minWidth: 0,
+                padding: "18px",
+                boxSizing: "border-box",
+                borderRadius: "24px",
+                border:
+                  "1px solid rgba(177,141,112,0.34)",
+                background:
+                  "linear-gradient(145deg, rgba(255,253,249,0.97), rgba(229,211,195,0.87))",
+                boxShadow:
+                  "0 13px 30px rgba(75,46,31,0.08), inset 0 1px 0 rgba(255,255,255,0.90)",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: "10px",
+                  paddingBottom: "12px",
+                  marginBottom: "13px",
+                  borderBottom:
+                    "1px solid rgba(177,141,112,0.26)",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "9px",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "29px",
+                      height: "29px",
+                      flex: "0 0 29px",
+                      borderRadius: "9px",
+                      background:
+                        "linear-gradient(145deg, #d1b095, #9d7355)",
+                      color: "#fffaf5",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "11px",
+                      fontWeight: "900",
+                    }}
+                  >
+                    +
+                  </div>
+
+                  <div
+                    style={{
+                      textAlign: "right",
+                    }}
+                  >
+                    <div
+                      style={{
+                        color: "#3f2b21",
+                        fontSize: "13px",
+                        fontWeight: "950",
+                      }}
+                    >
+                      العملاء المرشحون
+                    </div>
+
+                    <div
+                      style={{
+                        color: "#99775f",
+                        fontSize: "9px",
+                        fontWeight: "800",
+                        marginTop: "2px",
+                      }}
+                    >
+                      Referrals
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={addProfileReferral}
+                  style={{
+                    minHeight: "32px",
+                    padding: "6px 11px",
+                    borderRadius: "11px",
+                    border:
+                      "1px solid rgba(75,46,31,0.22)",
+                    background:
+                      "linear-gradient(135deg, #4b3327, #76523d)",
+                    color: "#fffaf5",
+                    boxShadow:
+                      "0 6px 14px rgba(75,46,31,0.13)",
+                    fontSize: "10px",
+                    fontWeight: "900",
+                    cursor: "pointer",
+                  }}
+                >
+                  + إضافة رقم
+                </button>
+              </div>
+
+              {profileReferrals.length === 0 && (
+                <div
+                  style={{
+                    minHeight: "72px",
+                    padding: "16px",
+                    boxSizing: "border-box",
+                    borderRadius: "15px",
+                    border:
+                      "1px dashed rgba(170,132,103,0.36)",
+                    background:
+                      "rgba(255,250,245,0.60)",
+                    color: "#92725a",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    textAlign: "center",
+                    fontSize: "11px",
+                    fontWeight: "850",
+                  }}
+                >
+                  لا توجد أرقام مرشحة حتى الآن
+                </div>
+              )}
+
+              {profileReferrals.map(
+                (referral) => (
+                  <div
+                    key={referral.id}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        canDeleteData
+                          ? "1fr 1fr 34px"
+                          : "1fr 1fr",
+                      gap: "8px",
+                      alignItems: "center",
+                      marginBottom: "9px",
+                      direction: "rtl",
+                    }}
+                  >
+                    <input
+                      placeholder="اسم العميلة"
+                      value={referral.name}
+                      onChange={(e) =>
+                        updateProfileReferral(
+                          referral.id,
+                          "name",
+                          e.target.value
+                        )
+                      }
+                      style={{
+                        width: "100%",
+                        minWidth: 0,
+                        minHeight: "42px",
+                        padding: "10px 12px",
+                        boxSizing: "border-box",
+                        borderRadius: "13px",
+                        border:
+                          "1px solid rgba(168,129,99,0.38)",
+                        background:
+                          "linear-gradient(145deg, #fffdf9, #f8eee5)",
+                        outline: "none",
+                        color: "#432f24",
+                        fontSize: "12px",
+                        fontWeight: "850",
+                      }}
+                    />
+
+                    <input
+                      placeholder="رقم الجوال"
+                      value={referral.phone}
+                      onChange={(e) =>
+                        updateProfileReferral(
+                          referral.id,
+                          "phone",
+                          e.target.value
+                        )
+                      }
+                      style={{
+                        width: "100%",
+                        minWidth: 0,
+                        minHeight: "42px",
+                        padding: "10px 12px",
+                        boxSizing: "border-box",
+                        borderRadius: "13px",
+                        border:
+                          "1px solid rgba(168,129,99,0.38)",
+                        background:
+                          "linear-gradient(145deg, #fffdf9, #f8eee5)",
+                        outline: "none",
+                        color: "#432f24",
+                        fontSize: "12px",
+                        fontWeight: "850",
+                      }}
+                    />
+
+                    {canDeleteData && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          removeProfileReferral(
+                            referral.id
+                          )
+                        }
+                        title="حذف الرقم"
+                        aria-label="حذف الرقم"
+                        style={{
+                          width: "34px",
+                          height: "34px",
+                          padding: 0,
+                          borderRadius: "10px",
+                          border:
+                            "1px solid rgba(141,101,74,0.28)",
+                          background:
+                            "linear-gradient(145deg, #f4e6da, #dfc6b1)",
+                          color: "#654432",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: "13px",
+                          fontWeight: "900",
+                          cursor: "pointer",
+                        }}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                )
+              )}
+            </div>
+
+            <div
+              style={{
+                minWidth: 0,
+                padding: "18px",
+                boxSizing: "border-box",
+                borderRadius: "24px",
+                border:
+                  "1px solid rgba(177,141,112,0.34)",
+                background:
+                  "linear-gradient(145deg, rgba(255,253,249,0.97), rgba(229,211,195,0.87))",
+                boxShadow:
+                  "0 13px 30px rgba(75,46,31,0.08), inset 0 1px 0 rgba(255,255,255,0.90)",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "9px",
+                  paddingBottom: "12px",
+                  marginBottom: "13px",
+                  borderBottom:
+                    "1px solid rgba(177,141,112,0.26)",
+                }}
+              >
+                <div
+                  style={{
+                    width: "29px",
+                    height: "29px",
+                    flex: "0 0 29px",
+                    borderRadius: "9px",
+                    background:
+                      "linear-gradient(145deg, #d1b095, #9d7355)",
+                    color: "#fffaf5",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "11px",
+                    fontWeight: "900",
+                  }}
+                >
+                  ✎
+                </div>
+
+                <div
+                  style={{
+                    textAlign: "right",
+                  }}
+                >
+                  <div
+                    style={{
+                      color: "#3f2b21",
+                      fontSize: "13px",
+                      fontWeight: "950",
+                    }}
+                  >
+                    ملاحظات العميلة
+                  </div>
+
+                  <div
+                    style={{
+                      color: "#99775f",
+                      fontSize: "9px",
+                      fontWeight: "800",
+                      marginTop: "2px",
+                    }}
+                  >
+                    Private Notes
+                  </div>
+                </div>
+              </div>
+
+              <textarea
+                placeholder="اكتب الملاحظات هنا..."
+                value={profileNotes}
+                onChange={(e) =>
+                  setProfileNotes(
+                    e.target.value
+                  )
+                }
+                style={{
+                  width: "100%",
+                  minHeight: "148px",
+                  padding: "14px",
+                  boxSizing: "border-box",
+                  borderRadius: "15px",
+                  border:
+                    "1px solid rgba(168,129,99,0.38)",
+                  background:
+                    "linear-gradient(145deg, #fffdf9, #f8eee5)",
+                  outline: "none",
+                  color: "#432f24",
+                  fontSize: "12px",
+                  lineHeight: "1.7",
+                  fontWeight: "750",
+                  resize: "vertical",
+                  fontFamily: "Arial",
+                  direction: "rtl",
+                  textAlign: "right",
+                  boxShadow:
+                    "inset 0 2px 7px rgba(75,46,31,0.04)",
+                }}
+              />
+            </div>
+          </div>
 
           <div
             style={{
-              display: "flex",
-              width: "90%",
+              position: "relative",
+              zIndex: 1,
+              width: "100%",
               margin: "0 auto",
-              gap: "10px",
-              flexWrap: "wrap",
+              padding: "15px",
+              boxSizing: "border-box",
+              borderRadius: "21px",
+              border:
+                "1px solid rgba(177,141,112,0.32)",
+              background:
+                "linear-gradient(145deg, rgba(239,224,211,0.88), rgba(216,190,168,0.82))",
+              boxShadow:
+                "0 12px 28px rgba(75,46,31,0.09), inset 0 1px 0 rgba(255,255,255,0.82)",
+              display: "flex",
               justifyContent: "center",
             }}
           >
-            
             <button
+              type="button"
               onClick={saveClientProfile}
               style={{
-                ...buttonStyle,
-                flex: "1",
-                
-                maxWidth: "400px",
-width: "100%",
-                backgroundColor: "#4b2e1f",
-                color: "white",
-                padding: "14px",
-                fontSize: "16px",
+                width: "min(420px, 100%)",
+                minHeight: "48px",
+                padding: "11px 18px",
+                borderRadius: "15px",
+                border:
+                  "1px solid rgba(62,39,29,0.28)",
+                background:
+                  "linear-gradient(135deg, #432e23, #76513b)",
+                color: "#fffaf5",
+                boxShadow:
+                  "0 10px 22px rgba(75,46,31,0.19)",
+                fontSize: "13px",
+                fontWeight: "950",
+                letterSpacing: "0.2px",
+                cursor: "pointer",
               }}
             >
               حفظ البروفايل
