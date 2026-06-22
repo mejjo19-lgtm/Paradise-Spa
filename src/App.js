@@ -11502,6 +11502,62 @@ const normalizeOrderLabelForStats = (orderValue) =>
     const remainingServicesToTarget = Math.max(0, targetByService - totalServices);
     const lostRevenue = sum((day) => day.clientsTurnedAway) * averageServicePrice;
 
+    let cumulativeIncomeBeforeDay = 0;
+    let futureDailyTarget = null;
+
+    dayStats.forEach(
+      (day, dayIndex) => {
+        const isFutureDay =
+          day.date > currentDate;
+
+        if (isFutureDay) {
+          if (
+            futureDailyTarget === null
+          ) {
+            const futureDaysCount =
+              Math.max(
+                1,
+                dayStats.length -
+                  dayIndex
+              );
+
+            futureDailyTarget =
+              Math.max(
+                0,
+                monthlyTarget -
+                  cumulativeIncomeBeforeDay
+              ) /
+              futureDaysCount;
+          }
+
+          day.dailyTarget =
+            futureDailyTarget;
+
+          return;
+        }
+
+        const remainingDaysCount =
+          Math.max(
+            1,
+            dayStats.length -
+              dayIndex
+          );
+
+        day.dailyTarget =
+          Math.max(
+            0,
+            monthlyTarget -
+              cumulativeIncomeBeforeDay
+          ) /
+          remainingDaysCount;
+
+        cumulativeIncomeBeforeDay +=
+          parseAmount(
+            day.income
+          );
+      }
+    );
+
     const activeTherapistOrder =
       new Map(
         activeTherapists.map(
@@ -35531,7 +35587,7 @@ if (screen === "finance") {
                 .paradise-finance-daily-table
                 tbody
                 tr:last-child
-                td {
+                td:not(:last-child) {
                   background: #dbc1aa !important;
                   border-color:
                     rgba(158,120,91,0.28) !important;
@@ -35712,6 +35768,7 @@ if (screen === "finance") {
                         "Income",
                         "Expenses",
                         "VAT 15%",
+                        "Daily Target",
                         "Net Profit",
                       ].map(
                         (
@@ -35739,7 +35796,7 @@ if (screen === "finance") {
                                 "0.2px",
                               borderRight:
                                 headingIndex <
-                                4
+                                5
                                   ? "1px solid rgba(255,255,255,0.11)"
                                   : "none",
                               borderBottom:
@@ -35886,6 +35943,33 @@ if (screen === "finance") {
                                 textAlign:
                                   "center",
                                 color:
+                                  "#6a5038",
+                                background:
+                                  "rgba(190,150,96,0.10)",
+                                fontSize:
+                                  "12px",
+                                fontWeight:
+                                  "950",
+                                whiteSpace:
+                                  "nowrap",
+                                borderRight:
+                                  "1px solid rgba(190,157,130,0.22)",
+                                borderBottom:
+                                  "1px solid rgba(190,157,130,0.22)",
+                              }}
+                            >
+                              {formatCurrency(
+                                day.dailyTarget
+                              )}
+                            </td>
+
+                            <td
+                              style={{
+                                padding:
+                                  "13px 11px",
+                                textAlign:
+                                  "center",
+                                color:
                                   dayNetProfit >=
                                   0
                                     ? "#3f684a"
@@ -36008,13 +36092,36 @@ if (screen === "finance") {
                             "14px 11px",
                           textAlign:
                             "center",
+                          fontSize:
+                            "13px",
+                          borderRight:
+                            "1px solid rgba(255,255,255,0.12)",
+                          whiteSpace:
+                            "nowrap",
+                        }}
+                      >
+                        {formatCurrency(
+                          financeStats.monthlyTarget
+                        )}
+                      </td>
+
+                      <td
+                        style={{
+                          padding:
+                            "14px 11px",
+                          textAlign:
+                            "center",
+                          background:
+                            "#dbc1aa",
                           color:
                             financeStats.totalNetProfit >=
                             0
-                              ? "#d9f0de"
-                              : "#ffd4cf",
+                              ? "#245c37"
+                              : "#8b332c",
                           fontSize:
                             "14px",
+                          fontWeight:
+                            "950",
                           whiteSpace:
                             "nowrap",
                         }}
