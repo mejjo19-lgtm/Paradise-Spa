@@ -1298,6 +1298,45 @@ function fetchSharedClientLists() {
     active: true,
   });
   const [editingAccountId, setEditingAccountId] = useState(null);
+
+  const createEmptyTherapistDraft = () => ({
+    therapistId: "",
+    name: "",
+    iqamaNumber: "",
+    contractStartDate: "",
+    contractEndDate: "",
+    iqamaExpiryDate: "",
+    active: true,
+    sortOrder: "",
+  });
+
+  const [
+    therapistsAdmin,
+    setTherapistsAdmin,
+  ] = useState([]);
+
+  const [
+    therapistsAdminLoading,
+    setTherapistsAdminLoading,
+  ] = useState(false);
+
+  const [
+    therapistsAdminError,
+    setTherapistsAdminError,
+  ] = useState("");
+
+  const [
+    therapistSaving,
+    setTherapistSaving,
+  ] = useState(false);
+
+  const [
+    therapistDraft,
+    setTherapistDraft,
+  ] = useState(
+    createEmptyTherapistDraft
+  );
+
   const [securitySettings, setSecuritySettings] = useState({
     deleteLocked: false,
     systemFrozen: false,
@@ -4556,7 +4595,117 @@ const updateClientLastActivity = async (id) => {
   const subtractVisitStatuses = ["Cancel", "Postponed"];
 
   const clientByOptions = ["Fatima", "Tahani", "Paradise F", "Paradise T"];
-  const therapistOptions = ["Jocelyn", "Caren"];
+
+  const [
+    activeTherapists,
+    setActiveTherapists,
+  ] = useState([
+    {
+      id: "legacy-jocelyn",
+      name: "Jocelyn",
+      sortOrder: 1,
+    },
+    {
+      id: "legacy-caren",
+      name: "Caren",
+      sortOrder: 2,
+    },
+  ]);
+
+  const therapistOptions =
+    activeTherapists.map(
+      (therapist) =>
+        therapist.name
+    );
+
+  const loadActiveTherapistOptions =
+    async () => {
+      try {
+        const {
+          data,
+          error,
+        } = await supabase
+          .from("therapists")
+          .select(
+            "id,name,active,sort_order"
+          )
+          .eq("active", true)
+          .order("sort_order", {
+            ascending: true,
+          })
+          .order("name", {
+            ascending: true,
+          });
+
+        if (error) {
+          throw error;
+        }
+
+        const nextActiveTherapists =
+          (data || [])
+            .map((therapist) => ({
+              id: String(
+                therapist.id || ""
+              ).trim(),
+
+              name: String(
+                therapist.name || ""
+              ).trim(),
+
+              sortOrder: Number(
+                therapist.sort_order ||
+                  0
+              ),
+            }))
+            .filter(
+              (therapist) =>
+                therapist.id &&
+                therapist.name
+            );
+
+        setActiveTherapists(
+          nextActiveTherapists
+        );
+      } catch (error) {
+        console.log(
+          "Active therapists load error:",
+          error
+        );
+      }
+    };
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      return undefined;
+    }
+
+    loadActiveTherapistOptions();
+
+    const therapistOptionsChannel =
+      supabase
+        .channel(
+          "therapist-options-sync"
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "therapists",
+          },
+          () => {
+            loadActiveTherapistOptions();
+          }
+        )
+        .subscribe();
+
+    return () => {
+      supabase.removeChannel(
+        therapistOptionsChannel
+      );
+    };
+  }, [isLoggedIn]);
+
   const orderOptions = ["", "1", "2", "3", "4", "Free", "5", "6", "7", "8", "9", "2 Free"];
   const getOrderStepIndex = (orderValue) => {
   const cleanOrder = String(orderValue || "").trim();
@@ -5189,6 +5338,353 @@ return next;
     const matchedValue = rawValue.match(/-?\d+(\.\d+)?/);
     const number = matchedValue ? Number(matchedValue[0]) : 0;
     return Number.isFinite(number) ? number : 0;
+  };
+
+  const getLegacyTherapistCommissionField = (
+    therapistName
+  ) => {
+    const normalizedName =
+      String(
+        therapistName || ""
+      )
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, "");
+
+    if (
+      normalizedName === "jocelyn" ||
+      normalizedName === "joce"
+    ) {
+      return "commissionJoce";
+    }
+
+    if (
+      normalizedName === "caren" ||
+      normalizedName === "karen"
+    ) {
+      return "commissionCaren";
+    }
+
+    return "";
+  };
+
+  const getSavedTherapistCommissions = (
+    manual
+  ) => {
+    const savedCommissions =
+      manual?.therapistCommissions;
+
+    if (
+      !savedCommissions ||
+      typeof savedCommissions !==
+        "object" ||
+      Array.isArray(
+        savedCommissions
+      )
+    ) {
+      return {};
+    }
+
+    return savedCommissions;
+  };
+
+  const getTherapistCommissionEntries = (
+    manual = {}
+  ) => {
+    const savedCommissions =
+      getSavedTherapistCommissions(
+        manual
+      );
+
+    const entries = [];
+    const includedTherapistIds =
+      new Set();
+    const includedLegacyFields =
+      new Set();
+
+    activeTherapists.forEach(
+      (therapist) => {
+        const therapistId =
+          String(
+            therapist.id || ""
+          ).trim();
+
+        const therapistName =
+          String(
+            therapist.name || ""
+          ).trim();
+
+        if (
+          !therapistId ||
+          !therapistName
+        ) {
+          return;
+        }
+
+        const legacyField =
+          getLegacyTherapistCommissionField(
+            therapistName
+          );
+
+        if (legacyField) {
+          includedLegacyFields.add(
+            legacyField
+          );
+
+          entries.push({
+            therapistId,
+            name: therapistName,
+            amount:
+              manual[legacyField] ??
+              "",
+            legacyField,
+            active: true,
+          });
+
+          return;
+        }
+
+        const savedCommission =
+          savedCommissions[
+            therapistId
+          ];
+
+        includedTherapistIds.add(
+          therapistId
+        );
+
+        entries.push({
+          therapistId,
+          name: therapistName,
+          amount:
+            savedCommission?.amount ??
+            "",
+          legacyField: "",
+          active: true,
+        });
+      }
+    );
+
+    Object.entries(
+      savedCommissions
+    ).forEach(
+      ([
+        therapistId,
+        savedCommission,
+      ]) => {
+        if (
+          includedTherapistIds.has(
+            therapistId
+          )
+        ) {
+          return;
+        }
+
+        if (
+          !savedCommission ||
+          typeof savedCommission !==
+            "object"
+        ) {
+          return;
+        }
+
+        const savedName =
+          String(
+            savedCommission.name ||
+              ""
+          ).trim();
+
+        const savedAmount =
+          savedCommission.amount ??
+          "";
+
+        if (
+          !savedName &&
+          String(
+            savedAmount
+          ).trim() === ""
+        ) {
+          return;
+        }
+
+        const matchingLegacyField =
+          getLegacyTherapistCommissionField(
+            savedName
+          );
+
+        if (
+          matchingLegacyField
+        ) {
+          return;
+        }
+
+        entries.push({
+          therapistId,
+          name:
+            savedName ||
+            "أخصائية سابقة",
+          amount: savedAmount,
+          legacyField: "",
+          active: false,
+        });
+      }
+    );
+
+    [
+      {
+        field:
+          "commissionJoce",
+        name: "Jocelyn",
+      },
+      {
+        field:
+          "commissionCaren",
+        name: "Caren",
+      },
+    ].forEach(
+      ({
+        field,
+        name,
+      }) => {
+        const savedAmount =
+          manual[field];
+
+        if (
+          includedLegacyFields.has(
+            field
+          ) ||
+          String(
+            savedAmount ?? ""
+          ).trim() === ""
+        ) {
+          return;
+        }
+
+        entries.push({
+          therapistId:
+            `legacy-${field}`,
+          name,
+          amount: savedAmount,
+          legacyField: field,
+          active: false,
+        });
+      }
+    );
+
+    return entries;
+  };
+
+  const getTotalTherapistCommission = (
+    manual = {}
+  ) =>
+    getTherapistCommissionEntries(
+      manual
+    ).reduce(
+      (
+        total,
+        commissionEntry
+      ) =>
+        total +
+        parseAmount(
+          commissionEntry.amount
+        ),
+      0
+    );
+
+  const updateTherapistCommissionForDate = (
+    therapist,
+    value
+  ) => {
+    if (
+      !ensureSystemWritable() ||
+      !canEditData
+    ) {
+      return;
+    }
+
+    const therapistId =
+      String(
+        therapist?.therapistId ||
+          therapist?.id ||
+          ""
+      ).trim();
+
+    const therapistName =
+      String(
+        therapist?.name || ""
+      ).trim();
+
+    const legacyField =
+      therapist?.legacyField ||
+      getLegacyTherapistCommissionField(
+        therapistName
+      );
+
+    if (legacyField) {
+      updateManualForDate(
+        legacyField,
+        value
+      );
+
+      return;
+    }
+
+    if (
+      !therapistId ||
+      !therapistName
+    ) {
+      return;
+    }
+
+    dailyManualLastEditRef.current =
+      Date.now();
+
+    setDailyManualData(
+      (previous) => {
+        const currentReport = {
+          ...(
+            previous[
+              selectedScheduleDate
+            ] ||
+            getManualForDate(
+              selectedScheduleDate
+            )
+          ),
+        };
+
+        const currentCommissions =
+          getSavedTherapistCommissions(
+            currentReport
+          );
+
+        const nextReport = {
+          ...currentReport,
+
+          therapistCommissions: {
+            ...currentCommissions,
+
+            [therapistId]: {
+              name:
+                therapistName,
+
+              amount: value,
+            },
+          },
+        };
+
+        queueDailyReportSave(
+          selectedScheduleDate,
+          nextReport
+        );
+
+        return {
+          ...previous,
+
+          [selectedScheduleDate]:
+            nextReport,
+        };
+      }
+    );
   };
 
   const normalizePhone = (phoneNumber) => {
@@ -10616,8 +11112,9 @@ const normalizeOrderLabelForStats = (orderValue) =>
     ).length;
 
     const totalCommission =
-      parseAmount(manual.commissionJoce) +
-      parseAmount(manual.commissionCaren);
+      getTotalTherapistCommission(
+        manual
+      );
 
     const dailyCost =
       parseAmount(manual.naft) +
@@ -10875,12 +11372,52 @@ const normalizeOrderLabelForStats = (orderValue) =>
       }
     });
 
+    const therapistCommissionEntries =
+      getTherapistCommissionEntries(
+        manual
+      ).map(
+        (commissionEntry) => ({
+          therapistId:
+            commissionEntry.therapistId ||
+            "",
+
+          name:
+            commissionEntry.name ||
+            "أخصائية سابقة",
+
+          amount:
+            parseAmount(
+              commissionEntry.amount
+            ),
+
+          legacyField:
+            commissionEntry.legacyField ||
+            "",
+
+          active:
+            commissionEntry.active !==
+            false,
+        })
+      );
+
+    const totalTherapistCommission =
+      therapistCommissionEntries.reduce(
+        (
+          total,
+          commissionEntry
+        ) =>
+          total +
+          parseAmount(
+            commissionEntry.amount
+          ),
+        0
+      );
+
     const variableExpenses =
       parseAmount(manual.naft) +
       parseAmount(manual.uber) +
       parseAmount(manual.purchase) +
-      parseAmount(manual.commissionJoce) +
-      parseAmount(manual.commissionCaren);
+      totalTherapistCommission;
 
     const servicesTotals = {
       Massage: parseAmount(manual.serviceMassage),
@@ -10920,7 +11457,9 @@ const normalizeOrderLabelForStats = (orderValue) =>
       clientsTurnedAway,
       commissionJoce: parseAmount(manual.commissionJoce),
       commissionCaren: parseAmount(manual.commissionCaren),
-      commission: parseAmount(manual.commissionJoce) + parseAmount(manual.commissionCaren),
+      commission: totalTherapistCommission,
+      therapistCommissions:
+        therapistCommissionEntries,
       naft: parseAmount(manual.naft),
       uber: parseAmount(manual.uber),
       purchase: parseAmount(manual.purchase),
@@ -10963,6 +11502,169 @@ const normalizeOrderLabelForStats = (orderValue) =>
     const remainingServicesToTarget = Math.max(0, targetByService - totalServices);
     const lostRevenue = sum((day) => day.clientsTurnedAway) * averageServicePrice;
 
+    const activeTherapistOrder =
+      new Map(
+        activeTherapists.map(
+          (
+            therapist,
+            index
+          ) => {
+            const legacyField =
+              getLegacyTherapistCommissionField(
+                therapist.name
+              );
+
+            const commissionKey =
+              legacyField ||
+              String(
+                therapist.id || ""
+              );
+
+            return [
+              commissionKey,
+              index,
+            ];
+          }
+        )
+      );
+
+    const therapistCommissionTotalsMap =
+      new Map();
+
+    calculationDayStats.forEach(
+      (day) => {
+        (
+          day.therapistCommissions ||
+          []
+        ).forEach(
+          (commissionEntry) => {
+            const commissionKey =
+              commissionEntry
+                .legacyField ||
+              commissionEntry
+                .therapistId;
+
+            if (!commissionKey) {
+              return;
+            }
+
+            const currentCommission =
+              therapistCommissionTotalsMap.get(
+                commissionKey
+              ) || {
+                therapistId:
+                  commissionEntry
+                    .therapistId ||
+                  "",
+
+                name:
+                  commissionEntry
+                    .name ||
+                  "أخصائية سابقة",
+
+                amount: 0,
+
+                legacyField:
+                  commissionEntry
+                    .legacyField ||
+                  "",
+
+                active:
+                  activeTherapistOrder.has(
+                    commissionKey
+                  ),
+              };
+
+            therapistCommissionTotalsMap.set(
+              commissionKey,
+              {
+                ...currentCommission,
+
+                name:
+                  commissionEntry
+                    .name ||
+                  currentCommission.name,
+
+                amount:
+                  currentCommission.amount +
+                  parseAmount(
+                    commissionEntry
+                      .amount
+                  ),
+
+                active:
+                  activeTherapistOrder.has(
+                    commissionKey
+                  ),
+              }
+            );
+          }
+        );
+      }
+    );
+
+    const therapistCommissionTotals =
+      Array.from(
+        therapistCommissionTotalsMap.entries()
+      )
+        .map(
+          ([
+            commissionKey,
+            commissionEntry,
+          ]) => ({
+            ...commissionEntry,
+            commissionKey,
+          })
+        )
+        .sort(
+          (
+            firstCommission,
+            secondCommission
+          ) => {
+            const firstOrder =
+              activeTherapistOrder.has(
+                firstCommission
+                  .commissionKey
+              )
+                ? activeTherapistOrder.get(
+                    firstCommission
+                      .commissionKey
+                  )
+                : Number.MAX_SAFE_INTEGER;
+
+            const secondOrder =
+              activeTherapistOrder.has(
+                secondCommission
+                  .commissionKey
+              )
+                ? activeTherapistOrder.get(
+                    secondCommission
+                      .commissionKey
+                  )
+                : Number.MAX_SAFE_INTEGER;
+
+            return (
+              firstOrder -
+                secondOrder ||
+              String(
+                firstCommission.name ||
+                  ""
+              ).localeCompare(
+                String(
+                  secondCommission.name ||
+                    ""
+                )
+              )
+            );
+          }
+        );
+
+    const totalCommission =
+      sum(
+        (day) =>
+          day.commission
+      );
+
     return {
       monthKey,
       monthlySettings,
@@ -10984,7 +11686,7 @@ const normalizeOrderLabelForStats = (orderValue) =>
       paymentTotal: Object.values(paymentTotals).reduce((total, value) => total + value, 0),
       operatingExpenses: {
         "Gas Station": sum((day) => day.naft),
-        Commission: sum((day) => day.commission),
+        Commission: totalCommission,
         Purchase: sum((day) => day.purchase),
         "House Rent": parseAmount(monthlySettings.houseRent) * fixedExpenseRatio,
         "Car Rent": parseAmount(monthlySettings.carRent) * fixedExpenseRatio,
@@ -10997,6 +11699,8 @@ const normalizeOrderLabelForStats = (orderValue) =>
       servicesTotals,
       commissionJoce: sum((day) => day.commissionJoce),
       commissionCaren: sum((day) => day.commissionCaren),
+      totalCommission,
+      therapistCommissionTotals,
       totalServices,
       newClients: sum((day) => day.newClients),
       loyalClients: sum((day) => day.loyalClients),
@@ -11264,10 +11968,86 @@ const normalizeOrderLabelForStats = (orderValue) =>
     blankRow(),
 
     sectionTitle("Commission / Transportation / Lost Revenue"),
-    labelValueRow("Joce", stats.commissionJoce, "Caren", stats.commissionCaren),
-    labelValueRow("Total Commission", totalCommission, "Transportation", totalTransportation, "TotalValue"),
-    labelValueRow("Clients Turned Away", stats.clientsTurnedAway, "Lost Revenue", stats.lostRevenue),
-    labelValueRow("Potential Revenue", stats.potentialRevenue, "", "", "TotalValue"),
+
+    ...(() => {
+      const commissionEntries =
+        (
+          stats.therapistCommissionTotals ||
+          []
+        ).length
+          ? stats.therapistCommissionTotals
+          : [
+              {
+                name: "Joce",
+                amount:
+                  stats.commissionJoce,
+              },
+              {
+                name: "Caren",
+                amount:
+                  stats.commissionCaren,
+              },
+            ];
+
+      const commissionRows = [];
+
+      for (
+        let index = 0;
+        index <
+        commissionEntries.length;
+        index += 2
+      ) {
+        const firstCommission =
+          commissionEntries[index];
+
+        const secondCommission =
+          commissionEntries[
+            index + 1
+          ];
+
+        commissionRows.push(
+          labelValueRow(
+            firstCommission?.name ||
+              "أخصائية سابقة",
+
+            firstCommission?.amount ||
+              0,
+
+            secondCommission?.name ||
+              "",
+
+            secondCommission?.amount ||
+              0
+          )
+        );
+      }
+
+      return commissionRows;
+    })(),
+
+    labelValueRow(
+      "Total Commission",
+      totalCommission,
+      "Transportation",
+      totalTransportation,
+      "TotalValue"
+    ),
+
+    labelValueRow(
+      "Clients Turned Away",
+      stats.clientsTurnedAway,
+      "Lost Revenue",
+      stats.lostRevenue
+    ),
+
+    labelValueRow(
+      "Potential Revenue",
+      stats.potentialRevenue,
+      "",
+      "",
+      "TotalValue"
+    ),
+
     blankRow(),
 
     sectionTitle(`${monthLabel} Daily Collection`),
@@ -11414,20 +12194,132 @@ const normalizeOrderLabelForStats = (orderValue) =>
         24
       ),
 
-      row(
-        [
-          textCell("Joce Commission", "Label"),
-          numberCell(dayStats.commissionJoce),
-          textCell("Caren Commission", "Label"),
-          numberCell(dayStats.commissionCaren),
-          textCell("Total Commission", "Label"),
-          numberCell(dayStats.commission),
-          textCell("Daily Fixed Cost", "Label"),
-          numberCell(dayStats.fixedDailyExpenses),
-          ...emptyCells(9),
-        ],
-        24
-      ),
+      ...(() => {
+        const savedCommissionEntries =
+          dayStats
+            .therapistCommissions ||
+          [];
+
+        const commissionEntries =
+          savedCommissionEntries.length
+            ? savedCommissionEntries
+            : [
+                {
+                  name: "Joce",
+                  amount:
+                    dayStats
+                      .commissionJoce,
+                },
+                {
+                  name: "Caren",
+                  amount:
+                    dayStats
+                      .commissionCaren,
+                },
+              ];
+
+        const commissionItems = [
+          ...commissionEntries.map(
+            (commissionEntry) => ({
+              label: `${
+                commissionEntry.name ||
+                "أخصائية سابقة"
+              } Commission`,
+
+              value:
+                commissionEntry.amount ||
+                0,
+
+              labelStyle:
+                "Label",
+
+              valueStyle:
+                "Number",
+            })
+          ),
+
+          {
+            label:
+              "Total Commission",
+
+            value:
+              dayStats.commission,
+
+            labelStyle:
+              "TotalLabel",
+
+            valueStyle:
+              "TotalValue",
+          },
+
+          {
+            label:
+              "Daily Fixed Cost",
+
+            value:
+              dayStats
+                .fixedDailyExpenses,
+
+            labelStyle:
+              "Label",
+
+            valueStyle:
+              "Number",
+          },
+        ];
+
+        const commissionRows = [];
+
+        for (
+          let index = 0;
+          index <
+          commissionItems.length;
+          index += 4
+        ) {
+          const commissionChunk =
+            commissionItems.slice(
+              index,
+              index + 4
+            );
+
+          const commissionCells =
+            commissionChunk.flatMap(
+              (commissionItem) => [
+                textCell(
+                  commissionItem.label,
+                  commissionItem
+                    .labelStyle
+                ),
+
+                numberCell(
+                  commissionItem.value,
+                  commissionItem
+                    .valueStyle
+                ),
+              ]
+            );
+
+          commissionRows.push(
+            row(
+              [
+                ...commissionCells,
+
+                ...emptyCells(
+                  Math.max(
+                    0,
+                    scheduleColumns.length -
+                      commissionCells.length
+                  )
+                ),
+              ],
+
+              24
+            )
+          );
+        }
+
+        return commissionRows;
+      })(),
 
       row(
         [
@@ -13195,30 +14087,50 @@ const leavingTime = addMinutesToDisplayTime(
   const isSystemFrozen =
     Boolean(
       securitySettings.systemFrozen
-    ) && !isOwnerUser;
+    );
 
   const isDeleteLocked =
     Boolean(
       securitySettings.deleteLocked
-    ) && !isOwnerUser;
+    );
 
   const ensureSystemWritable = () => {
     if (isSystemFrozen) {
-      alert("النظام مجمّد حالياً للصيانة. المشاهدة والتنقل فقط.");
+      alert(
+        "النظام مجمّد حالياً للصيانة. المشاهدة والتنقل فقط."
+      );
+
       return false;
     }
+
     return true;
   };
 
   const ensureDeleteAllowed = () => {
     if (isSystemFrozen) {
-      alert("النظام مجمّد حالياً للصيانة. لا يمكن الحذف الآن.");
+      alert(
+        "النظام مجمّد حالياً للصيانة. لا يمكن الحذف الآن."
+      );
+
       return false;
     }
-    if (isDeleteLocked || !canDeleteData) {
-      alert("الحذف مقفل أو لا تملك صلاحية الحذف. ماجد فقط يقدر يعطي الصلاحية.");
+
+    if (isDeleteLocked) {
+      alert(
+        "الحذف مقفل حالياً من إعدادات الأمان. ألغِ قفل الحذف أولاً."
+      );
+
       return false;
     }
+
+    if (!canDeleteData) {
+      alert(
+        "لا تملك صلاحية الحذف."
+      );
+
+      return false;
+    }
+
     return true;
   };
 
@@ -15058,8 +15970,9 @@ const leavingTime = addMinutesToDisplayTime(
   const scheduleCommissionGridStyle = {
     display: "grid",
     gridTemplateColumns:
-      "repeat(auto-fit, minmax(240px, 1fr))",
+      "repeat(auto-fit, minmax(220px, 1fr))",
     gap: "14px",
+    width: "100%",
     maxWidth: "720px",
     margin: "0 auto",
   };
@@ -16328,107 +17241,147 @@ const welcomeBoardNameStyle = {
 
   const settingsPageShellStyle = {
     direction: "rtl",
-    padding: "14px 16px 34px",
-    color: "#3a2418",
+    width: "100%",
+    maxWidth: "1480px",
+    minHeight: "calc(100vh - 120px)",
+    margin: "0 auto",
+    padding: "clamp(12px, 2vw, 28px)",
+    boxSizing: "border-box",
+    color: "#4d382b",
+    background:
+      "radial-gradient(circle at 90% 0%, rgba(255,255,255,0.92) 0%, transparent 34%), radial-gradient(circle at 0% 100%, rgba(210,190,171,0.3) 0%, transparent 38%), linear-gradient(145deg, #eee4d8 0%, #e4d5c5 48%, #d8c4b1 100%)",
+    border: "1px solid rgba(255,255,255,0.72)",
+    borderRadius: "clamp(22px, 3vw, 38px)",
+    boxShadow:
+      "0 32px 80px rgba(89,63,45,0.13), inset 0 1px 0 rgba(255,255,255,0.9)",
   };
 
   const settingsSurfaceStyle = {
-    background: "linear-gradient(145deg, rgba(255,253,248,0.99), rgba(250,246,239,0.96))",
-    border: "1px solid rgba(214,199,184,0.78)",
-    borderRadius: "28px",
-    padding: "18px",
-    boxShadow: "0 18px 44px rgba(75,46,31,0.08)",
+    background:
+      "linear-gradient(145deg, rgba(255,252,247,0.96), rgba(246,237,227,0.92))",
+    border: "1px solid rgba(255,255,255,0.86)",
+    borderRadius: "30px",
+    padding: "clamp(16px, 2vw, 26px)",
+    boxShadow:
+      "0 22px 55px rgba(92,65,47,0.1), inset 0 1px 0 rgba(255,255,255,0.95)",
+    backdropFilter: "blur(18px)",
+    WebkitBackdropFilter: "blur(18px)",
   };
 
   const settingsRowStyle = {
-    ...settingsSurfaceStyle,
-    padding: "18px",
+    background:
+      "linear-gradient(145deg, rgba(255,254,251,0.98), rgba(248,240,231,0.94))",
+    border: "1px solid rgba(218,199,181,0.72)",
+    borderRadius: "24px",
+    padding: "clamp(16px, 2vw, 24px)",
+    color: "#4d382b",
+    boxShadow:
+      "0 14px 35px rgba(92,65,47,0.075), inset 0 1px 0 rgba(255,255,255,0.96)",
   };
 
   const settingsSectionTitleStyle = {
     margin: "0 0 10px",
-    fontSize: "22px",
-    fontWeight: 950,
-    color: "#3a2418",
-    letterSpacing: "-0.25px",
+    fontSize: "clamp(20px, 2vw, 25px)",
+    fontWeight: 900,
+    color: "#4a3325",
+    letterSpacing: "-0.35px",
+    lineHeight: 1.35,
   };
 
   const settingsHelpTextStyle = {
-    color: "#7a5a43",
-    fontWeight: 800,
-    lineHeight: 1.7,
-    margin: "0 0 14px",
+    color: "#806753",
+    fontWeight: 700,
+    lineHeight: 1.9,
+    margin: "0 0 16px",
     fontSize: "14px",
   };
 
-const settingsFieldGridStyle = {
-  display: "grid",
-  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-  gap: "16px",
-  alignItems: "center",
-};
+  const settingsFieldGridStyle = {
+    display: "grid",
+    gridTemplateColumns:
+      "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
+    gap: "14px",
+    alignItems: "center",
+  };
 
   const settingsInputStyle = {
-  width: "100%",
-  height: "50px",
-  minHeight: "50px",
-  margin: 0,
-  padding: "0 18px",
-  boxSizing: "border-box",
-  borderRadius: "14px",
-  border: "1px solid rgba(214,199,184,0.85)",
-  background: "rgba(255,255,255,0.72)",
-  color: "#4b2e1f",
-  fontWeight: 700,
-  fontSize: "14px",
-  outline: "none",
-  boxShadow: "0 8px 18px rgba(75,46,31,0.04)",
-};
+    width: "100%",
+    height: "52px",
+    minHeight: "52px",
+    margin: 0,
+    padding: "0 17px",
+    boxSizing: "border-box",
+    borderRadius: "16px",
+    border: "1px solid rgba(192,164,140,0.62)",
+    background:
+      "linear-gradient(145deg, rgba(255,255,255,0.96), rgba(250,245,239,0.94))",
+    color: "#4a3325",
+    fontWeight: 750,
+    fontSize: "14px",
+    outline: "none",
+    boxShadow:
+      "0 8px 20px rgba(89,63,45,0.055), inset 0 1px 0 rgba(255,255,255,0.98)",
+    transition:
+      "border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease",
+  };
+
   const settingsMiniCardStyle = {
-    background: "linear-gradient(145deg, rgba(255,255,255,0.9), rgba(249,243,236,0.78))",
-    border: "1px solid rgba(214,199,184,0.82)",
-    borderRadius: "18px",
-    padding: "12px 14px",
-    color: "#4b2e1f",
-    boxShadow: "0 8px 20px rgba(75,46,31,0.045), inset 0 1px 0 rgba(255,255,255,0.88)",
+    background:
+      "linear-gradient(145deg, rgba(255,255,255,0.96), rgba(244,234,223,0.9))",
+    border: "1px solid rgba(208,184,162,0.68)",
+    borderRadius: "20px",
+    padding: "14px 16px",
+    color: "#4d382b",
+    boxShadow:
+      "0 10px 26px rgba(92,65,47,0.065), inset 0 1px 0 rgba(255,255,255,0.96)",
   };
 
   const settingsPermissionCardStyle = {
-  ...settingsMiniCardStyle,
-  height: "50px",
-  minHeight: "50px",
-  padding: "8px 12px",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: "8px",
-  fontSize: "14px",
-  fontWeight: 900,
-  boxSizing: "border-box",
-};
+    ...settingsMiniCardStyle,
+    minHeight: "54px",
+    padding: "10px 14px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "10px",
+    fontSize: "14px",
+    fontWeight: 850,
+    boxSizing: "border-box",
+  };
 
   const settingsPrimaryButtonStyle = {
-  ...buttonStyle,
-  height: "40px",
-  minHeight: "40px",
-  borderRadius: "14px",
-  background: "linear-gradient(135deg, #3a2418, #7a5a43)",
-  color: "white",
-  boxShadow: "0 12px 24px rgba(75,46,31,0.16)",
-  fontSize: "13px",
-  fontWeight: 900,
-};
+    ...buttonStyle,
+    minHeight: "46px",
+    padding: "0 22px",
+    borderRadius: "16px",
+    border: "1px solid rgba(112,82,61,0.32)",
+    background:
+      "linear-gradient(135deg, #80624c 0%, #a38368 52%, #b89a80 100%)",
+    color: "#fffdf9",
+    boxShadow:
+      "0 14px 28px rgba(112,82,61,0.2), inset 0 1px 0 rgba(255,255,255,0.24)",
+    fontSize: "13px",
+    fontWeight: 900,
+    letterSpacing: "0.1px",
+    transition:
+      "transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease",
+  };
 
   const settingsMutedButtonStyle = {
     ...buttonStyle,
-    height: "40px",
-    minHeight: "40px",
-    borderRadius: "14px",
-    background: "#e1d2c2",
-    color: "#4b2e1f",
-    boxShadow: "none",
+    minHeight: "46px",
+    padding: "0 22px",
+    borderRadius: "16px",
+    border: "1px solid rgba(198,171,148,0.66)",
+    background:
+      "linear-gradient(145deg, #f3e8dc, #e5d3c1)",
+    color: "#5a4030",
+    boxShadow:
+      "0 8px 20px rgba(92,65,47,0.07), inset 0 1px 0 rgba(255,255,255,0.78)",
     fontSize: "13px",
     fontWeight: 900,
+    transition:
+      "transform 0.2s ease, box-shadow 0.2s ease",
   };
 
   const loadSettingsModuleData = async () => {
@@ -16450,12 +17403,44 @@ const settingsFieldGridStyle = {
       }
 
       if (securityRow?.data) {
+        const nextSecurity =
+          securityRow.data;
+
         setSecuritySettings(
           (prev) => ({
             ...prev,
-            ...securityRow.data,
+            ...nextSecurity,
           })
         );
+
+        const localLogoutVersion =
+          Number(
+            localStorage.getItem(
+              "paradise-settings-logout-version"
+            ) || 0
+          );
+
+        const remoteLogoutVersion =
+          Number(
+            nextSecurity.logoutVersion ||
+              0
+          );
+
+        if (
+          remoteLogoutVersion >
+          localLogoutVersion
+        ) {
+          localStorage.setItem(
+            "paradise-settings-logout-version",
+            String(
+              remoteLogoutVersion
+            )
+          );
+
+          await globalLogout();
+
+          return;
+        }
       }
     } catch (error) {
       console.log(
@@ -16558,8 +17543,7 @@ const settingsFieldGridStyle = {
 
               if (
                 remoteLogoutVersion >
-                  localLogoutVersion &&
-                !isOwnerUser
+                localLogoutVersion
               ) {
                 localStorage.setItem(
                   "paradise-settings-logout-version",
@@ -16609,26 +17593,141 @@ const settingsFieldGridStyle = {
   ]);
 
   const saveSecuritySettings = async (nextSettings) => {
-    const merged = { ...securitySettings, ...nextSettings, updatedAt: Date.now(), updatedBy: loggedInUser || "" };
-    setSecuritySettings(merged);
+    const isChangingSystemFreeze =
+      Object.prototype.hasOwnProperty.call(
+        nextSettings,
+        "systemFrozen"
+      );
 
-    const { error } = await supabase.from("app_data").upsert(
-      { data_key: "settingsSecurity", data: merged },
-      { onConflict: "data_key" }
-    );
+    const isChangingDeleteLock =
+      Object.prototype.hasOwnProperty.call(
+        nextSettings,
+        "deleteLocked"
+      );
+
+    const nextSystemFrozen =
+      Boolean(
+        nextSettings.systemFrozen
+      );
+
+    const nextDeleteLocked =
+      Boolean(
+        nextSettings.deleteLocked
+      );
+
+    let confirmationMessage = "";
+
+    if (isChangingSystemFreeze) {
+      confirmationMessage =
+        nextSystemFrozen
+          ? "تأكيد تجميد النظام؟\n\nستتوقف جميع عمليات الإضافة والتعديل والحذف على كل الأجهزة، وسيبقى النظام للعرض فقط."
+          : "تأكيد إلغاء تجميد النظام؟\n\nستعود عمليات الإضافة والتعديل والحذف للعمل على جميع الأجهزة.";
+    } else if (isChangingDeleteLock) {
+      confirmationMessage =
+        nextDeleteLocked
+          ? "تأكيد قفل الحذف؟\n\nستتوقف جميع عمليات الحذف على كل الأجهزة، بينما تستمر الإضافة والتعديل بصورة طبيعية."
+          : "تأكيد إلغاء قفل الحذف؟\n\nستعود عمليات الحذف للمستخدمين الذين يملكون صلاحية الحذف.";
+    }
+
+    if (
+      confirmationMessage &&
+      !window.confirm(
+        confirmationMessage
+      )
+    ) {
+      return false;
+    }
+
+    const merged = {
+      ...securitySettings,
+      ...nextSettings,
+      updatedAt: Date.now(),
+      updatedBy:
+        loggedInUser || "",
+    };
+
+    const { error } =
+      await supabase
+        .from("app_data")
+        .upsert(
+          {
+            data_key:
+              "settingsSecurity",
+            data: merged,
+          },
+          {
+            onConflict:
+              "data_key",
+          }
+        );
 
     if (error) {
-      console.log("Security settings save error:", error);
-      alert("لم يتم حفظ إعدادات الأمان");
+      console.log(
+        "Security settings save error:",
+        error
+      );
+
+      alert(
+        isChangingSystemFreeze ||
+          isChangingDeleteLock
+          ? "تعذر تغيير إعداد الأمان. لم تتغير الحالة الحالية."
+          : "لم يتم حفظ إعدادات الأمان"
+      );
+
+      return false;
     }
+
+    setSecuritySettings(
+      merged
+    );
+
+    if (isChangingSystemFreeze) {
+      alert(
+        nextSystemFrozen
+          ? "تم تجميد النظام. جميع الأجهزة أصبحت للعرض فقط."
+          : "تم إلغاء تجميد النظام وعادت عمليات الحفظ."
+      );
+    } else if (isChangingDeleteLock) {
+      alert(
+        nextDeleteLocked
+          ? "تم قفل الحذف على جميع الأجهزة."
+          : "تم إلغاء قفل الحذف."
+      );
+    }
+
+    return true;
   };
 
   const logoutAllDevices = async () => {
-    if (!window.confirm("تأكيد تسجيل خروج جميع الأجهزة؟")) return;
-    const nextVersion = Date.now();
-    localStorage.setItem("paradise-settings-logout-version", String(nextVersion));
-    await saveSecuritySettings({ logoutVersion: nextVersion });
-    alert("تم إرسال أمر تسجيل الخروج لجميع الأجهزة. الأجهزة الأخرى ستخرج عند استقبال التحديث.");
+    if (
+      !window.confirm(
+        "تأكيد تسجيل خروج جميع الأجهزة؟"
+      )
+    ) {
+      return;
+    }
+
+    const nextVersion =
+      Date.now();
+
+    const saveSucceeded =
+      await saveSecuritySettings({
+        logoutVersion:
+          nextVersion,
+      });
+
+    if (!saveSucceeded) {
+      return;
+    }
+
+    localStorage.setItem(
+      "paradise-settings-logout-version",
+      String(nextVersion)
+    );
+
+    alert(
+      "تم إرسال أمر تسجيل الخروج لجميع الأجهزة. الأجهزة الأخرى ستخرج فور استقبال التحديث أو عند فتح الموقع مجددًا."
+    );
   };
 
   const toggleAccountPermission = (type, value) => {
@@ -16981,6 +18080,537 @@ const settingsFieldGridStyle = {
     }
     loadSettingsModuleData();
   };
+
+  const normalizeTherapistAdminRecord = (
+    therapist
+  ) => ({
+    id:
+      therapist.therapist_id ||
+      "",
+
+    name:
+      therapist.therapist_name ||
+      "",
+
+    iqamaNumber:
+      therapist.iqama_number ||
+      "",
+
+    contractStartDate:
+      therapist.contract_start_date ||
+      "",
+
+    contractEndDate:
+      therapist.contract_end_date ||
+      "",
+
+    iqamaExpiryDate:
+      therapist.iqama_expiry_date ||
+      "",
+
+    active:
+      therapist.active !== false,
+
+    sortOrder:
+      Number(
+        therapist.sort_order || 0
+      ),
+
+    createdAt:
+      therapist.created_at ||
+      "",
+
+    updatedAt:
+      therapist.updated_at ||
+      "",
+  });
+
+  const getTherapistErrorMessage = (
+    error
+  ) => {
+    const errorMessage =
+      String(
+        error?.message || ""
+      );
+
+    if (
+      errorMessage.includes(
+        "SUPER_ADMIN_REQUIRED"
+      )
+    ) {
+      return "إدارة الأخصائيات متاحة للـ Super Admin فقط.";
+    }
+
+    if (
+      errorMessage.includes(
+        "SYSTEM_FROZEN"
+      )
+    ) {
+      return "النظام مجمّد حاليًا، ولا يمكن تعديل بيانات الأخصائيات.";
+    }
+
+    if (
+      errorMessage.includes(
+        "THERAPIST_NAME_REQUIRED"
+      )
+    ) {
+      return "اسم الأخصائية مطلوب.";
+    }
+
+    if (
+      errorMessage.includes(
+        "INVALID_CONTRACT_DATE_RANGE"
+      )
+    ) {
+      return "تاريخ انتهاء العقد لا يمكن أن يكون قبل تاريخ بدايته.";
+    }
+
+    if (
+      errorMessage.includes(
+        "THERAPIST_NOT_FOUND"
+      )
+    ) {
+      return "تعذر العثور على الأخصائية المطلوبة.";
+    }
+
+    if (
+      error?.code === "23505"
+    ) {
+      if (
+        errorMessage.includes(
+          "therapist_iqama"
+        )
+      ) {
+        return "رقم الإقامة مسجل لأخصائية أخرى.";
+      }
+
+      return "اسم الأخصائية مسجل مسبقًا.";
+    }
+
+    return (
+      errorMessage ||
+      "تعذر تنفيذ العملية على بيانات الأخصائيات."
+    );
+  };
+
+  const loadTherapistsAdmin =
+    async () => {
+      if (!isOwnerUser) {
+        setTherapistsAdmin([]);
+        setTherapistsAdminError("");
+        return;
+      }
+
+      setTherapistsAdminLoading(
+        true
+      );
+
+      setTherapistsAdminError(
+        ""
+      );
+
+      try {
+        const {
+          data,
+          error,
+        } = await supabase.rpc(
+          "get_therapists_admin"
+        );
+
+        if (error) {
+          throw error;
+        }
+
+        const normalizedTherapists =
+          (data || [])
+            .map(
+              normalizeTherapistAdminRecord
+            )
+            .sort(
+              (
+                firstTherapist,
+                secondTherapist
+              ) =>
+                Number(
+                  firstTherapist.sortOrder ||
+                    0
+                ) -
+                  Number(
+                    secondTherapist.sortOrder ||
+                      0
+                  ) ||
+                String(
+                  firstTherapist.name ||
+                    ""
+                ).localeCompare(
+                  String(
+                    secondTherapist.name ||
+                      ""
+                  )
+                )
+            );
+
+        setTherapistsAdmin(
+          normalizedTherapists
+        );
+      } catch (error) {
+        console.log(
+          "Therapists admin load error:",
+          error
+        );
+
+        setTherapistsAdmin([]);
+
+        setTherapistsAdminError(
+          getTherapistErrorMessage(
+            error
+          )
+        );
+      } finally {
+        setTherapistsAdminLoading(
+          false
+        );
+      }
+    };
+
+  const resetTherapistDraft =
+    () => {
+      setTherapistDraft(
+        createEmptyTherapistDraft()
+      );
+    };
+
+  const startEditTherapist = (
+    therapist
+  ) => {
+    setTherapistDraft({
+      therapistId:
+        therapist.id || "",
+
+      name:
+        therapist.name || "",
+
+      iqamaNumber:
+        therapist.iqamaNumber ||
+        "",
+
+      contractStartDate:
+        therapist.contractStartDate ||
+        "",
+
+      contractEndDate:
+        therapist.contractEndDate ||
+        "",
+
+      iqamaExpiryDate:
+        therapist.iqamaExpiryDate ||
+        "",
+
+      active:
+        therapist.active !==
+        false,
+
+      sortOrder:
+        String(
+          therapist.sortOrder ??
+            ""
+        ),
+    });
+  };
+
+  const saveTherapistAdmin =
+    async () => {
+      if (
+        !ensureSystemWritable()
+      ) {
+        return;
+      }
+
+      const normalizedName =
+        String(
+          therapistDraft.name ||
+            ""
+        ).trim();
+
+      const normalizedIqamaNumber =
+        String(
+          therapistDraft
+            .iqamaNumber || ""
+        ).trim();
+
+      if (!normalizedName) {
+        alert(
+          "اكتب اسم الأخصائية."
+        );
+
+        return;
+      }
+
+      if (
+        therapistDraft
+          .contractStartDate &&
+        therapistDraft
+          .contractEndDate &&
+        therapistDraft
+          .contractEndDate <
+          therapistDraft
+            .contractStartDate
+      ) {
+        alert(
+          "تاريخ انتهاء العقد لا يمكن أن يكون قبل تاريخ بداية العقد."
+        );
+
+        return;
+      }
+
+      const automaticSortOrder =
+        therapistsAdmin.reduce(
+          (
+            highestOrder,
+            therapist
+          ) =>
+            Math.max(
+              highestOrder,
+              Number(
+                therapist.sortOrder ||
+                  0
+              )
+            ),
+          0
+        ) + 1;
+
+      const requestedSortOrder =
+        therapistDraft.sortOrder ===
+        ""
+          ? automaticSortOrder
+          : Number(
+              therapistDraft
+                .sortOrder
+            );
+
+      if (
+        !Number.isFinite(
+          requestedSortOrder
+        ) ||
+        requestedSortOrder < 0
+      ) {
+        alert(
+          "ترتيب الظهور يجب أن يكون رقمًا صحيحًا يبدأ من صفر."
+        );
+
+        return;
+      }
+
+      setTherapistSaving(true);
+
+      try {
+        const {
+          error,
+        } = await supabase.rpc(
+          "save_therapist_admin",
+          {
+            p_therapist_id:
+              therapistDraft
+                .therapistId ||
+              null,
+
+            p_name:
+              normalizedName,
+
+            p_iqama_number:
+              normalizedIqamaNumber ||
+              null,
+
+            p_contract_start_date:
+              therapistDraft
+                .contractStartDate ||
+              null,
+
+            p_contract_end_date:
+              therapistDraft
+                .contractEndDate ||
+              null,
+
+            p_iqama_expiry_date:
+              therapistDraft
+                .iqamaExpiryDate ||
+              null,
+
+            p_active:
+              therapistDraft.active !==
+              false,
+
+            p_sort_order:
+              Math.trunc(
+                requestedSortOrder
+              ),
+          }
+        );
+
+        if (error) {
+          throw error;
+        }
+
+        const wasEditing =
+          Boolean(
+            therapistDraft
+              .therapistId
+          );
+
+        resetTherapistDraft();
+
+        await loadTherapistsAdmin();
+
+        alert(
+          wasEditing
+            ? "تم تحديث بيانات الأخصائية."
+            : "تمت إضافة الأخصائية بنجاح."
+        );
+      } catch (error) {
+        console.log(
+          "Therapist save error:",
+          error
+        );
+
+        alert(
+          getTherapistErrorMessage(
+            error
+          )
+        );
+      } finally {
+        setTherapistSaving(false);
+      }
+    };
+
+  const setTherapistActiveAdmin =
+    async (
+      therapist
+    ) => {
+      if (
+        !ensureSystemWritable()
+      ) {
+        return;
+      }
+
+      const nextActive =
+        !therapist.active;
+
+      const confirmationMessage =
+        nextActive
+          ? `تأكيد تفعيل الأخصائية ${therapist.name}؟`
+          : `تأكيد إيقاف الأخصائية ${therapist.name}؟\n\nستختفي من المواعيد والعمولات الجديدة، وستبقى بياناتها السابقة محفوظة.`;
+
+      if (
+        !window.confirm(
+          confirmationMessage
+        )
+      ) {
+        return;
+      }
+
+      setTherapistSaving(true);
+
+      try {
+        const {
+          error,
+        } = await supabase.rpc(
+          "set_therapist_active_admin",
+          {
+            p_therapist_id:
+              therapist.id,
+
+            p_active:
+              nextActive,
+          }
+        );
+
+        if (error) {
+          throw error;
+        }
+
+        if (
+          String(
+            therapistDraft
+              .therapistId
+          ) ===
+          String(
+            therapist.id
+          )
+        ) {
+          resetTherapistDraft();
+        }
+
+        await loadTherapistsAdmin();
+
+        alert(
+          nextActive
+            ? "تم تفعيل الأخصائية."
+            : "تم إيقاف الأخصائية مع الاحتفاظ بجميع سجلاتها السابقة."
+        );
+      } catch (error) {
+        console.log(
+          "Therapist active status error:",
+          error
+        );
+
+        alert(
+          getTherapistErrorMessage(
+            error
+          )
+        );
+      } finally {
+        setTherapistSaving(false);
+      }
+    };
+
+  useEffect(() => {
+    if (
+      !isLoggedIn ||
+      !loggedInAuthUserId ||
+      !isOwnerUser ||
+      screen !== "settings" ||
+      settingsActiveTab !==
+        "accounts"
+    ) {
+      if (!isOwnerUser) {
+        setTherapistsAdmin([]);
+        setTherapistsAdminError("");
+      }
+
+      return undefined;
+    }
+
+    loadTherapistsAdmin();
+
+    const therapistsChannel =
+      supabase
+        .channel(
+          "therapists-admin-sync"
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "therapists",
+          },
+          () =>
+            loadTherapistsAdmin()
+        )
+        .subscribe();
+
+    return () => {
+      supabase.removeChannel(
+        therapistsChannel
+      );
+    };
+  }, [
+    isLoggedIn,
+    loggedInAuthUserId,
+    isOwnerUser,
+    screen,
+    settingsActiveTab,
+  ]);
 
   const requestBackupApi =
     async (
@@ -17721,43 +19351,416 @@ const settingsFieldGridStyle = {
       }
     };
 
-  const getTableCount = async (tableName) => {
-    const { count, error } = await supabase.from(tableName).select("*", { count: "exact", head: true });
-    if (error) throw error;
-    return count || 0;
-  };
+  const systemHealthTables = [
+    {
+      tableName: "app_data",
+      label: "بيانات النظام المشتركة",
+    },
+    {
+      tableName:
+        "client_last_order_backfill_audit",
+      label: "سجل تدقيق آخر طلب للعملاء",
+    },
+    {
+      tableName: "clients",
+      label: "العملاء",
+    },
+    {
+      tableName: "daily_reports",
+      label: "التقارير اليومية",
+    },
+    {
+      tableName: "employee_accounts",
+      label: "حسابات الموظفين",
+    },
+    {
+      tableName: "gift_clients",
+      label: "عملاء الإهداء",
+    },
+    {
+      tableName: "invoice_audit_logs",
+      label: "سجل تدقيق الفواتير",
+    },
+    {
+      tableName:
+        "invoice_buyer_snapshots",
+      label: "نسخ بيانات مشتري الفاتورة",
+    },
+    {
+      tableName:
+        "invoice_electronic_preparation_jobs",
+      label: "مهام تجهيز الفوترة الإلكترونية",
+    },
+    {
+      tableName:
+        "invoice_fiscal_documents",
+      label: "المستندات المالية للفواتير",
+    },
+    {
+      tableName:
+        "invoice_line_snapshots",
+      label: "نسخ بنود الفواتير",
+    },
+    {
+      tableName:
+        "invoice_number_counter",
+      label: "عداد أرقام الفواتير",
+    },
+    {
+      tableName:
+        "invoice_prelaunch_records",
+      label: "سجلات ما قبل تشغيل الفوترة",
+    },
+    {
+      tableName:
+        "invoice_prelaunch_sessions",
+      label: "جلسات ما قبل تشغيل الفوترة",
+    },
+    {
+      tableName:
+        "invoice_preparation_control",
+      label: "التحكم في تجهيز الفواتير",
+    },
+    {
+      tableName:
+        "invoice_seller_profile",
+      label: "بيانات منشأة البائع",
+    },
+    {
+      tableName:
+        "invoice_seller_snapshots",
+      label: "نسخ بيانات بائع الفاتورة",
+    },
+    {
+      tableName:
+        "invoice_zatca_submissions",
+      label: "عمليات إرسال الفواتير لزاتكا",
+    },
+    {
+      tableName: "invoices",
+      label: "الفواتير",
+    },
+    {
+      tableName: "potential_clients",
+      label: "العملاء المحتملون",
+    },
+    {
+      tableName: "purchases",
+      label: "المشتريات",
+    },
+    {
+      tableName: "referred_clients",
+      label: "العملاء المحالون",
+    },
+    {
+      tableName: "schedule_rows",
+      label: "صفوف وجدول المواعيد",
+    },
+    {
+      tableName:
+        "zatca_connection_status",
+      label: "حالة اتصال زاتكا",
+    },
+    {
+      tableName: "zatca_icv_counter",
+      label: "عداد ICV الخاص بزاتكا",
+    },
+  ];
 
-  const checkSystemHealth = async () => {
-    const result = {
-      checkedAt: new Date().toLocaleString(),
-      rows: [],
-      realtime: "Realtime healthy",
+  const getWebsiteTableCount =
+    async (tableName) => {
+      const {
+        count,
+        error,
+      } = await supabase
+        .from(tableName)
+        .select("*", {
+          count: "exact",
+          head: true,
+        });
+
+      if (error) {
+        throw new Error(
+          error.message ||
+            `تعذر على الموقع قراءة جدول ${tableName}.`
+        );
+      }
+
+      const normalizedCount =
+        Number(count || 0);
+
+      if (
+        !Number.isFinite(
+          normalizedCount
+        ) ||
+        normalizedCount < 0
+      ) {
+        throw new Error(
+          `أعاد الموقع عددًا غير صالح لجدول ${tableName}.`
+        );
+      }
+
+      return normalizedCount;
     };
 
-    const localCounts = {
-      clients: clients.length,
-      gift_clients: giftClients.length,
-      referred_clients: manualReferrals.length,
-      potential_clients: potentialClients.length,
+  const getAuthoritativeSupabaseTableCount =
+    async (
+      accessToken,
+      tableName
+    ) => {
+      const tableResult =
+        await requestBackupApi(
+          accessToken,
+          {
+            action: "table",
+            tableName,
+            offset: 0,
+            limit: 1,
+          }
+        );
+
+      if (
+        tableResult?.tableName !==
+        tableName
+      ) {
+        throw new Error(
+          `حدث عدم تطابق في اسم جدول ${tableName}.`
+        );
+      }
+
+      const normalizedCount =
+        Number(
+          tableResult.totalCount
+        );
+
+      if (
+        !Number.isFinite(
+          normalizedCount
+        ) ||
+        normalizedCount < 0
+      ) {
+        throw new Error(
+          `أعاد Supabase عددًا غير صالح لجدول ${tableName}.`
+        );
+      }
+
+      return normalizedCount;
     };
 
-    for (const tableName of ["clients", "schedule_rows", "daily_reports", "gift_clients", "referred_clients", "potential_clients", "app_data", "employee_accounts"]) {
+  const checkSystemHealth =
+    async () => {
+      setSystemHealth({
+        loading: true,
+        checkedAt: "",
+        rows: [],
+        matchingTables: 0,
+        mismatchingTables: 0,
+        errorTables: 0,
+        totalWebsiteRows: 0,
+        totalSupabaseRows: 0,
+        allMatched: false,
+        fatalError: "",
+      });
+
       try {
-        const supabaseCount = await getTableCount(tableName);
-        const localCount = localCounts[tableName];
-        result.rows.push({
-          tableName,
-          localCount: localCount === undefined ? "-" : localCount,
-          supabaseCount,
-          status: localCount === undefined || Number(localCount) === Number(supabaseCount) ? "OK" : "Mismatch",
+        const {
+          data,
+          error,
+        } = await supabase.rpc(
+          "get_paradise_table_counts"
+        );
+
+        if (error) {
+          throw error;
+        }
+
+        const returnedRows =
+          Array.isArray(data)
+            ? data
+            : [];
+
+        const countMap =
+          new Map(
+            returnedRows.map(
+              (row) => [
+                String(
+                  row.table_name ||
+                    ""
+                ),
+
+                Number(
+                  row.row_count ||
+                    0
+                ),
+              ]
+            )
+          );
+
+        const resultRows =
+          systemHealthTables.map(
+            ({
+              tableName,
+              label,
+            }) => {
+              const tableExists =
+                countMap.has(
+                  tableName
+                );
+
+              const tableCount =
+                tableExists
+                  ? Number(
+                      countMap.get(
+                        tableName
+                      ) || 0
+                    )
+                  : 0;
+
+              return {
+                tableName,
+                label,
+
+                websiteCount:
+                  tableExists
+                    ? tableCount
+                    : "غير موجود",
+
+                supabaseCount:
+                  tableExists
+                    ? tableCount
+                    : "غير موجود",
+
+                difference:
+                  tableExists
+                    ? 0
+                    : "غير متاح",
+
+                status:
+                  tableExists
+                    ? "متصل بـ Supabase"
+                    : "الجدول غير موجود",
+
+                statusCode:
+                  tableExists
+                    ? "matched"
+                    : "error",
+
+                details:
+                  tableExists
+                    ? "الموقع يعتمد على هذا الجدول مباشرة داخل Supabase."
+                    : "لم تُرجع Supabase بيانات هذا الجدول.",
+              };
+            }
+          );
+
+        const matchingTables =
+          resultRows.filter(
+            (row) =>
+              row.statusCode ===
+              "matched"
+          ).length;
+
+        const errorTables =
+          resultRows.filter(
+            (row) =>
+              row.statusCode ===
+              "error"
+          ).length;
+
+        const totalRows =
+          resultRows.reduce(
+            (
+              total,
+              row
+            ) =>
+              total +
+              (
+                typeof row.supabaseCount ===
+                "number"
+                  ? row.supabaseCount
+                  : 0
+              ),
+            0
+          );
+
+        setSystemHealth({
+          loading: false,
+
+          checkedAt:
+            new Date()
+              .toLocaleString(
+                "ar-SA",
+                {
+                  timeZone:
+                    "Asia/Riyadh",
+                }
+              ),
+
+          rows:
+            resultRows,
+
+          matchingTables,
+
+          mismatchingTables: 0,
+
+          errorTables,
+
+          totalWebsiteRows:
+            totalRows,
+
+          totalSupabaseRows:
+            totalRows,
+
+          allMatched:
+            matchingTables ===
+              systemHealthTables.length &&
+            errorTables === 0,
+
+          fatalError: "",
         });
       } catch (error) {
-        result.rows.push({ tableName, localCount: "-", supabaseCount: "Error", status: error.message || "Error" });
-      }
-    }
+        console.log(
+          "System health check error:",
+          error
+        );
 
-    setSystemHealth(result);
-  };
+        setSystemHealth({
+          loading: false,
+
+          checkedAt:
+            new Date()
+              .toLocaleString(
+                "ar-SA",
+                {
+                  timeZone:
+                    "Asia/Riyadh",
+                }
+              ),
+
+          rows: [],
+
+          matchingTables: 0,
+
+          mismatchingTables: 0,
+
+          errorTables:
+            systemHealthTables.length,
+
+          totalWebsiteRows: 0,
+
+          totalSupabaseRows: 0,
+
+          allMatched: false,
+
+          fatalError:
+            error?.message ===
+            "SUPER_ADMIN_REQUIRED"
+              ? "هذا الفحص متاح للـ Super Admin فقط."
+              : error?.message ||
+                "تعذر قراءة بيانات Supabase.",
+        });
+      }
+    };
 
   const checkServerHealth = async () => {
     try {
@@ -18515,49 +20518,71 @@ const settingsFieldGridStyle = {
   ]);
 
 
-  const settingsTabButton = (key, label) => (
-    <button
-      className={`paradise-settings-tab-button${
-        settingsActiveTab === key
-          ? " paradise-settings-tab-button-active"
-          : ""
-      }`}
-      onClick={() =>
-        setSettingsActiveTab(key)
-      }
-      style={{
-        ...buttonStyle,
-        minHeight: "50px",
-        padding: "0 18px",
-        fontSize: "14px",
-        fontWeight: 950,
-        background:
-          settingsActiveTab === key
-            ? "linear-gradient(135deg, #4b2e1f, #805d45)"
-            : "linear-gradient(145deg, rgba(255,255,255,0.92), rgba(248,241,233,0.82))",
-        color:
-          settingsActiveTab === key
-            ? "white"
-            : "#3a2418",
-        border:
-          settingsActiveTab === key
-            ? "1px solid rgba(75,46,31,0.52)"
-            : "1px solid rgba(214,199,184,0.95)",
-        borderRadius: "17px",
-        boxShadow:
-          settingsActiveTab === key
-            ? "0 12px 24px rgba(75,46,31,0.20)"
-            : "0 8px 20px rgba(75,46,31,0.055), inset 0 1px 0 rgba(255,255,255,0.78)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: "10px",
-        whiteSpace: "nowrap",
-      }}
-    >
-      {label}
-    </button>
-  );
+  const settingsTabButton = (key, label) => {
+    const isActive =
+      settingsActiveTab === key;
+
+    return (
+      <button
+        type="button"
+        className={`paradise-settings-tab-button${
+          isActive
+            ? " paradise-settings-tab-button-active"
+            : ""
+        }`}
+        onClick={() =>
+          setSettingsActiveTab(key)
+        }
+        style={{
+          ...buttonStyle,
+          minHeight: "54px",
+          padding: "0 20px",
+          fontSize: "14px",
+          fontWeight: 900,
+          background: isActive
+            ? "linear-gradient(135deg, #8c6d55 0%, #aa8a70 55%, #bea188 100%)"
+            : "linear-gradient(145deg, rgba(255,255,255,0.94), rgba(242,232,222,0.88))",
+          color: isActive
+            ? "#fffdf9"
+            : "#5a4030",
+          border: isActive
+            ? "1px solid rgba(128,98,76,0.52)"
+            : "1px solid rgba(207,183,162,0.68)",
+          borderRadius: "18px",
+          boxShadow: isActive
+            ? "0 14px 28px rgba(112,82,61,0.22), inset 0 1px 0 rgba(255,255,255,0.28)"
+            : "0 8px 20px rgba(92,65,47,0.055), inset 0 1px 0 rgba(255,255,255,0.92)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "9px",
+          whiteSpace: "nowrap",
+          transform: isActive
+            ? "translateY(-1px)"
+            : "translateY(0)",
+          transition:
+            "transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease",
+        }}
+      >
+        <span
+          style={{
+            width: "7px",
+            height: "7px",
+            flex: "0 0 7px",
+            borderRadius: "50%",
+            background: isActive
+              ? "#fff9ef"
+              : "#c3a58c",
+            boxShadow: isActive
+              ? "0 0 0 4px rgba(255,249,239,0.15)"
+              : "none",
+          }}
+        />
+
+        <span>{label}</span>
+      </button>
+    );
+  };
 
   const renderPermissionChecks = (type, options) => {
   const key = type === "menu" ? "menuPermissions" : "actionPermissions";
@@ -18594,52 +20619,571 @@ const settingsFieldGridStyle = {
   );
 };
 
-  const renderSystemHealthCard = () => (
-    <div style={{ ...settingsRowStyle, padding: "18px 20px" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "14px", flexWrap: "wrap", marginBottom: systemHealth ? "14px" : 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-          <div style={{ width: "50px", height: "50px", borderRadius: "16px", background: "rgba(227,213,198,0.6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "23px" }}>⌁</div>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-              <h3 style={{ ...settingsSectionTitleStyle, margin: 0 }}>حالة النظام</h3>
-              <span style={{ background: "#dff2d8", color: "#34734f", borderRadius: "999px", padding: "6px 15px", fontWeight: 950, fontSize: "12px" }}>Healthy</span>
+  const renderSystemHealthCard =
+    () => {
+      const healthBadge =
+        systemHealth?.loading
+          ? {
+              label:
+                "جاري الفحص",
+              background:
+                "#fff1d6",
+              color:
+                "#8a6224",
+            }
+          : systemHealth
+              ?.fatalError
+          ? {
+              label:
+                "فشل الفحص",
+              background:
+                "#f5d9d1",
+              color:
+                "#9b4b3d",
+            }
+          : systemHealth
+              ?.allMatched
+          ? {
+              label:
+                "متطابق بالكامل",
+              background:
+                "#dff2d8",
+              color:
+                "#34734f",
+            }
+          : systemHealth
+          ? {
+              label:
+                "يحتاج مراجعة",
+              background:
+                "#fff1d6",
+              color:
+                "#8a6224",
+            }
+          : {
+              label:
+                "جاهز للفحص",
+              background:
+                "rgba(227,213,198,0.7)",
+              color:
+                "#4b2e1f",
+            };
+
+      const summaryCards =
+        systemHealth &&
+        !systemHealth.loading
+          ? [
+              {
+                label:
+                  "الجداول المفحوصة",
+                value:
+                  `${systemHealth.rows.length} من ${systemHealthTables.length}`,
+              },
+              {
+                label:
+                  "الجداول المتطابقة",
+                value:
+                  systemHealth.matchingTables,
+              },
+              {
+                label:
+                  "الجداول المختلفة",
+                value:
+                  systemHealth.mismatchingTables,
+              },
+              {
+                label:
+                  "أخطاء الفحص",
+                value:
+                  systemHealth.errorTables,
+              },
+              {
+                label:
+                  "إجمالي بيانات الموقع",
+                value:
+                  systemHealth.totalWebsiteRows,
+              },
+              {
+                label:
+                  "إجمالي بيانات Supabase",
+                value:
+                  systemHealth.totalSupabaseRows,
+              },
+            ]
+          : [];
+
+      return (
+        <div
+          style={{
+            ...settingsRowStyle,
+            padding:
+              "18px 20px",
+          }}
+        >
+          <div
+            style={{
+              display:
+                "flex",
+              alignItems:
+                "center",
+              justifyContent:
+                "space-between",
+              gap: "14px",
+              flexWrap:
+                "wrap",
+              marginBottom:
+                systemHealth
+                  ? "16px"
+                  : 0,
+            }}
+          >
+            <div
+              style={{
+                display:
+                  "flex",
+                alignItems:
+                  "center",
+                gap: "14px",
+              }}
+            >
+              <div
+                style={{
+                  width:
+                    "50px",
+                  height:
+                    "50px",
+                  borderRadius:
+                    "16px",
+                  background:
+                    "rgba(227,213,198,0.6)",
+                  display:
+                    "flex",
+                  alignItems:
+                    "center",
+                  justifyContent:
+                    "center",
+                  fontSize:
+                    "23px",
+                }}
+              >
+                ⌁
+              </div>
+
+              <div>
+                <div
+                  style={{
+                    display:
+                      "flex",
+                    alignItems:
+                      "center",
+                    gap:
+                      "12px",
+                    flexWrap:
+                      "wrap",
+                  }}
+                >
+                  <h3
+                    style={{
+                      ...settingsSectionTitleStyle,
+                      margin: 0,
+                    }}
+                  >
+                    تطابق بيانات الموقع مع Supabase
+                  </h3>
+
+                  <span
+                    style={{
+                      background:
+                        healthBadge.background,
+                      color:
+                        healthBadge.color,
+                      borderRadius:
+                        "999px",
+                      padding:
+                        "6px 15px",
+                      fontWeight:
+                        950,
+                      fontSize:
+                        "12px",
+                    }}
+                  >
+                    {
+                      healthBadge.label
+                    }
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    marginTop:
+                      "6px",
+                    color:
+                      "#7a5a43",
+                    fontWeight:
+                      800,
+                    fontSize:
+                      "13px",
+                    lineHeight:
+                      1.7,
+                  }}
+                >
+                  {systemHealth
+                    ?.checkedAt
+                    ? `آخر فحص: ${systemHealth.checkedAt}`
+                    : "يفحص جميع جداول Paradise Spa ويقارن قراءة الموقع بالعدد المرجعي داخل Supabase."}
+                </div>
+              </div>
             </div>
-            <div style={{ marginTop: "5px", color: "#7a5a43", fontWeight: 800, fontSize: "13px" }}>{systemHealth?.checkedAt ? `آخر فحص: ${systemHealth.checkedAt}` : "اضغط فحص النظام لتحديث حالة الجداول"}</div>
+
+            <button
+              type="button"
+              onClick={
+                checkSystemHealth
+              }
+              disabled={
+                Boolean(
+                  systemHealth
+                    ?.loading
+                )
+              }
+              style={{
+                ...settingsPrimaryButtonStyle,
+
+                opacity:
+                  systemHealth
+                    ?.loading
+                    ? 0.65
+                    : 1,
+
+                cursor:
+                  systemHealth
+                    ?.loading
+                    ? "wait"
+                    : "pointer",
+              }}
+            >
+              {systemHealth
+                ?.loading
+                ? "جاري فحص جميع البيانات..."
+                : "فحص جميع البيانات الآن"}
+            </button>
           </div>
+
+          {systemHealth
+            ?.fatalError ? (
+            <div
+              style={{
+                padding:
+                  "14px",
+                borderRadius:
+                  "14px",
+                background:
+                  "#fff4f1",
+                color:
+                  "#9b4b3d",
+                fontWeight:
+                  900,
+                lineHeight:
+                  1.8,
+                marginBottom:
+                  "14px",
+              }}
+            >
+              {
+                systemHealth.fatalError
+              }
+            </div>
+          ) : null}
+
+          {summaryCards
+            .length > 0 ? (
+            <div
+              style={{
+                display:
+                  "grid",
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(150px, 1fr))",
+                gap: "10px",
+                marginBottom:
+                  "16px",
+              }}
+            >
+              {summaryCards.map(
+                (card) => (
+                  <div
+                    key={
+                      card.label
+                    }
+                    style={{
+                      ...settingsMiniCardStyle,
+                      textAlign:
+                        "center",
+                    }}
+                  >
+                    <div
+                      style={{
+                        color:
+                          "#7a5a43",
+                        fontWeight:
+                          850,
+                        fontSize:
+                          "12px",
+                      }}
+                    >
+                      {
+                        card.label
+                      }
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop:
+                          "7px",
+                        color:
+                          "#3a2418",
+                        fontWeight:
+                          950,
+                        fontSize:
+                          "20px",
+                      }}
+                    >
+                      {
+                        card.value
+                      }
+                    </div>
+                  </div>
+                )
+              )}
+            </div>
+          ) : null}
+
+          {systemHealth
+            ?.rows?.length >
+          0 ? (
+            <div
+              style={{
+                overflowX:
+                  "auto",
+              }}
+            >
+              <table
+                style={{
+                  width:
+                    "100%",
+                  minWidth:
+                    "920px",
+                  borderCollapse:
+                    "separate",
+                  borderSpacing:
+                    "0 6px",
+                  direction:
+                    "rtl",
+                  textAlign:
+                    "right",
+                }}
+              >
+                <thead>
+                  <tr>
+                    {[
+                      "الجدول",
+                      "بيانات الموقع",
+                      "بيانات Supabase",
+                      "الفرق",
+                      "الحالة",
+                    ].map(
+                      (title) => (
+                        <th
+                          key={
+                            title
+                          }
+                          style={{
+                            padding:
+                              "8px 12px",
+                            color:
+                              "#3a2418",
+                            fontSize:
+                              "13px",
+                          }}
+                        >
+                          {
+                            title
+                          }
+                        </th>
+                      )
+                    )}
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {systemHealth.rows.map(
+                    (row) => (
+                      <tr
+                        key={
+                          row.tableName
+                        }
+                        style={{
+                          background:
+                            row.statusCode ===
+                            "matched"
+                              ? "rgba(223,242,216,0.38)"
+                              : "rgba(255,241,214,0.45)",
+                        }}
+                      >
+                        <td
+                          style={{
+                            padding:
+                              "10px 12px",
+                            fontWeight:
+                              900,
+                          }}
+                        >
+                          <div>
+                            {
+                              row.label
+                            }
+                          </div>
+
+                          <div
+                            style={{
+                              marginTop:
+                                "4px",
+                              color:
+                                "#7a5a43",
+                              fontSize:
+                                "11px",
+                              fontWeight:
+                                800,
+                              direction:
+                                "ltr",
+                              textAlign:
+                                "right",
+                            }}
+                          >
+                            {
+                              row.tableName
+                            }
+                          </div>
+                        </td>
+
+                        <td
+                          style={{
+                            padding:
+                              "10px 12px",
+                            fontWeight:
+                              950,
+                          }}
+                        >
+                          {
+                            row.websiteCount
+                          }
+                        </td>
+
+                        <td
+                          style={{
+                            padding:
+                              "10px 12px",
+                            fontWeight:
+                              950,
+                          }}
+                        >
+                          {
+                            row.supabaseCount
+                          }
+                        </td>
+
+                        <td
+                          style={{
+                            padding:
+                              "10px 12px",
+                            fontWeight:
+                              950,
+                          }}
+                        >
+                          {
+                            row.difference
+                          }
+                        </td>
+
+                        <td
+                          style={{
+                            padding:
+                              "10px 12px",
+                            fontWeight:
+                              900,
+                            color:
+                              row.statusCode ===
+                              "matched"
+                                ? "#34734f"
+                                : "#9b4b3d",
+                          }}
+                        >
+                          <div>
+                            ●{" "}
+                            {
+                              row.status
+                            }
+                          </div>
+
+                          {row.details ? (
+                            <div
+                              style={{
+                                marginTop:
+                                  "5px",
+                                fontSize:
+                                  "11px",
+                                lineHeight:
+                                  1.6,
+                                fontWeight:
+                                  800,
+                              }}
+                            >
+                              {
+                                row.details
+                              }
+                            </div>
+                          ) : null}
+                        </td>
+                      </tr>
+                    )
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+
+          {systemHealth
+            ?.allMatched ? (
+            <div
+              style={{
+                marginTop:
+                  "14px",
+                padding:
+                  "14px",
+                borderRadius:
+                  "14px",
+                background:
+                  "#e5f4e7",
+                color:
+                  "#34734f",
+                fontWeight:
+                  950,
+                lineHeight:
+                  1.8,
+                textAlign:
+                  "center",
+              }}
+            >
+              جميع الجداول والبيانات متطابقة: بيانات الموقع تساوي بيانات Supabase.
+            </div>
+          ) : null}
         </div>
-        <button onClick={checkSystemHealth} style={settingsPrimaryButtonStyle}>فحص النظام الآن</button>
-      </div>
-      {systemHealth && (
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0 5px", direction: "ltr", textAlign: "left" }}>
-            <thead>
-              <tr>
-                {['Status', 'Supabase Count', 'App Count', 'Table'].map((title) => (
-                  <th key={title} style={{ padding: "7px 12px", color: "#3a2418", fontSize: "13px" }}>{title}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {systemHealth.rows.map((row) => (
-                <tr key={row.tableName}>
-                  <td style={{ padding: "3px 12px", fontWeight: 900 }}><span style={{ color: row.status === "OK" ? "#4caf35" : "#9b4b3d", marginRight: "8px" }}>●</span>{row.status}</td>
-                  <td style={{ padding: "3px 12px", fontWeight: 800 }}>{row.supabaseCount}</td>
-                  <td style={{ padding: "3px 12px", fontWeight: 800 }}>{row.localCount}</td>
-                  <td style={{ padding: "3px 12px", fontWeight: 800 }}>{row.tableName}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
+      );
+    };
 
   const renderSettingsContent = () => {
     if (settingsActiveTab === "accounts") {
       return (
         <div style={{ display: "grid", gap: "14px" }}>
-          {renderSystemHealthCard()}
 <div style={{ ...settingsRowStyle, overflowX: "auto", padding: "14px" }}>
             <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0", minWidth: "760px", overflow: "hidden", borderRadius: "18px" }}>
               <thead>
@@ -18684,16 +21228,94 @@ const settingsFieldGridStyle = {
               </div>
             </div>
 
+            <div
+              aria-hidden="true"
+              style={{
+                position: "absolute",
+                left: "-10000px",
+                width: "1px",
+                height: "1px",
+                overflow: "hidden",
+                opacity: 0,
+                pointerEvents: "none",
+              }}
+            >
+              <input
+                type="text"
+                name="username"
+                autoComplete="username"
+                tabIndex={-1}
+              />
+
+              <input
+                type="password"
+                name="password"
+                autoComplete="current-password"
+                tabIndex={-1}
+              />
+            </div>
+
             <div style={settingsFieldGridStyle}>
-              <input placeholder="رقم الموظف" value={accountDraft.username} onChange={(e) => setAccountDraft((prev) => ({ ...prev, username: e.target.value }))} style={settingsInputStyle} />
-              <input placeholder="اسم الموظف" value={accountDraft.displayName} onChange={(e) => setAccountDraft((prev) => ({ ...prev, displayName: e.target.value }))} style={settingsInputStyle} />
-              <select value={accountDraft.role} onChange={(e) => setAccountDraft((prev) => ({ ...prev, role: e.target.value }))} style={settingsInputStyle}>
+              <input
+                name="paradise-employee-id"
+                autoComplete="off"
+                placeholder="رقم الموظف"
+                value={accountDraft.username}
+                onChange={(e) =>
+                  setAccountDraft((prev) => ({
+                    ...prev,
+                    username: e.target.value,
+                  }))
+                }
+                style={settingsInputStyle}
+              />
+
+              <input
+                name="paradise-employee-display-name"
+                autoComplete="off"
+                placeholder="اسم الموظف"
+                value={accountDraft.displayName}
+                onChange={(e) =>
+                  setAccountDraft((prev) => ({
+                    ...prev,
+                    displayName: e.target.value,
+                  }))
+                }
+                style={settingsInputStyle}
+              />
+
+              <select
+                name="paradise-employee-role"
+                autoComplete="off"
+                value={accountDraft.role}
+                onChange={(e) =>
+                  setAccountDraft((prev) => ({
+                    ...prev,
+                    role: e.target.value,
+                  }))
+                }
+                style={settingsInputStyle}
+              >
                 <option value="owner">Owner Majed</option>
                 <option value="manager">Manager</option>
                 <option value="employee">Employee</option>
                 <option value="readonly">Read Only</option>
               </select>
-              <input placeholder="كلمة المرور" type="password" value={accountDraft.password} onChange={(e) => setAccountDraft((prev) => ({ ...prev, password: e.target.value }))} style={settingsInputStyle} />
+
+              <input
+                name="paradise-new-employee-password"
+                autoComplete="new-password"
+                placeholder="كلمة المرور"
+                type="password"
+                value={accountDraft.password}
+                onChange={(e) =>
+                  setAccountDraft((prev) => ({
+                    ...prev,
+                    password: e.target.value,
+                  }))
+                }
+                style={settingsInputStyle}
+              />
             </div>
 
             <div style={{ display: "grid", gap: "16px", marginTop: "18px" }}>
@@ -18713,7 +21335,688 @@ const settingsFieldGridStyle = {
             </div>
           </div>
 
-          
+          {isOwnerUser ? (
+            <div
+              style={{
+                ...settingsRowStyle,
+                display: "grid",
+                gap: "20px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  justifyContent: "space-between",
+                  gap: "14px",
+                  flexWrap: "wrap",
+                }}
+              >
+                <div>
+                  <h3
+                    style={{
+                      ...settingsSectionTitleStyle,
+                      marginBottom: "6px",
+                    }}
+                  >
+                    بيانات الأخصائيات
+                  </h3>
+
+                  <p
+                    style={{
+                      ...settingsHelpTextStyle,
+                      margin: 0,
+                    }}
+                  >
+                    إضافة الأخصائيات وتعديل بيانات العقد والإقامة والتحكم في حالة ظهورهن داخل النظام.
+                  </p>
+                </div>
+
+                <div
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    minHeight: "38px",
+                    padding: "0 14px",
+                    borderRadius: "999px",
+                    background: "rgba(183,151,124,0.14)",
+                    border: "1px solid rgba(183,151,124,0.28)",
+                    color: "#6a4a37",
+                    fontSize: "13px",
+                    fontWeight: 900,
+                  }}
+                >
+                  <span>
+                    {therapistsAdmin.length}
+                  </span>
+
+                  <span>
+                    أخصائية مسجلة
+                  </span>
+                </div>
+              </div>
+
+              {therapistsAdminError ? (
+                <div
+                  style={{
+                    padding: "13px 15px",
+                    borderRadius: "16px",
+                    background: "#fff1ed",
+                    border: "1px solid rgba(193,55,44,0.22)",
+                    color: "#a13e34",
+                    fontWeight: 900,
+                    lineHeight: 1.7,
+                  }}
+                >
+                  {therapistsAdminError}
+                </div>
+              ) : null}
+
+              <div
+                style={{
+                  padding: "18px",
+                  borderRadius: "22px",
+                  background:
+                    "linear-gradient(145deg, rgba(255,255,255,0.95), rgba(241,228,215,0.82))",
+                  border:
+                    "1px solid rgba(205,177,153,0.58)",
+                  boxShadow:
+                    "0 12px 30px rgba(92,65,47,0.065), inset 0 1px 0 rgba(255,255,255,0.92)",
+                }}
+              >
+                <div
+                  style={{
+                    marginBottom: "14px",
+                    color: "#4a3325",
+                    fontSize: "16px",
+                    fontWeight: 950,
+                  }}
+                >
+                  {therapistDraft.therapistId
+                    ? "تعديل بيانات الأخصائية"
+                    : "إضافة أخصائية جديدة"}
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
+                    gap: "14px",
+                  }}
+                >
+                  <label
+                    style={{
+                      display: "grid",
+                      gap: "7px",
+                      color: "#684b38",
+                      fontSize: "13px",
+                      fontWeight: 900,
+                    }}
+                  >
+                    اسم الأخصائية
+
+                    <input
+                      type="text"
+                      autoComplete="off"
+                      placeholder="اسم الأخصائية"
+                      value={therapistDraft.name}
+                      onChange={(event) =>
+                        setTherapistDraft(
+                          (previous) => ({
+                            ...previous,
+                            name:
+                              event.target
+                                .value,
+                          })
+                        )
+                      }
+                      style={settingsInputStyle}
+                    />
+                  </label>
+
+                  <label
+                    style={{
+                      display: "grid",
+                      gap: "7px",
+                      color: "#684b38",
+                      fontSize: "13px",
+                      fontWeight: 900,
+                    }}
+                  >
+                    رقم الإقامة
+
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      placeholder="رقم الإقامة"
+                      value={
+                        therapistDraft
+                          .iqamaNumber
+                      }
+                      onChange={(event) =>
+                        setTherapistDraft(
+                          (previous) => ({
+                            ...previous,
+                            iqamaNumber:
+                              event.target
+                                .value,
+                          })
+                        )
+                      }
+                      style={settingsInputStyle}
+                    />
+                  </label>
+
+                  <label
+                    style={{
+                      display: "grid",
+                      gap: "7px",
+                      color: "#684b38",
+                      fontSize: "13px",
+                      fontWeight: 900,
+                    }}
+                  >
+                    تاريخ بداية العقد
+
+                    <input
+                      type="date"
+                      value={
+                        therapistDraft
+                          .contractStartDate
+                      }
+                      onChange={(event) =>
+                        setTherapistDraft(
+                          (previous) => ({
+                            ...previous,
+                            contractStartDate:
+                              event.target
+                                .value,
+                          })
+                        )
+                      }
+                      style={settingsInputStyle}
+                    />
+                  </label>
+
+                  <label
+                    style={{
+                      display: "grid",
+                      gap: "7px",
+                      color: "#684b38",
+                      fontSize: "13px",
+                      fontWeight: 900,
+                    }}
+                  >
+                    تاريخ انتهاء العقد
+
+                    <input
+                      type="date"
+                      value={
+                        therapistDraft
+                          .contractEndDate
+                      }
+                      onChange={(event) =>
+                        setTherapistDraft(
+                          (previous) => ({
+                            ...previous,
+                            contractEndDate:
+                              event.target
+                                .value,
+                          })
+                        )
+                      }
+                      style={settingsInputStyle}
+                    />
+                  </label>
+
+                  <label
+                    style={{
+                      display: "grid",
+                      gap: "7px",
+                      color: "#684b38",
+                      fontSize: "13px",
+                      fontWeight: 900,
+                    }}
+                  >
+                    تاريخ انتهاء الإقامة
+
+                    <input
+                      type="date"
+                      value={
+                        therapistDraft
+                          .iqamaExpiryDate
+                      }
+                      onChange={(event) =>
+                        setTherapistDraft(
+                          (previous) => ({
+                            ...previous,
+                            iqamaExpiryDate:
+                              event.target
+                                .value,
+                          })
+                        )
+                      }
+                      style={settingsInputStyle}
+                    />
+                  </label>
+
+                  <label
+                    style={{
+                      display: "grid",
+                      gap: "7px",
+                      color: "#684b38",
+                      fontSize: "13px",
+                      fontWeight: 900,
+                    }}
+                  >
+                    ترتيب الظهور
+
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      inputMode="numeric"
+                      placeholder="يُحدد تلقائيًا"
+                      value={
+                        therapistDraft
+                          .sortOrder
+                      }
+                      onChange={(event) =>
+                        setTherapistDraft(
+                          (previous) => ({
+                            ...previous,
+                            sortOrder:
+                              event.target
+                                .value,
+                          })
+                        )
+                      }
+                      style={settingsInputStyle}
+                    />
+                  </label>
+                </div>
+
+                <label
+                  style={{
+                    ...settingsMiniCardStyle,
+                    marginTop: "14px",
+                    minHeight: "54px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: "12px",
+                    cursor: "pointer",
+                    fontWeight: 900,
+                  }}
+                >
+                  <span>
+                    الأخصائية مفعّلة وتظهر في الخيارات الجديدة
+                  </span>
+
+                  <input
+                    type="checkbox"
+                    checked={
+                      therapistDraft.active !==
+                      false
+                    }
+                    onChange={(event) =>
+                      setTherapistDraft(
+                        (previous) => ({
+                          ...previous,
+                          active:
+                            event.target
+                              .checked,
+                        })
+                      )
+                    }
+                    style={{
+                      width: "21px",
+                      height: "21px",
+                      cursor: "pointer",
+                      accentColor: "#9c7a60",
+                    }}
+                  />
+                </label>
+
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "10px",
+                    marginTop: "16px",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={
+                      saveTherapistAdmin
+                    }
+                    disabled={
+                      therapistSaving
+                    }
+                    style={{
+                      ...settingsPrimaryButtonStyle,
+                      opacity:
+                        therapistSaving
+                          ? 0.65
+                          : 1,
+                      cursor:
+                        therapistSaving
+                          ? "wait"
+                          : "pointer",
+                    }}
+                  >
+                    {therapistSaving
+                      ? "جاري الحفظ..."
+                      : therapistDraft
+                          .therapistId
+                        ? "حفظ التعديل"
+                        : "إضافة الأخصائية"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={
+                      resetTherapistDraft
+                    }
+                    disabled={
+                      therapistSaving
+                    }
+                    style={
+                      settingsMutedButtonStyle
+                    }
+                  >
+                    {therapistDraft
+                      .therapistId
+                      ? "إلغاء التعديل"
+                      : "تفريغ"}
+                  </button>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gap: "12px",
+                }}
+              >
+                <div
+                  style={{
+                    color: "#4a3325",
+                    fontSize: "16px",
+                    fontWeight: 950,
+                  }}
+                >
+                  الأخصائيات المسجلات
+                </div>
+
+                {therapistsAdminLoading ? (
+                  <div
+                    style={{
+                      ...settingsMiniCardStyle,
+                      textAlign: "center",
+                      fontWeight: 900,
+                    }}
+                  >
+                    جاري تحميل بيانات الأخصائيات...
+                  </div>
+                ) : therapistsAdmin.length ===
+                  0 ? (
+                  <div
+                    style={{
+                      ...settingsMiniCardStyle,
+                      textAlign: "center",
+                      fontWeight: 900,
+                    }}
+                  >
+                    لا توجد أخصائيات مسجلات.
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "repeat(auto-fit, minmax(min(300px, 100%), 1fr))",
+                      gap: "14px",
+                    }}
+                  >
+                    {therapistsAdmin.map(
+                      (therapist) => (
+                        <div
+                          key={
+                            therapist.id
+                          }
+                          style={{
+                            ...settingsMiniCardStyle,
+                            display: "grid",
+                            gap: "14px",
+                            padding: "17px",
+                            opacity:
+                              therapist.active
+                                ? 1
+                                : 0.72,
+                          }}
+                        >
+                          <div
+                            style={{
+                              display:
+                                "flex",
+                              alignItems:
+                                "center",
+                              justifyContent:
+                                "space-between",
+                              gap: "12px",
+                            }}
+                          >
+                            <div
+                              style={{
+                                color:
+                                  "#4a3325",
+                                fontSize:
+                                  "18px",
+                                fontWeight:
+                                  950,
+                              }}
+                            >
+                              {
+                                therapist.name
+                              }
+                            </div>
+
+                            <span
+                              style={{
+                                display:
+                                  "inline-flex",
+                                alignItems:
+                                  "center",
+                                justifyContent:
+                                  "center",
+                                minHeight:
+                                  "32px",
+                                padding:
+                                  "0 12px",
+                                borderRadius:
+                                  "999px",
+                                background:
+                                  therapist.active
+                                    ? "#e2f1df"
+                                    : "#f6ddd6",
+                                color:
+                                  therapist.active
+                                    ? "#34734f"
+                                    : "#9b4b3d",
+                                fontSize:
+                                  "12px",
+                                fontWeight:
+                                  950,
+                              }}
+                            >
+                              {therapist.active
+                                ? "مفعّلة"
+                                : "متوقفة"}
+                            </span>
+                          </div>
+
+                          <div
+                            style={{
+                              display:
+                                "grid",
+                              gridTemplateColumns:
+                                "repeat(2, minmax(0, 1fr))",
+                              gap: "10px",
+                            }}
+                          >
+                            {[
+                              [
+                                "رقم الإقامة",
+                                therapist
+                                  .iqamaNumber ||
+                                  "غير مسجل",
+                              ],
+                              [
+                                "بداية العقد",
+                                therapist
+                                  .contractStartDate ||
+                                  "غير مسجل",
+                              ],
+                              [
+                                "نهاية العقد",
+                                therapist
+                                  .contractEndDate ||
+                                  "غير مسجل",
+                              ],
+                              [
+                                "نهاية الإقامة",
+                                therapist
+                                  .iqamaExpiryDate ||
+                                  "غير مسجل",
+                              ],
+                              [
+                                "ترتيب الظهور",
+                                String(
+                                  therapist
+                                    .sortOrder ??
+                                    0
+                                ),
+                              ],
+                            ].map(
+                              ([
+                                label,
+                                value,
+                              ]) => (
+                                <div
+                                  key={
+                                    label
+                                  }
+                                  style={{
+                                    padding:
+                                      "11px",
+                                    borderRadius:
+                                      "14px",
+                                    background:
+                                      "rgba(255,255,255,0.72)",
+                                    border:
+                                      "1px solid rgba(213,191,171,0.48)",
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      marginBottom:
+                                        "5px",
+                                      color:
+                                        "#8a6b55",
+                                      fontSize:
+                                        "11px",
+                                      fontWeight:
+                                        850,
+                                    }}
+                                  >
+                                    {label}
+                                  </div>
+
+                                  <div
+                                    style={{
+                                      color:
+                                        "#4a3325",
+                                      fontSize:
+                                        "13px",
+                                      fontWeight:
+                                        950,
+                                      overflowWrap:
+                                        "anywhere",
+                                    }}
+                                  >
+                                    {value}
+                                  </div>
+                                </div>
+                              )
+                            )}
+                          </div>
+
+                          <div
+                            style={{
+                              display:
+                                "flex",
+                              gap: "9px",
+                              flexWrap:
+                                "wrap",
+                            }}
+                          >
+                            <button
+                              type="button"
+                              onClick={() =>
+                                startEditTherapist(
+                                  therapist
+                                )
+                              }
+                              disabled={
+                                therapistSaving
+                              }
+                              style={{
+                                ...settingsMutedButtonStyle,
+                                flex:
+                                  "1 1 120px",
+                              }}
+                            >
+                              تعديل
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setTherapistActiveAdmin(
+                                  therapist
+                                )
+                              }
+                              disabled={
+                                therapistSaving
+                              }
+                              style={{
+                                ...settingsPrimaryButtonStyle,
+                                flex:
+                                  "1 1 120px",
+                                background:
+                                  therapist.active
+                                    ? "linear-gradient(135deg, #a65f50, #c27a68)"
+                                    : "linear-gradient(135deg, #66805f, #88a17d)",
+                              }}
+                            >
+                              {therapist.active
+                                ? "إيقاف"
+                                : "تفعيل"}
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : null}
         </div>
       );
     }
@@ -18841,22 +22144,6 @@ const settingsFieldGridStyle = {
 
     if (settingsActiveTab === "system") {
       return renderSystemHealthCard();
-    }
-
-    if (settingsActiveTab === "server") {
-      const serverRows = serverHealth && !serverHealth.error
-        ? Object.entries(serverHealth)
-        : [["Status", serverHealth?.error || "اضغط فحص السيرفر"], ["Details", serverHealth?.details || ""]];
-      return (
-        <div style={{ display: "grid", gap: "16px" }}>
-          <div style={{ ...settingsRowStyle, padding: "14px 18px" }}>
-            <h3 style={settingsSectionTitleStyle}>السيرفر</h3>
-           
-            <button onClick={checkServerHealth} style={settingsPrimaryButtonStyle}>فحص السيرفر</button>
-          </div>
-          <div style={settingsRowStyle}>{serverRows.map(([key, value]) => <div key={key} style={{ marginBottom: "10px", fontWeight: 850 }}><b>{key}:</b> {String(value)}</div>)}</div>
-        </div>
-      );
     }
 
     if (settingsActiveTab === "zatca") {
@@ -20090,16 +23377,7 @@ const settingsFieldGridStyle = {
       );
     }
 
-    return (
-      <div style={settingsRowStyle}>
-        <h3 style={settingsSectionTitleStyle}>تحميل الجدول يدوي</h3>
-        
-        <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
-          <input type="month" value={manualExcelMonth} onChange={(e) => setManualExcelMonth(e.target.value)} style={{ ...settingsInputStyle, width: "240px" }} />
-          <button onClick={() => exportFinanceMonthToExcel(manualExcelMonth)} style={settingsPrimaryButtonStyle}>تحميل الجدول يدوي</button>
-        </div>
-      </div>
-    );
+    return null;
   };
 
   const renderSettingsScreen = () => (
@@ -20245,18 +23523,8 @@ const settingsFieldGridStyle = {
               )}
 
               {settingsTabButton(
-                "server",
-                "السيرفر"
-              )}
-
-              {settingsTabButton(
                 "zatca",
                 "الفوترة الإلكترونية"
-              )}
-
-              {settingsTabButton(
-                "excel",
-                "شهري Excel"
               )}
             </div>
 
@@ -22684,18 +25952,27 @@ if (screen === "menu") {
                       onChange={(event) => updateAdditionalClientDraft("service", event.target.value)}
                       style={{ ...inputStyle, width: "100%", margin: 0, boxSizing: "border-box" }}
                     />
-                    <select
-                      value={additionalClientDraft.therapist}
-                      onChange={(event) => updateAdditionalClientDraft("therapist", event.target.value)}
-                      style={{ ...inputStyle, width: "100%", margin: 0, boxSizing: "border-box" }}
-                    >
-                      <option value="">اسم الإخصائية</option>
-                      {therapistOptions.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
+                    <input
+                      list="therapistList"
+                      placeholder="اسم الأخصائية"
+                      value={
+                        additionalClientDraft
+                          .therapist
+                      }
+                      onChange={(event) =>
+                        updateAdditionalClientDraft(
+                          "therapist",
+                          event.target.value
+                        )
+                      }
+                      style={{
+                        ...inputStyle,
+                        width: "100%",
+                        margin: 0,
+                        boxSizing:
+                          "border-box",
+                      }}
+                    />
                     <select
                       value={additionalClientDraft.sendTo}
                       onChange={(event) => updateAdditionalClientDraft("sendTo", event.target.value)}
@@ -24959,19 +28236,20 @@ margin: "0 auto",
                       scheduleCommissionGridStyle
                     }
                   >
-                    {[
-                      [
-                        "commissionJoce",
-                        "Joce Commission",
-                      ],
-                      [
-                        "commissionCaren",
-                        "Caren Commission",
-                      ],
-                    ].map(
-                      ([field, label]) => (
+                    {getTherapistCommissionEntries(
+                      appointmentStats.manual
+                    )
+                      .filter(
+                        (commissionEntry) =>
+                          commissionEntry.active !==
+                          false
+                      )
+                      .map(
+                      (
+                        commissionEntry
+                      ) => (
                         <label
-                          key={field}
+                          key={`${commissionEntry.therapistId}-${commissionEntry.legacyField || "dynamic"}`}
                           style={
                             scheduleExpenseItemStyle
                           }
@@ -24981,17 +28259,18 @@ margin: "0 auto",
                               scheduleExpenseLabelStyle
                             }
                           >
-                            {label}
+                            {commissionEntry.name} Commission
                           </span>
 
                           <input
+                            type="text"
+                            inputMode="decimal"
                             value={
-                              appointmentStats
-                                .manual[field]
+                              commissionEntry.amount
                             }
                             onChange={(event) =>
-                              updateManualForDate(
-                                field,
+                              updateTherapistCommissionForDate(
+                                commissionEntry,
                                 event.target.value
                               )
                             }
@@ -31837,19 +35116,29 @@ if (screen === "finance") {
                   </h3>
 
                   {renderFinanceRows([
-                    [
-                      "Joce",
-                      financeStats.commissionJoce,
-                    ],
-                    [
-                      "Caren",
-                      financeStats.commissionCaren,
-                    ],
+                    ...(
+                      financeStats
+                        .therapistCommissionTotals ||
+                      []
+                    ).map(
+                      (
+                        commissionEntry
+                      ) => [
+                        commissionEntry.name ||
+                          "أخصائية سابقة",
+
+                        commissionEntry.amount ||
+                          0,
+                      ]
+                    ),
+
                     [
                       "Total",
                       financeStats
-                        .operatingExpenses
-                        .Commission,
+                        .totalCommission ??
+                        financeStats
+                          .operatingExpenses
+                          .Commission,
                     ],
                   ])}
                 </div>
