@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
+import JSZip from "jszip";
 import logo from "./logo.png";
 
 // 🖼️ CARDS
@@ -16981,161 +16982,660 @@ const settingsFieldGridStyle = {
     loadSettingsModuleData();
   };
 
-  const fetchFullTableRows = async (tableName) => {
-    const pageSize = 1000;
-    let allRows = [];
-    let from = 0;
-    let hasMore = true;
+  const requestBackupApi =
+    async (
+      accessToken,
+      requestBody
+    ) => {
+      const response =
+        await fetch(
+          "/api/backup-data",
+          {
+            method: "POST",
 
-    while (hasMore) {
-      const to = from + pageSize - 1;
-      const { data, error } = await supabase.from(tableName).select("*").range(from, to);
-      if (error) throw error;
-      const page = data || [];
-      allRows = [...allRows, ...page];
-      hasMore = page.length === pageSize;
-      from += pageSize;
-    }
+            headers: {
+              "Content-Type":
+                "application/json",
 
-    return allRows;
-  };
+              Authorization:
+                `Bearer ${accessToken}`,
+            },
 
-  const downloadBlob = (content, filename, type = "application/json;charset=utf-8;") => {
-    const blob = new Blob([content], { type });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-  };
+            body:
+              JSON.stringify(
+                requestBody
+              ),
+          }
+        );
 
-  const rowsToCsv = (rows) => {
-    if (!rows?.length) return "";
-    const columns = Array.from(rows.reduce((set, row) => {
-      Object.keys(row || {}).forEach((key) => set.add(key));
-      return set;
-    }, new Set()));
-    const escapeCsv = (value) => `"${String(typeof value === "object" && value !== null ? JSON.stringify(value) : value ?? "").replace(/"/g, '""')}"`;
-    return [columns.join(","), ...rows.map((row) => columns.map((column) => escapeCsv(row[column])).join(","))].join("\n");
-  };
+      let responseData = {};
 
-  const createFullBackup = async () => {
-    setBackupBusy(true);
-    try {
-      const today = getCurrentLocalDate();
-      const backup = {
-        app: "Paradise Spa",
-        version: "settings-module-backup-v1",
-        createdAt: new Date().toISOString(),
-        folderName: `ParadiseSpa_Backup_${today}`,
-        tables: {},
-      };
-
-      for (const tableName of settingsTables) {
-        try {
-          backup.tables[tableName] = await fetchFullTableRows(tableName);
-        } catch (error) {
-          backup.tables[tableName] = { error: error.message || String(error), rows: [] };
-        }
+      try {
+        responseData =
+          await response.json();
+      } catch {
+        responseData = {};
       }
 
-      downloadBlob(JSON.stringify(backup, null, 2), `${backup.folderName}.json`);
+      if (!response.ok) {
+        throw new Error(
+          responseData.error ||
+            "تعذر قراءة بيانات النسخة الاحتياطية."
+        );
+      }
 
-      Object.entries(backup.tables).forEach(([tableName, rows], index) => {
-        if (Array.isArray(rows)) {
-          setTimeout(() => {
-            downloadBlob("\uFEFF" + rowsToCsv(rows), `${backup.folderName}_${tableName}.csv`, "text/csv;charset=utf-8;");
-          }, 250 * (index + 1));
-        }
+      return responseData;
+    };
+
+  const createBackupJsonText = (
+    value
+  ) =>
+    JSON.stringify(
+      value,
+      null,
+      2
+    );
+
+  const calculateBackupSha256 =
+    async (content) => {
+      if (
+        !window.crypto?.subtle
+      ) {
+        throw new Error(
+          "المتصفح لا يدعم فحص سلامة النسخة الاحتياطية."
+        );
+      }
+
+      const encodedContent =
+        new TextEncoder().encode(
+          content
+        );
+
+      const hashBuffer =
+        await window.crypto.subtle.digest(
+          "SHA-256",
+          encodedContent
+        );
+
+      return Array.from(
+        new Uint8Array(
+          hashBuffer
+        )
+      )
+        .map((byte) =>
+          byte
+            .toString(16)
+            .padStart(2, "0")
+        )
+        .join("");
+    };
+
+  const addJsonFileToBackup =
+    async (
+      zipFile,
+      filePath,
+      value,
+      integrityFiles
+    ) => {
+      const fileContent =
+        createBackupJsonText(
+          value
+        );
+
+      const fileHash =
+        await calculateBackupSha256(
+          fileContent
+        );
+
+      zipFile.file(
+        filePath,
+        fileContent
+      );
+
+      integrityFiles.push({
+        path:
+          filePath,
+
+        bytes:
+          new Blob([
+            fileContent,
+          ]).size,
+
+        sha256:
+          fileHash,
       });
+    };
 
-      alert("تم إنشاء الباك أب. سيظهر ملف JSON كامل + ملفات CSV للجداول. احفظها داخل مجلد واحد بنفس تاريخ اليوم.");
-    } catch (error) {
-      console.log("Backup error:", error);
-      alert("فشل إنشاء الباك أب");
-    } finally {
-      setBackupBusy(false);
-    }
-  };
-
-  const restoreDeleteColumnByTable = {
-    clients: "id",
-    schedule_rows: "id",
-    daily_reports: "report_date",
-    app_data: "data_key",
-    gift_clients: "id",
-    referred_clients: "id",
-    potential_clients: "id",
-    employee_accounts: "id",
-  };
-
-  const restoreRowsToTable = async (tableName, rows) => {
-    if (!Array.isArray(rows)) return;
-    const deleteColumn = restoreDeleteColumnByTable[tableName];
-    if (deleteColumn) {
-      const { error: deleteError } = await supabase.from(tableName).delete().not(deleteColumn, "is", null);
-      if (deleteError) throw deleteError;
-    }
-
-    const chunkSize = 500;
-    for (let index = 0; index < rows.length; index += chunkSize) {
-      const chunk = rows.slice(index, index + chunkSize);
-      if (chunk.length > 0) {
-        const { error } = await supabase.from(tableName).insert(chunk);
-        if (error) throw error;
+  const createFullBackup =
+    async () => {
+      if (backupBusy) {
+        return;
       }
-    }
-  };
 
-  const restoreBackupFromFile = async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    setRestoreFileName(file.name);
+      setBackupBusy(true);
 
-    const text = await file.text();
-    let backup;
-    try {
-      backup = JSON.parse(text);
-    } catch {
-      alert("ملف الاستعادة غير صحيح. اختار ملف JSON الخاص بالباك أب.");
-      return;
-    }
+      try {
+        const {
+          data: sessionData,
+          error: sessionError,
+        } =
+          await supabase.auth
+            .getSession();
 
-    if (!backup?.tables) {
-      alert("ملف الباك أب لا يحتوي على tables");
-      return;
-    }
+        const accessToken =
+          sessionData?.session
+            ?.access_token;
 
-    const firstConfirm = window.confirm("استعادة الباك أب ستمسح الجداول الحالية وترجع بيانات الملف. لا تستخدمها إلا وقت الطوارئ. هل تريد المتابعة؟");
-    if (!firstConfirm) return;
-
-    const typed = window.prompt('للتأكيد النهائي اكتب RESTORE');
-    if (typed !== "RESTORE") {
-      alert("تم إلغاء الاستعادة");
-      return;
-    }
-
-    setRestoreBusy(true);
-    try {
-      for (const tableName of settingsTables) {
-        if (Array.isArray(backup.tables[tableName])) {
-          await restoreRowsToTable(tableName, backup.tables[tableName]);
+        if (
+          sessionError ||
+          !accessToken
+        ) {
+          throw new Error(
+            "انتهت جلسة الدخول. سجل الدخول مرة أخرى."
+          );
         }
+
+        const serverManifest =
+          await requestBackupApi(
+            accessToken,
+            {
+              action:
+                "manifest",
+            }
+          );
+
+        if (
+          serverManifest
+            ?.formatVersion !==
+              "paradise-backup-v2" ||
+          !Array.isArray(
+            serverManifest.tables
+          ) ||
+          serverManifest.tables
+            .length === 0
+        ) {
+          throw new Error(
+            "بيانات تعريف النسخة الاحتياطية غير مكتملة."
+          );
+        }
+
+        const storageInventory =
+          await requestBackupApi(
+            accessToken,
+            {
+              action:
+                "storage-buckets",
+            }
+          );
+
+        if (
+          Number(
+            storageInventory
+              ?.bucketCount || 0
+          ) > 0
+        ) {
+          throw new Error(
+            "تم العثور على ملفات أو Buckets داخل Supabase Storage. أوقف النظام النسخة حتى لا ينزّل نسخة ناقصة."
+          );
+        }
+
+        const zipFile =
+          new JSZip();
+
+        const integrityFiles = [];
+        const tableSummaries = [];
+
+        for (
+          const tableName of
+          serverManifest.tables
+        ) {
+          let offset = 0;
+          let expectedTotal = null;
+          let pageCount = 0;
+          const tableRows = [];
+
+          while (
+            offset !== null
+          ) {
+            pageCount += 1;
+
+            if (
+              pageCount > 100000
+            ) {
+              throw new Error(
+                `تجاوز جدول ${tableName} الحد الآمن لعدد الصفحات.`
+              );
+            }
+
+            const tablePage =
+              await requestBackupApi(
+                accessToken,
+                {
+                  action:
+                    "table",
+
+                  tableName,
+
+                  offset,
+
+                  limit:
+                    500,
+                }
+              );
+
+            if (
+              tablePage
+                ?.tableName !==
+              tableName
+            ) {
+              throw new Error(
+                `حدث عدم تطابق أثناء قراءة جدول ${tableName}.`
+              );
+            }
+
+            if (
+              !Array.isArray(
+                tablePage.rows
+              )
+            ) {
+              throw new Error(
+                `بيانات جدول ${tableName} غير صالحة.`
+              );
+            }
+
+            const pageTotal =
+              Number(
+                tablePage
+                  .totalCount
+              );
+
+            if (
+              !Number.isFinite(
+                pageTotal
+              ) ||
+              pageTotal < 0
+            ) {
+              throw new Error(
+                `عدد سجلات جدول ${tableName} غير صالح.`
+              );
+            }
+
+            if (
+              expectedTotal === null
+            ) {
+              expectedTotal =
+                pageTotal;
+            } else if (
+              expectedTotal !==
+              pageTotal
+            ) {
+              throw new Error(
+                `تغير عدد سجلات جدول ${tableName} أثناء النسخ. أعد المحاولة في وقت لا توجد فيه تعديلات.`
+              );
+            }
+
+            tableRows.push(
+              ...tablePage.rows
+            );
+
+            const nextOffset =
+              tablePage
+                .nextOffset;
+
+            if (
+              nextOffset === null ||
+              nextOffset ===
+                undefined
+            ) {
+              offset = null;
+            } else {
+              const parsedNextOffset =
+                Number(
+                  nextOffset
+                );
+
+              if (
+                !Number.isInteger(
+                  parsedNextOffset
+                ) ||
+                parsedNextOffset <=
+                  offset
+              ) {
+                throw new Error(
+                  `توقف ترقيم صفحات جدول ${tableName} بطريقة غير صحيحة.`
+                );
+              }
+
+              offset =
+                parsedNextOffset;
+            }
+          }
+
+          if (
+            tableRows.length !==
+            expectedTotal
+          ) {
+            throw new Error(
+              `لم تكتمل قراءة جدول ${tableName}. المتوقع ${expectedTotal} والمقروء ${tableRows.length}.`
+            );
+          }
+
+          const tableFilePath =
+            `tables/${tableName}.json`;
+
+          await addJsonFileToBackup(
+            zipFile,
+            tableFilePath,
+            {
+              tableName,
+
+              rowCount:
+                tableRows.length,
+
+              rows:
+                tableRows,
+            },
+            integrityFiles
+          );
+
+          tableSummaries.push({
+            tableName,
+
+            rowCount:
+              tableRows.length,
+
+            file:
+              tableFilePath,
+          });
+        }
+
+        const authUserMap =
+          new Map();
+
+        let authPage = 1;
+        let authPageCount = 0;
+
+        while (
+          authPage !== null
+        ) {
+          authPageCount += 1;
+
+          if (
+            authPageCount >
+            10000
+          ) {
+            throw new Error(
+              "تجاوزت قائمة حسابات تسجيل الدخول الحد الآمن."
+            );
+          }
+
+          const authPageData =
+            await requestBackupApi(
+              accessToken,
+              {
+                action:
+                  "auth-users",
+
+                page:
+                  authPage,
+
+                perPage:
+                  100,
+              }
+            );
+
+          const authUsers =
+            Array.isArray(
+              authPageData.users
+            )
+              ? authPageData.users
+              : [];
+
+          authUsers.forEach(
+            (authUser) => {
+              if (
+                authUser?.id
+              ) {
+                authUserMap.set(
+                  String(
+                    authUser.id
+                  ),
+                  authUser
+                );
+              }
+            }
+          );
+
+          const nextPage =
+            Number(
+              authPageData
+                .nextPage || 0
+            );
+
+          authPage =
+            Number.isInteger(
+              nextPage
+            ) &&
+            nextPage >
+              authPage
+              ? nextPage
+              : null;
+        }
+
+        const authUsers =
+          Array.from(
+            authUserMap.values()
+          );
+
+        await addJsonFileToBackup(
+          zipFile,
+          "auth/users.json",
+          {
+            userCount:
+              authUsers.length,
+
+            includesPasswords:
+              false,
+
+            users:
+              authUsers,
+          },
+          integrityFiles
+        );
+
+        await addJsonFileToBackup(
+          zipFile,
+          "storage/buckets.json",
+          storageInventory,
+          integrityFiles
+        );
+
+        const completedAt =
+          new Date()
+            .toISOString();
+
+        const backupIdentifier =
+          completedAt
+            .replace(
+              /[:.]/g,
+              "-"
+            );
+
+        const finalManifest = {
+          app:
+            "Paradise Spa",
+
+          formatVersion:
+            "paradise-backup-v2",
+
+          status:
+            "complete",
+
+          generatedAt:
+            serverManifest
+              .generatedAt ||
+            completedAt,
+
+          completedAt,
+
+          backupIdentifier,
+
+          publicTableCount:
+            tableSummaries.length,
+
+          tables:
+            tableSummaries,
+
+          totalPublicRows:
+            tableSummaries.reduce(
+              (
+                total,
+                tableSummary
+              ) =>
+                total +
+                Number(
+                  tableSummary
+                    .rowCount || 0
+                ),
+              0
+            ),
+
+          authUserCount:
+            authUsers.length,
+
+          includesAuthUserInventory:
+            true,
+
+          includesAuthPasswords:
+            false,
+
+          includesDatabaseSchema:
+            false,
+
+          storage:
+            {
+              bucketCount:
+                Number(
+                  storageInventory
+                    ?.bucketCount ||
+                    0
+                ),
+
+              included:
+                true,
+            },
+
+          integrityAlgorithm:
+            "SHA-256",
+
+          integrityFiles,
+
+          manifestHashIncluded:
+            false,
+        };
+
+        zipFile.file(
+          "manifest.json",
+          createBackupJsonText(
+            finalManifest
+          )
+        );
+
+        zipFile.file(
+          "README_AR.txt",
+          [
+            "Paradise Spa - النسخة الاحتياطية الكاملة للبيانات",
+            "",
+            `رقم النسخة: ${backupIdentifier}`,
+            `تاريخ الاكتمال: ${completedAt}`,
+            `عدد الجداول: ${tableSummaries.length}`,
+            `إجمالي الصفوف: ${finalManifest.totalPublicRows}`,
+            `عدد حسابات الدخول: ${authUsers.length}`,
+            "",
+            "محتويات النسخة:",
+            "- جميع صفوف الجداول العامة المعتمدة داخل مجلد tables.",
+            "- قائمة حسابات Supabase Auth داخل auth/users.json بدون كلمات المرور.",
+            "- فحص Supabase Storage داخل storage/buckets.json.",
+            "- بصمات SHA-256 داخل manifest.json للتحقق من سلامة الملفات.",
+            "",
+            "مهم:",
+            "- النسخة لا تحتوي على كلمات مرور حسابات Auth.",
+            "- النسخة لا تحتوي على مخطط قاعدة البيانات SQL.",
+            "- لا تستخدم الاستعادة القديمة مع ملف ZIP.",
+            "- احتفظ بالملف في مكان آمن لأنه يحتوي على بيانات العملاء.",
+          ].join("\n")
+        );
+
+        const backupBlob =
+          await zipFile
+            .generateAsync({
+              type:
+                "blob",
+
+              compression:
+                "DEFLATE",
+
+              compressionOptions: {
+                level: 6,
+              },
+            });
+
+        const downloadUrl =
+          URL.createObjectURL(
+            backupBlob
+          );
+
+        const downloadLink =
+          document.createElement(
+            "a"
+          );
+
+        downloadLink.href =
+          downloadUrl;
+
+        downloadLink.download =
+          `ParadiseSpa_Backup_${backupIdentifier}.zip`;
+
+        document.body.appendChild(
+          downloadLink
+        );
+
+        downloadLink.click();
+
+        document.body.removeChild(
+          downloadLink
+        );
+
+        setTimeout(
+          () =>
+            URL.revokeObjectURL(
+              downloadUrl
+            ),
+          2000
+        );
+
+        alert(
+          `تم إنشاء نسخة ZIP مكتملة تضم ${tableSummaries.length} جدولًا و${finalManifest.totalPublicRows} سجلًا.`
+        );
+      } catch (error) {
+        console.log(
+          "Secure ZIP backup error:",
+          error
+        );
+
+        alert(
+          error?.message ||
+            "فشل إنشاء النسخة الاحتياطية."
+        );
+      } finally {
+        setBackupBusy(false);
       }
-      alert("تمت الاستعادة. يفضل تحديث الصفحة والتأكد من العدادات.");
-      fetchClients();
-      fetchSharedClientLists();
-      loadScheduleRowsForDate(selectedScheduleDate);
-      loadDailyReportForDate(selectedScheduleDate);
-    } catch (error) {
-      console.log("Restore error:", error);
-      alert("فشلت الاستعادة. لا تعيد المحاولة قبل مراجعة الخطأ في Console.");
-    } finally {
-      setRestoreBusy(false);
-    }
+    };
+
+  const restoreBackupFromFile = () => {
+    alert(
+      "الاستعادة متوقفة مؤقتًا حتى يكتمل نظام الاستعادة الآمن للنسخة ZIP."
+    );
   };
 
   const getTableCount = async (tableName) => {
@@ -18135,19 +18635,117 @@ const settingsFieldGridStyle = {
       );
     }
 
-    if (settingsActiveTab === "backup") {
+    if (
+      settingsActiveTab ===
+      "backup"
+    ) {
       return (
-        <div style={{ display: "grid", gap: "16px" }}>
-          <div style={settingsRowStyle}>
-            <h3 style={settingsSectionTitleStyle}> النسخ الإحتياطي</h3>
-            
-            <button onClick={createFullBackup} disabled={backupBusy} style={settingsPrimaryButtonStyle}>{backupBusy ? "جاري إنشاء الباك أب..." : "إنشاء Backup"}</button>
+        <div
+          style={{
+            display: "grid",
+            gap: "16px",
+          }}
+        >
+          <div
+            style={
+              settingsRowStyle
+            }
+          >
+            <h3
+              style={
+                settingsSectionTitleStyle
+              }
+            >
+              النسخة الاحتياطية الكاملة ZIP
+            </h3>
+
+            <p
+              style={
+                settingsHelpTextStyle
+              }
+            >
+              ينشئ النظام ملف ZIP واحدًا يحتوي على جميع جداول Paradise Spa المعتمدة، وقائمة حسابات تسجيل الدخول بدون كلمات المرور، وملف فحص سلامة ببصمات SHA-256.
+            </p>
+
+            <button
+              onClick={
+                createFullBackup
+              }
+              disabled={
+                backupBusy
+              }
+              style={
+                settingsPrimaryButtonStyle
+              }
+            >
+              {backupBusy
+                ? "جاري إنشاء النسخة الكاملة..."
+                : "إنشاء نسخة ZIP كاملة"}
+            </button>
+
+            <div
+              style={{
+                ...settingsMiniCardStyle,
+                marginTop: "14px",
+                color: "#4b2e1f",
+                fontWeight: 850,
+                lineHeight: 1.8,
+              }}
+            >
+              <div>
+                تشمل جميع الجداول العامة المعتمدة وعددها 25 جدولًا.
+              </div>
+
+              <div>
+                تتوقف العملية بالكامل إذا فشل أو نقص أي جدول.
+              </div>
+
+              <div>
+                لا تحتوي النسخة على كلمات مرور حسابات Supabase Auth.
+              </div>
+
+              <div>
+                احفظ ملف ZIP في مكان آمن لأنه يحتوي على بيانات العملاء.
+              </div>
+            </div>
           </div>
-          <div style={settingsRowStyle}>
-            <h3 style={settingsSectionTitleStyle}>استعادة الباك أب</h3>
-            <p style={{ ...settingsHelpTextStyle, color: "#9b4b3d", fontWeight: 950 }}>للطوارئ فقط. الاستعادة تمسح الجداول الحالية وترفع بيانات ملف الباك أب.</p>
-            <input type="file" accept="application/json,.json" onChange={restoreBackupFromFile} disabled={restoreBusy} style={settingsInputStyle} />
-            <div style={{ marginTop: "12px", fontWeight: 850, color: "#4b2e1f" }}>{restoreBusy ? "جاري الاستعادة..." : restoreFileName ? `آخر ملف مختار: ${restoreFileName}` : "لم يتم اختيار ملف"}</div>
+
+          <div
+            style={
+              settingsRowStyle
+            }
+          >
+            <h3
+              style={
+                settingsSectionTitleStyle
+              }
+            >
+              استعادة النسخة الاحتياطية
+            </h3>
+
+            <p
+              style={{
+                ...settingsHelpTextStyle,
+                color: "#9b4b3d",
+                fontWeight: 950,
+                lineHeight: 1.8,
+              }}
+            >
+              الاستعادة متوقفة مؤقتًا لحماية البيانات. سيتم تفعيلها بعد بناء نظام يفحص ملف ZIP وبصماته وعدد الجداول والسجلات، ثم ينفذ الاستعادة داخل عملية آمنة بدون حذف البيانات قبل نجاح التحقق.
+            </p>
+
+            <button
+              type="button"
+              disabled
+              style={{
+                ...settingsMutedButtonStyle,
+                width: "100%",
+                cursor: "not-allowed",
+                opacity: 0.72,
+              }}
+            >
+              الاستعادة قيد التجهيز الآمن
+            </button>
           </div>
         </div>
       );
