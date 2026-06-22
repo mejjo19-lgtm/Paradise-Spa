@@ -17721,12 +17721,6 @@ const settingsFieldGridStyle = {
       }
     };
 
-  const restoreBackupFromFile = () => {
-    alert(
-      "الاستعادة متوقفة مؤقتًا حتى يكتمل نظام الاستعادة الآمن للنسخة ZIP."
-    );
-  };
-
   const getTableCount = async (tableName) => {
     const { count, error } = await supabase.from(tableName).select("*", { count: "exact", head: true });
     if (error) throw error;
@@ -18745,7 +18739,7 @@ const settingsFieldGridStyle = {
                 settingsSectionTitleStyle
               }
             >
-              النسخة الاحتياطية الكاملة ZIP
+              تحميل نسخة احتياطية ZIP
             </h3>
 
             <p
@@ -18753,7 +18747,7 @@ const settingsFieldGridStyle = {
                 settingsHelpTextStyle
               }
             >
-              ينشئ النظام ملف ZIP واحدًا يحتوي على جميع جداول Paradise Spa المعتمدة، وقائمة حسابات تسجيل الدخول بدون كلمات المرور، وملف فحص سلامة ببصمات SHA-256.
+              ينشئ النظام ملف ZIP لبيانات جداول Paradise Spa المعتمدة، وقائمة حسابات تسجيل الدخول بدون كلمات المرور، وبصمات SHA-256 لفحص سلامة الملفات.
             </p>
 
             <button
@@ -18768,8 +18762,8 @@ const settingsFieldGridStyle = {
               }
             >
               {backupBusy
-                ? "جاري إنشاء النسخة الكاملة..."
-                : "إنشاء نسخة ZIP كاملة"}
+                ? "جاري تجهيز النسخة..."
+                : "تحميل نسخة احتياطية ZIP"}
             </button>
 
             <div
@@ -18782,59 +18776,25 @@ const settingsFieldGridStyle = {
               }}
             >
               <div>
-                تشمل جميع الجداول العامة المعتمدة وعددها 25 جدولًا.
+                تشمل الجداول العامة المعتمدة وعددها 25 جدولًا، بما فيها الجداول الفارغة.
               </div>
 
               <div>
-                تتوقف العملية بالكامل إذا فشل أو نقص أي جدول.
+                تتوقف العملية إذا تعذرت قراءة أي جدول أو كانت النسخة ناقصة.
               </div>
 
               <div>
-                لا تحتوي النسخة على كلمات مرور حسابات Supabase Auth.
+                لا تحتوي النسخة على كلمات مرور حسابات Supabase Auth أو مخطط PostgreSQL الكامل.
+              </div>
+
+              <div>
+                الاستعادة الرسمية تتم فقط من نسخ السيرفر المحفوظة خارج السيرفر.
               </div>
 
               <div>
                 احفظ ملف ZIP في مكان آمن لأنه يحتوي على بيانات العملاء.
               </div>
             </div>
-          </div>
-
-          <div
-            style={
-              settingsRowStyle
-            }
-          >
-            <h3
-              style={
-                settingsSectionTitleStyle
-              }
-            >
-              استعادة النسخة الاحتياطية
-            </h3>
-
-            <p
-              style={{
-                ...settingsHelpTextStyle,
-                color: "#9b4b3d",
-                fontWeight: 950,
-                lineHeight: 1.8,
-              }}
-            >
-              الاستعادة متوقفة مؤقتًا لحماية البيانات. سيتم تفعيلها بعد بناء نظام يفحص ملف ZIP وبصماته وعدد الجداول والسجلات، ثم ينفذ الاستعادة داخل عملية آمنة بدون حذف البيانات قبل نجاح التحقق.
-            </p>
-
-            <button
-              type="button"
-              disabled
-              style={{
-                ...settingsMutedButtonStyle,
-                width: "100%",
-                cursor: "not-allowed",
-                opacity: 0.72,
-              }}
-            >
-              الاستعادة قيد التجهيز الآمن
-            </button>
           </div>
         </div>
       );
