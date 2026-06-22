@@ -147,6 +147,7 @@ const [username, setUsername] = useState("");
 const [password, setPassword] = useState("");
 const [isLoggedIn, setIsLoggedIn] = useState(false);
 const [loggedInUser, setLoggedInUser] = useState("");
+const [loggedInAuthUserId, setLoggedInAuthUserId] = useState("");
 const [authReady, setAuthReady] = useState(false);
 const scheduleLastEditRef = useRef(0);
 const dailyManualLastEditRef = useRef(0);
@@ -375,16 +376,24 @@ useEffect(() => {
 
   const syncAuthSession = async () => {
     const { data } = await supabase.auth.getSession();
-    const email = data?.session?.user?.email;
+    const authUser = data?.session?.user;
+    const email = authUser?.email;
 
     if (!isMounted) return;
 
-    if (email) {
+    if (email && authUser?.id) {
       setIsLoggedIn(true);
-      setLoggedInUser(getDisplayNameFromEmail(email) || "مستخدم");
+      setLoggedInUser(
+        getDisplayNameFromEmail(email) ||
+          "مستخدم"
+      );
+      setLoggedInAuthUserId(
+        String(authUser.id)
+      );
     } else {
       setIsLoggedIn(false);
       setLoggedInUser("");
+      setLoggedInAuthUserId("");
     }
 
     setAuthReady(true);
@@ -392,23 +401,33 @@ useEffect(() => {
 
   syncAuthSession();
 
-  const { data: authListener } = supabase.auth.onAuthStateChange(
-    (_event, session) => {
-      const email = session?.user?.email;
+  const { data: authListener } =
+    supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        const authUser = session?.user;
+        const email = authUser?.email;
 
-      if (email) {
-        setIsLoggedIn(true);
-        setLoggedInUser(getDisplayNameFromEmail(email) || "مستخدم");
-        // التحميل يتم من useEffect مرة واحدة بعد تسجيل الدخول لتجنب سحب البيانات مرتين.
-      } else {
-        setIsLoggedIn(false);
-        setLoggedInUser("");
-        setClientsSafely([]);
+        if (email && authUser?.id) {
+          setIsLoggedIn(true);
+          setLoggedInUser(
+            getDisplayNameFromEmail(email) ||
+              "مستخدم"
+          );
+          setLoggedInAuthUserId(
+            String(authUser.id)
+          );
+
+          // التحميل يتم من useEffect مرة واحدة بعد تسجيل الدخول لتجنب سحب البيانات مرتين.
+        } else {
+          setIsLoggedIn(false);
+          setLoggedInUser("");
+          setLoggedInAuthUserId("");
+          setClientsSafely([]);
+        }
+
+        setAuthReady(true);
       }
-
-      setAuthReady(true);
-    }
-  );
+    );
 
   return () => {
     isMounted = false;
@@ -1266,10 +1285,7 @@ function fetchSharedClientLists() {
   const [sharedDataLoaded, setSharedDataLoaded] = useState(false);
 
 
-  const [settingsUnlocked, setSettingsUnlocked] = useState(false);
-  const [settingsSecretInput, setSettingsSecretInput] = useState("");
   const [settingsActiveTab, setSettingsActiveTab] = useState("accounts");
-  const [settingsSecretCode, setSettingsSecretCode] = useState("112244668800");
   const [employeeAccounts, setEmployeeAccounts] = useState([]);
   const [accountDraft, setAccountDraft] = useState({
     username: "",
@@ -12949,11 +12965,7 @@ const leavingTime = addMinutesToDisplayTime(
 
     const roleValue =
       account.role ||
-      (String(usernameValue)
-        .toLowerCase()
-        .includes("majed")
-        ? "owner"
-        : "employee");
+      "employee";
 
     return {
       id:
@@ -12962,6 +12974,13 @@ const leavingTime = addMinutesToDisplayTime(
         `${Date.now()}-${Math.random()
           .toString(36)
           .slice(2)}`,
+
+      authUserId:
+        String(
+          account.auth_user_id ||
+            account.authUserId ||
+            ""
+        ).trim(),
 
       username:
         usernameValue,
@@ -12972,22 +12991,31 @@ const leavingTime = addMinutesToDisplayTime(
       role:
         roleValue,
 
+      isSuperAdmin:
+        Boolean(
+          account.is_super_admin ??
+            account.isSuperAdmin ??
+            false
+        ),
+
+      permissionsVersion:
+        Number(
+          account.permissions_version ??
+            account.permissionsVersion ??
+            1
+        ) || 1,
+
       menuPermissions:
-        roleValue === "owner" ||
-        roleValue === "manager"
-          ? "all"
-          : normalizePermissionArray(
-              account.menu_permissions ||
-                account.menuPermissions
-            ),
+        normalizePermissionArray(
+          account.menu_permissions ??
+            account.menuPermissions
+        ),
 
       actionPermissions:
-        roleValue === "owner"
-          ? "all"
-          : normalizePermissionArray(
-              account.action_permissions ||
-                account.actionPermissions
-            ),
+        normalizePermissionArray(
+          account.action_permissions ??
+            account.actionPermissions
+        ),
 
       active:
         account.active !== false,
@@ -12995,6 +13023,11 @@ const leavingTime = addMinutesToDisplayTime(
       createdAt:
         account.created_at ||
         account.createdAt ||
+        "",
+
+      updatedAt:
+        account.updated_at ||
+        account.updatedAt ||
         "",
     };
   };
@@ -13056,32 +13089,117 @@ const leavingTime = addMinutesToDisplayTime(
       }),
     ];
 
-  const currentAccount = employeeAccounts.find((account) => {
-    const accountText = `${account.username || ""} ${account.displayName || ""}`.toLowerCase();
-    const loggedText = `${loggedInUser || ""} ${username || ""}`.toLowerCase();
-    return accountText.includes(loggedText) || loggedText.includes(account.username?.toLowerCase?.() || "__none__") || account.displayName === loggedInUser;
-  });
+  const currentAccount =
+    employeeAccounts.find(
+      (account) =>
+        Boolean(
+          account.authUserId
+        ) &&
+        String(
+          account.authUserId
+        ) ===
+          String(
+            loggedInAuthUserId
+          )
+    ) || null;
 
   const isOwnerUser =
-    currentAccount?.role === "owner" ||
-    String(loggedInUser || "").includes("ماجد") ||
-    String(username || "").toLowerCase() === "majed";
-  const currentUserRole = isOwnerUser ? "owner" : currentAccount?.role || "employee";
-  const isManagerUser = currentUserRole === "manager";
-  const hasAllMenus = isOwnerUser || isManagerUser || currentAccount?.menuPermissions === "all";
-  const hasAllActions = isOwnerUser || currentAccount?.actionPermissions === "all";
-  const canUseAction = (action) => hasAllActions || (currentAccount?.actionPermissions || []).includes(action);
-  const canViewMenu = (key) => {
-    if (isOwnerUser) return true;
-    if (key === "settings") return false;
-    if (hasAllMenus) return true;
-    return (currentAccount?.menuPermissions || []).includes(key);
+    Boolean(
+      currentAccount?.active &&
+        currentAccount?.isSuperAdmin
+    );
+
+  const currentUserRole =
+    currentAccount?.role ||
+    "employee";
+
+  const hasAllMenus =
+    currentAccount?.menuPermissions ===
+    "all";
+
+  const hasAllActions =
+    currentAccount
+      ?.actionPermissions ===
+    "all";
+
+  const canUseAction = (
+    action
+  ) => {
+    if (
+      !currentAccount?.active
+    ) {
+      return false;
+    }
+
+    if (isOwnerUser) {
+      return true;
+    }
+
+    if (hasAllActions) {
+      return true;
+    }
+
+    return (
+      Array.isArray(
+        currentAccount
+          ?.actionPermissions
+      ) &&
+      currentAccount.actionPermissions.includes(
+        action
+      )
+    );
   };
-  const canAddData = isOwnerUser || isManagerUser || canUseAction("add");
-  const canEditData = isOwnerUser || isManagerUser || canUseAction("edit");
-  const canDeleteData = isOwnerUser || isManagerUser || canUseAction("delete");
-  const isSystemFrozen = Boolean(securitySettings.systemFrozen) && !isOwnerUser;
-  const isDeleteLocked = Boolean(securitySettings.deleteLocked) && !isOwnerUser;
+
+  const canViewMenu = (
+    key
+  ) => {
+    if (
+      !currentAccount?.active
+    ) {
+      return false;
+    }
+
+    if (isOwnerUser) {
+      return true;
+    }
+
+    if (key === "settings") {
+      return false;
+    }
+
+    if (hasAllMenus) {
+      return true;
+    }
+
+    return (
+      Array.isArray(
+        currentAccount
+          ?.menuPermissions
+      ) &&
+      currentAccount.menuPermissions.includes(
+        key
+      )
+    );
+  };
+
+  const canAddData =
+    canUseAction("add");
+
+  const canEditData =
+    canUseAction("edit");
+
+  const canDeleteData =
+    canUseAction("delete");
+
+  const isSystemFrozen =
+    Boolean(
+      securitySettings.systemFrozen
+    ) && !isOwnerUser;
+
+  const isDeleteLocked =
+    Boolean(
+      securitySettings.deleteLocked
+    ) && !isOwnerUser;
 
   const ensureSystemWritable = () => {
     if (isSystemFrozen) {
@@ -16195,6 +16313,7 @@ const welcomeBoardNameStyle = {
     await supabase.auth.signOut();
     setIsLoggedIn(false);
     setLoggedInUser("");
+    setLoggedInAuthUserId("");
     setClientsSafely([]);
     setUsername("");
     setPassword("");
@@ -16313,112 +16432,180 @@ const settingsFieldGridStyle = {
 
   const loadSettingsModuleData = async () => {
     try {
-      const { data: settingsRows } = await supabase
+      const {
+        data: securityRow,
+        error: securityError,
+      } = await supabase
         .from("app_data")
-        .select("data_key, data")
-        .in("data_key", ["settingsSecretCode", "settingsSecurity"]);
+        .select("data")
+        .eq(
+          "data_key",
+          "settingsSecurity"
+        )
+        .maybeSingle();
 
-      const secretRow = settingsRows?.find((row) => row.data_key === "settingsSecretCode");
-      const securityRow = settingsRows?.find((row) => row.data_key === "settingsSecurity");
-      if (secretRow?.data?.code) setSettingsSecretCode(String(secretRow.data.code));
-      if (securityRow?.data) setSecuritySettings((prev) => ({ ...prev, ...securityRow.data }));
+      if (securityError) {
+        throw securityError;
+      }
+
+      if (securityRow?.data) {
+        setSecuritySettings(
+          (prev) => ({
+            ...prev,
+            ...securityRow.data,
+          })
+        );
+      }
     } catch (error) {
-      console.log("Settings module data load error:", error);
+      console.log(
+        "Settings module data load error:",
+        error
+      );
     }
 
     try {
-      const { data, error } = await supabase
-        .from("employee_accounts")
-        .select("*")
-        .order("created_at", { ascending: true });
+      const { data, error } =
+        await supabase
+          .from("employee_accounts")
+          .select("*")
+          .order(
+            "created_at",
+            { ascending: true }
+          );
 
-      if (error) throw error;
-      const normalized = (data || []).map(normalizeEmployeeAccount);
-      setEmployeeAccounts(normalized.length ? normalized : getDefaultEmployeeAccounts());
+      if (error) {
+        throw error;
+      }
+
+      const normalized =
+        (data || []).map(
+          normalizeEmployeeAccount
+        );
+
+      setEmployeeAccounts(
+        normalized.length
+          ? normalized
+          : getDefaultEmployeeAccounts()
+      );
     } catch (error) {
-      console.log("Employee accounts load error:", error);
-      setEmployeeAccounts(getDefaultEmployeeAccounts());
+      console.log(
+        "Employee accounts load error:",
+        error
+      );
+
+      setEmployeeAccounts(
+        getDefaultEmployeeAccounts()
+      );
     }
   };
 
   useEffect(() => {
-    if (!isLoggedIn) return undefined;
+    if (
+      !isLoggedIn ||
+      !loggedInAuthUserId
+    ) {
+      return undefined;
+    }
 
     loadSettingsModuleData();
 
-    const settingsChannel = supabase
-      .channel("settings-module-sync")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "app_data" },
-        (payload) => {
-          const key = payload?.new?.data_key || payload?.old?.data_key || "";
-          if (key === "settingsSecretCode" && payload?.new?.data?.code) {
-            setSettingsSecretCode(String(payload.new.data.code));
-          }
-          if (key === "settingsSecurity" && payload?.new?.data) {
-            const nextSecurity = payload.new.data;
-            setSecuritySettings((prev) => ({ ...prev, ...nextSecurity }));
-            const localLogoutVersion = Number(localStorage.getItem("paradise-settings-logout-version") || 0);
-            const remoteLogoutVersion = Number(nextSecurity.logoutVersion || 0);
-            if (remoteLogoutVersion > localLogoutVersion && !isOwnerUser) {
-              localStorage.setItem("paradise-settings-logout-version", String(remoteLogoutVersion));
-              globalLogout();
+    const settingsChannel =
+      supabase
+        .channel(
+          "settings-module-sync"
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "app_data",
+          },
+          (payload) => {
+            const key =
+              payload?.new?.data_key ||
+              payload?.old?.data_key ||
+              "";
+
+            if (
+              key ===
+                "settingsSecurity" &&
+              payload?.new?.data
+            ) {
+              const nextSecurity =
+                payload.new.data;
+
+              setSecuritySettings(
+                (prev) => ({
+                  ...prev,
+                  ...nextSecurity,
+                })
+              );
+
+              const localLogoutVersion =
+                Number(
+                  localStorage.getItem(
+                    "paradise-settings-logout-version"
+                  ) || 0
+                );
+
+              const remoteLogoutVersion =
+                Number(
+                  nextSecurity.logoutVersion ||
+                    0
+                );
+
+              if (
+                remoteLogoutVersion >
+                  localLogoutVersion &&
+                !isOwnerUser
+              ) {
+                localStorage.setItem(
+                  "paradise-settings-logout-version",
+                  String(
+                    remoteLogoutVersion
+                  )
+                );
+
+                globalLogout();
+              }
             }
           }
-        }
-      )
-      .subscribe();
+        )
+        .subscribe();
 
-    const accountsChannel = supabase
-      .channel("employee-accounts-sync")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "employee_accounts" },
-        () => loadSettingsModuleData()
-      )
-      .subscribe();
+    const accountsChannel =
+      supabase
+        .channel(
+          "employee-accounts-sync"
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table:
+              "employee_accounts",
+          },
+          () =>
+            loadSettingsModuleData()
+        )
+        .subscribe();
 
     return () => {
-      supabase.removeChannel(settingsChannel);
-      supabase.removeChannel(accountsChannel);
+      supabase.removeChannel(
+        settingsChannel
+      );
+
+      supabase.removeChannel(
+        accountsChannel
+      );
     };
-  }, [isLoggedIn, loggedInUser]);
-
-  const unlockSettings = () => {
-    if (settingsSecretInput !== settingsSecretCode) {
-      alert("الرقم السري غير صحيح");
-      return;
-    }
-    setSettingsUnlocked(true);
-    setSettingsSecretInput("");
-  };
-
-  const saveSettingsSecretCode = async () => {
-    const nextCode = window.prompt("اكتب الرقم السري الجديد للإعدادات");
-    if (!nextCode) return;
-    if (nextCode.length < 6) {
-      alert("الرقم السري قصير جداً");
-      return;
-    }
-
-    const { error } = await supabase.from("app_data").upsert(
-      {
-        data_key: "settingsSecretCode",
-        data: { code: nextCode, updatedAt: Date.now(), updatedBy: loggedInUser || "Majed" },
-      },
-      { onConflict: "data_key" }
-    );
-
-    if (error) {
-      console.log("Settings secret save error:", error);
-      alert("لم يتم حفظ الرقم السري");
-      return;
-    }
-
-    setSettingsSecretCode(nextCode);
-    alert("تم تغيير الرقم السري للإعدادات");
-  };
+  }, [
+    isLoggedIn,
+    loggedInAuthUserId,
+    isOwnerUser,
+  ]);
 
   const saveSecuritySettings = async (nextSettings) => {
     const merged = { ...securitySettings, ...nextSettings, updatedAt: Date.now(), updatedBy: loggedInUser || "" };
@@ -16472,45 +16659,312 @@ const settingsFieldGridStyle = {
     });
   };
 
-  const saveEmployeeAccount = async () => {
-    if (!accountDraft.username || !accountDraft.displayName) {
-      alert("اكتب ID واسم الموظف");
-      return;
-    }
+  const saveEmployeeAccount =
+    async () => {
+      const normalizedUsername =
+        String(
+          accountDraft.username ||
+            ""
+        )
+          .trim()
+          .toLowerCase();
 
-    const role = accountDraft.role || "employee";
-    const menuPermissions = role === "owner" || role === "manager" ? "all" : accountDraft.menuPermissions;
-    const actionPermissions = role === "owner" ? "all" : role === "manager" ? ["add", "edit", "delete"] : accountDraft.actionPermissions;
-    const payload = {
-      username: accountDraft.username.trim().toLowerCase(),
-      display_name: accountDraft.displayName.trim(),
-      role,
-      menu_permissions: menuPermissions,
-      action_permissions: actionPermissions,
-      active: accountDraft.active !== false,
-      updated_at: new Date().toISOString(),
+      const normalizedDisplayName =
+        String(
+          accountDraft
+            .displayName || ""
+        ).trim();
+
+      if (
+        !normalizedUsername ||
+        !normalizedDisplayName
+      ) {
+        alert(
+          "اكتب ID واسم الموظف"
+        );
+
+        return;
+      }
+
+      if (
+        !/^[a-z0-9._-]{3,32}$/.test(
+          normalizedUsername
+        )
+      ) {
+        alert(
+          "معرف الدخول يجب أن يكون من 3 إلى 32 حرفًا إنجليزيًا أو رقمًا."
+        );
+
+        return;
+      }
+
+      const role =
+        accountDraft.role ||
+        "employee";
+
+      const menuPermissions =
+        Array.isArray(
+          accountDraft
+            .menuPermissions
+        )
+          ? [
+              ...new Set(
+                accountDraft
+                  .menuPermissions
+              ),
+            ]
+          : [];
+
+      const actionPermissions =
+        Array.isArray(
+          accountDraft
+            .actionPermissions
+        )
+          ? [
+              ...new Set(
+                accountDraft
+                  .actionPermissions
+              ),
+            ]
+          : [];
+
+      const editingExistingAccount =
+        Boolean(
+          editingAccountId
+        ) &&
+        !String(
+          editingAccountId
+        ).startsWith(
+          "default-"
+        );
+
+      if (
+        editingExistingAccount
+      ) {
+        const existingAccount =
+          employeeAccounts.find(
+            (account) =>
+              String(
+                account.id
+              ) ===
+              String(
+                editingAccountId
+              )
+          );
+
+        if (!existingAccount) {
+          alert(
+            "تعذر العثور على الحساب المطلوب."
+          );
+
+          return;
+        }
+
+        if (
+          normalizedUsername !==
+          String(
+            existingAccount.username ||
+              ""
+          )
+            .trim()
+            .toLowerCase()
+        ) {
+          alert(
+            "لا يمكن تغيير معرف تسجيل الدخول من هذه الشاشة حاليًا."
+          );
+
+          return;
+        }
+
+        if (
+          accountDraft.password
+        ) {
+          alert(
+            "تغيير كلمة مرور حساب موجود سيتم ربطه بالخادم في الخطوة التالية. اترك خانة كلمة المرور فارغة لتعديل الصلاحيات فقط."
+          );
+
+          return;
+        }
+
+        const {
+          error:
+            updateAccountError,
+        } =
+          await supabase
+            .from(
+              "employee_accounts"
+            )
+            .update({
+              display_name:
+                normalizedDisplayName,
+
+              role,
+
+              menu_permissions:
+                menuPermissions,
+
+              action_permissions:
+                actionPermissions,
+
+              active:
+                accountDraft.active !==
+                false,
+
+              permissions_version:
+                Number(
+                  existingAccount
+                    .permissionsVersion ||
+                    1
+                ) + 1,
+
+              updated_at:
+                new Date()
+                  .toISOString(),
+            })
+            .eq(
+              "id",
+              editingAccountId
+            );
+
+        if (
+          updateAccountError
+        ) {
+          console.log(
+            "Employee account update error:",
+            updateAccountError
+          );
+
+          alert(
+            "لم يتم تعديل الحساب."
+          );
+
+          return;
+        }
+
+        resetAccountDraft();
+        loadSettingsModuleData();
+
+        alert(
+          "تم تحديث بيانات الحساب والصلاحيات."
+        );
+
+        return;
+      }
+
+      const normalizedPassword =
+        String(
+          accountDraft.password ||
+            ""
+        );
+
+      if (
+        normalizedPassword.length <
+        8
+      ) {
+        alert(
+          "كلمة المرور للحساب الجديد يجب ألا تقل عن 8 خانات."
+        );
+
+        return;
+      }
+
+      try {
+        const {
+          data: sessionData,
+          error: sessionError,
+        } =
+          await supabase.auth
+            .getSession();
+
+        const accessToken =
+          sessionData?.session
+            ?.access_token;
+
+        if (
+          sessionError ||
+          !accessToken
+        ) {
+          alert(
+            "انتهت جلسة الدخول. سجل الدخول مرة أخرى."
+          );
+
+          return;
+        }
+
+        const accountResponse =
+          await fetch(
+            "/api/admin-users",
+            {
+              method: "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+
+                Authorization:
+                  `Bearer ${accessToken}`,
+              },
+
+              body:
+                JSON.stringify({
+                  username:
+                    normalizedUsername,
+
+                  displayName:
+                    normalizedDisplayName,
+
+                  password:
+                    normalizedPassword,
+
+                  role,
+
+                  menuPermissions,
+
+                  actionPermissions,
+
+                  active:
+                    accountDraft.active !==
+                    false,
+                }),
+            }
+          );
+
+        let responseData = {};
+
+        try {
+          responseData =
+            await accountResponse.json();
+        } catch {
+          responseData = {};
+        }
+
+        if (
+          !accountResponse.ok
+        ) {
+          throw new Error(
+            responseData.error ||
+              "تعذر إنشاء الحساب."
+          );
+        }
+
+        resetAccountDraft();
+        loadSettingsModuleData();
+
+        alert(
+          "تم إنشاء حساب تسجيل الدخول والصلاحيات بنجاح."
+        );
+      } catch (error) {
+        console.log(
+          "Secure employee account creation error:",
+          error
+        );
+
+        alert(
+          error?.message ||
+            "تعذر إنشاء الحساب."
+        );
+      }
     };
-
-    let error;
-    if (editingAccountId && !String(editingAccountId).startsWith("default-")) {
-      ({ error } = await supabase.from("employee_accounts").update(payload).eq("id", editingAccountId));
-    } else {
-      ({ error } = await supabase.from("employee_accounts").insert([{ ...payload, created_at: new Date().toISOString() }]));
-    }
-
-    if (error) {
-      console.log("Employee account save error:", error);
-      alert("لم يتم حفظ الحساب. تأكد أن جدول employee_accounts موجود في Supabase.");
-      return;
-    }
-
-    if (accountDraft.password) {
-      alert("تم حفظ بيانات الحساب والصلاحيات. ملاحظة: كلمة المرور لحساب تسجيل الدخول الحقيقي تحتاج إنشاء/تعديل مستخدم Auth من Supabase أو API آمن لاحقاً.");
-    }
-
-    resetAccountDraft();
-    loadSettingsModuleData();
-  };
 
   const deleteEmployeeAccount = async (account) => {
     if (!window.confirm("هل تريد حذف هذا الحساب من جدول الصلاحيات؟")) return;
@@ -17458,7 +17912,7 @@ const settingsFieldGridStyle = {
     if (
       !isLoggedIn ||
       screen !== "settings" ||
-      !settingsUnlocked ||
+      !isOwnerUser ||
       settingsActiveTab !== "zatca"
     ) {
       return;
@@ -17473,7 +17927,7 @@ const settingsFieldGridStyle = {
   }, [
     isLoggedIn,
     screen,
-    settingsUnlocked,
+    isOwnerUser,
     settingsActiveTab,
   ]);
 
@@ -17718,7 +18172,19 @@ const settingsFieldGridStyle = {
 </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: "10px" }}>
             <button onClick={logoutAllDevices} style={settingsPrimaryButtonStyle}>تسجيل خروج جميع الأجهزة</button>
-            <button onClick={saveSettingsSecretCode} style={{ ...settingsPrimaryButtonStyle, background: "linear-gradient(135deg, #805d45, #9b7358)" }}>تغيير الرقم السري للإعدادات</button>
+            <div
+              style={{
+                ...settingsMiniCardStyle,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                textAlign: "center",
+                color: "#4b2e1f",
+                fontWeight: 900,
+              }}
+            >
+              دخول الإعدادات محمي بحساب Supabase
+            </div>
             <button onClick={() => saveSecuritySettings({ deleteLocked: !securitySettings.deleteLocked })} style={{ ...settingsPrimaryButtonStyle, background: securitySettings.deleteLocked ? "#9b4b3d" : "#e1d2c2", color: securitySettings.deleteLocked ? "white" : "#4b2e1f" }}>{securitySettings.deleteLocked ? "إلغاء قفل الحذف" : "قفل الحذف"}</button>
             <button onClick={() => saveSecuritySettings({ systemFrozen: !securitySettings.systemFrozen })} style={{ ...settingsPrimaryButtonStyle, background: securitySettings.systemFrozen ? "#9b4b3d" : "#e1d2c2", color: securitySettings.systemFrozen ? "white" : "#4b2e1f" }}>{securitySettings.systemFrozen ? "إلغاء تجميد النظام" : "تجميد النظام"}</button>
           </div>
@@ -19071,7 +19537,7 @@ const settingsFieldGridStyle = {
           </div>
         </div>
 
-        {!settingsUnlocked ? (
+        {!isOwnerUser ? (
           <div
             className="paradise-settings-lock-card"
             style={{
@@ -19087,47 +19553,17 @@ const settingsFieldGridStyle = {
                 settingsSectionTitleStyle
               }
             >
-              أدخل الرقم السري للإعدادات
+              لا تملك صلاحية الدخول إلى الإعدادات
             </h3>
 
-            <input
-              type="text"
-              name="settings-secret-code"
-              autoComplete="one-time-code"
-              inputMode="numeric"
-              value={settingsSecretInput}
-              onChange={(event) =>
-                setSettingsSecretInput(
-                  event.target.value
-                )
-              }
-              onKeyDown={(event) => {
-                if (
-                  event.key === "Enter"
-                ) {
-                  unlockSettings();
-                }
-              }}
+            <p
               style={{
-                ...settingsInputStyle,
-                marginBottom: "14px",
-                textAlign: "center",
-                WebkitTextSecurity:
-                  "disc",
-              }}
-              placeholder="Settings Password"
-            />
-
-            <button
-              className="paradise-settings-unlock-button"
-              onClick={unlockSettings}
-              style={{
-                ...settingsPrimaryButtonStyle,
-                width: "180px",
+                ...settingsHelpTextStyle,
+                margin: 0,
               }}
             >
-              دخول
-            </button>
+              الدخول إلى هذه الصفحة متاح فقط لحساب الإدارة العليا المرتبط بهوية Supabase.
+            </p>
           </div>
         ) : (
           <>
@@ -20178,6 +20614,12 @@ if (!isLoggedIn) {
                 data.session.user
                   .email
               ) || "مستخدم"
+            );
+
+            setLoggedInAuthUserId(
+              String(
+                data.session.user.id
+              )
             );
 
             setIsLoggedIn(true);

@@ -11003,3 +11003,27 @@ button {
     grid-column: 1 !important;
   }
 }
+/* =========================================================
+   DESKTOP TOP BAR — EXPANDED SEARCH
+   ========================================================= */
+
+@media (min-width: 1051px) {
+  html body .paradise-topbar-search-slot {
+    flex: 1 1 0 !important;
+
+    width: auto !important;
+    min-width: 320px !important;
+    max-width: none !important;
+
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  html body .paradise-topbar-search-slot > div {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+
+    box-sizing: border-box !important;
+  }
+}
