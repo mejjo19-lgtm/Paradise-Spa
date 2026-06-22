@@ -16987,40 +16987,129 @@ const settingsFieldGridStyle = {
       accessToken,
       requestBody
     ) => {
-      const response =
-        await fetch(
-          "/api/backup-data",
+      const backupAction =
+        String(
+          requestBody?.action ||
+            "unknown"
+        );
+
+      let response;
+
+      try {
+        response =
+          await fetch(
+            "/api/backup-data",
+            {
+              method: "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+
+                Authorization:
+                  `Bearer ${accessToken}`,
+              },
+
+              body:
+                JSON.stringify(
+                  requestBody
+                ),
+            }
+          );
+      } catch (networkError) {
+        console.error(
+          "Backup API network error:",
           {
-            method: "POST",
+            action:
+              backupAction,
 
-            headers: {
-              "Content-Type":
-                "application/json",
+            error:
+              networkError,
+          }
+        );
 
-              Authorization:
-                `Bearer ${accessToken}`,
-            },
+        throw new Error(
+          `تعذر الاتصال بخادم النسخ الاحتياطي في مرحلة ${backupAction}.`
+        );
+      }
 
-            body:
-              JSON.stringify(
-                requestBody
+      const responseText =
+        await response.text();
+
+      let responseData = null;
+
+      if (responseText) {
+        try {
+          responseData =
+            JSON.parse(
+              responseText
+            );
+        } catch {
+          responseData = null;
+        }
+      }
+
+      if (!response.ok) {
+        console.error(
+          "Backup API request failed:",
+          {
+            action:
+              backupAction,
+
+            status:
+              response.status,
+
+            statusText:
+              response.statusText,
+
+            contentType:
+              response.headers.get(
+                "content-type"
+              ),
+
+            responseText:
+              responseText.slice(
+                0,
+                1000
               ),
           }
         );
 
-      let responseData = {};
-
-      try {
-        responseData =
-          await response.json();
-      } catch {
-        responseData = {};
+        throw new Error(
+          responseData?.error ||
+            `فشل خادم النسخ الاحتياطي في مرحلة ${backupAction}. رمز الخطأ: ${response.status}.`
+        );
       }
 
-      if (!response.ok) {
+      if (
+        !responseData ||
+        typeof responseData !==
+          "object"
+      ) {
+        console.error(
+          "Backup API invalid response:",
+          {
+            action:
+              backupAction,
+
+            status:
+              response.status,
+
+            contentType:
+              response.headers.get(
+                "content-type"
+              ),
+
+            responseText:
+              responseText.slice(
+                0,
+                1000
+              ),
+          }
+        );
+
         throw new Error(
-          responseData.error ||
-            "تعذر قراءة بيانات النسخة الاحتياطية."
+          `أعاد خادم النسخ الاحتياطي استجابة غير صالحة في مرحلة ${backupAction}.`
         );
       }
 
