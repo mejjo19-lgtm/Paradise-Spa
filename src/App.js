@@ -6389,63 +6389,320 @@ return next;
       : null;
   };
 
-  const openScheduleClientProfile = ({
-    targetType = "primary",
-    rowIndex,
-    extraClientIndex = null,
-    clientId = "",
-    phone = "",
-  }) => {
-    const directlyLinkedClient =
-      clients.find(
-        (client) =>
-          String(client.id) ===
-          String(clientId || "")
-      ) || null;
+  const openScheduleClientProfile =
+    async ({
+      targetType = "primary",
+      rowIndex,
+      extraClientIndex = null,
+      clientId = "",
+      phone = "",
+      name = "",
+    }) => {
+      const requestedName =
+        String(name || "").trim();
 
-    if (directlyLinkedClient) {
-      openClientProfile(
-        directlyLinkedClient
+      const directlyLinkedClient =
+        clients.find(
+          (client) =>
+            String(client.id) ===
+            String(clientId || "")
+        ) || null;
+
+      /*
+        لا نثق بـ clientId وحده.
+
+        يجب أن يكون الاسم والجوال داخل الموعد
+        مطابقين لصاحبة clientId.
+      */
+      const directIdentityMatches =
+        Boolean(
+          directlyLinkedClient &&
+          (
+            !requestedName ||
+            isSameNameAndPhone(
+              directlyLinkedClient.name ||
+                directlyLinkedClient.arabic_name ||
+                "",
+              directlyLinkedClient.phone || "",
+              requestedName,
+              phone
+            )
+          )
+        );
+
+      if (directIdentityMatches) {
+        await openClientProfile(
+          directlyLinkedClient
+        );
+
+        return;
+      }
+
+      const phoneMatches =
+        findClientsByExactPhone(
+          phone
+        );
+
+      /*
+        عند تكرار الجوال نحدد العميلة
+        بالاسم والجوال معًا.
+      */
+      const identityMatches =
+        requestedName
+          ? phoneMatches.filter(
+              (client) =>
+                isSameNameAndPhone(
+                  client.name ||
+                    client.arabic_name ||
+                    "",
+                  client.phone || "",
+                  requestedName,
+                  phone
+                )
+            )
+          : [];
+
+      const resolvedClient =
+        identityMatches.length === 1
+          ? identityMatches[0]
+          : (
+              !requestedName &&
+              phoneMatches.length === 1
+            )
+            ? phoneMatches[0]
+            : null;
+
+      if (resolvedClient) {
+        const linkNeedsRepair =
+          String(clientId || "") !==
+          String(resolvedClient.id);
+
+        /*
+          إذا كان الصف يحمل clientId خاطئًا،
+          نصلحه في الجدول وفي Supabase قبل
+          فتح البروفايل.
+
+          هذا يصلح أيضًا حالة أخت بيان الحالية.
+        */
+        if (
+          linkNeedsRepair &&
+          Number.isInteger(
+            Number(rowIndex)
+          )
+        ) {
+          const numericRowIndex =
+            Number(rowIndex);
+
+          const currentDayData =
+            scheduleData[
+              selectedScheduleDate
+            ] || {};
+
+          const currentRows =
+            currentDayData.rows ||
+            timeSlots.map(
+              createEmptyAppointmentRow
+            );
+
+          const currentRow =
+            currentRows[
+              numericRowIndex
+            ] ||
+            createEmptyAppointmentRow(
+              timeSlots[
+                numericRowIndex
+              ] || ""
+            );
+
+          let repairedRow =
+            currentRow;
+
+          if (
+            targetType ===
+              "household" &&
+            Number.isInteger(
+              Number(
+                extraClientIndex
+              )
+            )
+          ) {
+            const numericExtraIndex =
+              Number(
+                extraClientIndex
+              );
+
+            const extraClients =
+              getAdditionalClientsForRow(
+                currentRow
+              );
+
+            const repairedExtraClients =
+              extraClients.map(
+                (
+                  extraClient,
+                  index
+                ) =>
+                  index ===
+                  numericExtraIndex
+                    ? {
+                        ...extraClient,
+
+                        clientId:
+                          String(
+                            resolvedClient.id
+                          ),
+                      }
+                    : extraClient
+              );
+
+            repairedRow = {
+              ...currentRow,
+
+              additionalClients:
+                repairedExtraClients,
+            };
+          } else {
+            repairedRow = {
+              ...currentRow,
+
+              clientId:
+                String(
+                  resolvedClient.id
+                ),
+            };
+          }
+
+          setScheduleData(
+            (previousScheduleData) => {
+              const dayData =
+                previousScheduleData[
+                  selectedScheduleDate
+                ] || {};
+
+              const rowsForDate =
+                dayData.rows ||
+                timeSlots.map(
+                  createEmptyAppointmentRow
+                );
+
+              const nextRows =
+                rowsForDate.map(
+                  (
+                    scheduleRow,
+                    index
+                  ) =>
+                    index ===
+                    numericRowIndex
+                      ? repairedRow
+                      : scheduleRow
+                );
+
+              return {
+                ...previousScheduleData,
+
+                [selectedScheduleDate]: {
+                  ...dayData,
+                  rows: nextRows,
+                },
+              };
+            }
+          );
+
+          /*
+            نلغي أي حفظ قديم منتظر يحمل
+            clientId الخطأ.
+          */
+          const scheduleRowId =
+            getScheduleRowId(
+              selectedScheduleDate,
+              numericRowIndex
+            );
+
+          if (
+            scheduleRowSaveTimersRef
+              .current[
+                scheduleRowId
+              ]
+          ) {
+            clearTimeout(
+              scheduleRowSaveTimersRef
+                .current[
+                  scheduleRowId
+                ]
+            );
+
+            delete scheduleRowSaveTimersRef
+              .current[
+                scheduleRowId
+              ];
+          }
+
+          /*
+            حفظ فوري حتى يعمل تريغر سجل
+            الخدمات وينقل الخدمة للعميلة الصحيحة.
+          */
+          await saveScheduleRowToSupabase(
+            selectedScheduleDate,
+            numericRowIndex,
+            repairedRow,
+            currentDayData.cellStyles ||
+              {}
+          );
+        }
+
+        await openClientProfile(
+          resolvedClient
+        );
+
+        return;
+      }
+
+      const selectableMatches =
+        identityMatches.length > 1
+          ? identityMatches
+          : phoneMatches;
+
+      if (
+        selectableMatches.length > 1
+      ) {
+        setDuplicateClientSearch(
+          ""
+        );
+
+        setDuplicateClientModal({
+          targetType,
+
+          scheduleDate:
+            selectedScheduleDate,
+
+          rowIndex,
+
+          ...(targetType ===
+          "household"
+            ? {
+                extraClientIndex,
+              }
+            : {}),
+
+          phone:
+            formatSaudiPhoneForStorage(
+              phone || ""
+            ),
+
+          matches:
+            selectableMatches,
+
+          openProfileAfterSelect:
+            true,
+        });
+
+        return;
+      }
+
+      alert(
+        "لم يتم العثور على عميلة مطابقة للاسم والجوال داخل عملائنا."
       );
-      return;
-    }
-
-    const matchedClients =
-      findClientsByExactPhone(phone);
-
-    if (matchedClients.length === 1) {
-      openClientProfile(
-        matchedClients[0]
-      );
-      return;
-    }
-
-    if (matchedClients.length > 1) {
-      setDuplicateClientSearch("");
-
-      setDuplicateClientModal({
-        targetType,
-        scheduleDate:
-          selectedScheduleDate,
-        rowIndex,
-        ...(targetType === "household"
-          ? { extraClientIndex }
-          : {}),
-        phone:
-          formatSaudiPhoneForStorage(
-            phone || ""
-          ),
-        matches: matchedClients,
-        openProfileAfterSelect: true,
-      });
-
-      return;
-    }
-
-    alert(
-      "لم يتم العثور على العميلة في قائمة العملاء"
-    );
-  };
+    };
 
   const loadInactiveFutureAppointments = async () => {
     if (!isLoggedIn) return;
@@ -9299,9 +9556,29 @@ const getScheduleClientBadges = (row) => {
             return client;
           }
 
+          const identityChanged =
+            field === "name" ||
+            field === "phone";
+
           updatedExtraClient = {
             ...client,
-            [field]: value,
+
+            [field]:
+              value,
+
+            /*
+              تغيير الاسم أو الجوال يعني أن هذه
+              قد تكون عميلة مختلفة تستخدم نفس الرقم.
+
+              لذلك نلغي الربط القديم نهائيًا،
+              ونطلب اختيار Send To من جديد.
+            */
+            ...(identityChanged
+              ? {
+                  clientId: "",
+                  sendTo: "",
+                }
+              : {}),
           };
 
           return updatedExtraClient;
@@ -27779,8 +28056,12 @@ if (screen === "menu") {
       openScheduleClientProfile({
         targetType: "primary",
         rowIndex: index,
-        clientId: row.clientId || "",
-        phone: row.number || "",
+        clientId:
+          row.clientId || "",
+        phone:
+          row.number || "",
+        name:
+          row.client || "",
       });
     }}
     style={{
@@ -28537,14 +28818,26 @@ margin: "0 auto",
                                     title="فتح بروفايل العميلة"
                                     onClick={() => {
                                       openScheduleClientProfile({
-                                        targetType: "household",
-                                        rowIndex: index,
+                                        targetType:
+                                          "household",
+
+                                        rowIndex:
+                                          index,
+
                                         extraClientIndex:
                                           extraIndex,
+
                                         clientId:
-                                          extraClient.clientId || "",
+                                          extraClient.clientId ||
+                                          "",
+
                                         phone:
-                                          extraClient.phone || "",
+                                          extraClient.phone ||
+                                          "",
+
+                                        name:
+                                          extraClient.name ||
+                                          "",
                                       });
                                     }}
                                     style={{
