@@ -142,14 +142,675 @@ useEffect(() => {
   }
 }, [screen]);
 
-  const [selectedClientId, setSelectedClientId] = useState(null);
-  const [selectedLoyaltyClientId, setSelectedLoyaltyClientId] = useState(null);
+  const [
+    selectedClientId,
+    setSelectedClientId,
+  ] = useState(null);
+
+  const [
+    selectedLoyaltyClientId,
+    setSelectedLoyaltyClientId,
+  ] = useState(null);
+
 const [username, setUsername] = useState("");
 const [password, setPassword] = useState("");
 const [isLoggedIn, setIsLoggedIn] = useState(false);
 const [loggedInUser, setLoggedInUser] = useState("");
 const [loggedInAuthUserId, setLoggedInAuthUserId] = useState("");
 const [authReady, setAuthReady] = useState(false);
+
+
+const [
+  manualClientServiceHistory,
+  setManualClientServiceHistory,
+] = useState([]);
+
+const [
+  manualClientServiceHistoryLoading,
+  setManualClientServiceHistoryLoading,
+] = useState(false);
+
+const [
+  manualClientServiceHistoryError,
+  setManualClientServiceHistoryError,
+] = useState("");
+
+const [
+  showManualClientServiceForm,
+  setShowManualClientServiceForm,
+] = useState(false);
+
+const [
+  manualClientServiceDraft,
+  setManualClientServiceDraft,
+] = useState({
+  serviceDate: "",
+  serviceTime: "",
+  therapistName: "",
+  serviceName: "",
+  totalPrice: "",
+});
+
+const [
+  manualClientServiceSaving,
+  setManualClientServiceSaving,
+] = useState(false);
+
+const [
+  manualClientServiceSaveError,
+  setManualClientServiceSaveError,
+] = useState("");
+
+const resetManualClientServiceDraft =
+  () => {
+    setManualClientServiceDraft({
+      serviceDate: "",
+      serviceTime: "",
+      therapistName: "",
+      serviceName: "",
+      totalPrice: "",
+    });
+
+    setManualClientServiceSaveError(
+      ""
+    );
+  };
+
+const saveManualClientServiceHistory =
+  async () => {
+    if (
+      !ensureSystemWritable() ||
+      !canAddData
+    ) {
+      return;
+    }
+
+    if (!selectedClient?.id) {
+      setManualClientServiceSaveError(
+        "تعذر تحديد العميلة."
+      );
+
+      return;
+    }
+
+    const serviceDate =
+      String(
+        manualClientServiceDraft
+          .serviceDate || ""
+      ).trim();
+
+    const serviceTime =
+      String(
+        manualClientServiceDraft
+          .serviceTime || ""
+      ).trim();
+
+    const therapistName =
+      String(
+        manualClientServiceDraft
+          .therapistName || ""
+      ).trim();
+
+    const serviceName =
+      String(
+        manualClientServiceDraft
+          .serviceName || ""
+      ).trim();
+
+    const totalPriceText =
+      String(
+        manualClientServiceDraft
+          .totalPrice || ""
+      ).trim();
+
+    const totalPrice =
+      Number(
+        totalPriceText.replace(
+          ",",
+          "."
+        )
+      );
+
+    if (!serviceDate) {
+      setManualClientServiceSaveError(
+        "اختاري تاريخ الخدمة."
+      );
+
+      return;
+    }
+
+    if (
+      serviceDate >
+      currentDate
+    ) {
+      setManualClientServiceSaveError(
+        "لا يمكن إضافة خدمة بتاريخ مستقبلي."
+      );
+
+      return;
+    }
+
+    if (!serviceName) {
+      setManualClientServiceSaveError(
+        "اكتبي اسم الخدمة."
+      );
+
+      return;
+    }
+
+    if (
+      !totalPriceText ||
+      !Number.isFinite(totalPrice) ||
+      totalPrice < 0
+    ) {
+      setManualClientServiceSaveError(
+        "أدخلي سعرًا صحيحًا شامل التوصيل."
+      );
+
+      return;
+    }
+
+    setManualClientServiceSaving(
+      true
+    );
+
+    setManualClientServiceSaveError(
+      ""
+    );
+
+    const {
+      error,
+    } = await supabase.rpc(
+      "add_manual_legacy_client_service",
+      {
+        p_client_id:
+          Number(
+            selectedClient.id
+          ),
+
+        p_service_date:
+          serviceDate,
+
+        p_service_time:
+          serviceTime,
+
+        p_therapist_name:
+          therapistName,
+
+        p_service_name:
+          serviceName,
+
+        p_total_price:
+          totalPrice,
+      }
+    );
+
+    setManualClientServiceSaving(
+      false
+    );
+
+    if (error) {
+      console.error(
+        "Manual client service save error:",
+        error
+      );
+
+      setManualClientServiceSaveError(
+        "تعذر حفظ الخدمة. تأكد من البيانات والاتصال."
+      );
+
+      return;
+    }
+
+    resetManualClientServiceDraft();
+
+    setShowManualClientServiceForm(
+      false
+    );
+
+    alert(
+      "تمت إضافة الخدمة إلى سجل العميلة فقط."
+    );
+  };
+
+
+useEffect(() => {
+  if (
+    !authReady ||
+    !isLoggedIn ||
+    !selectedClientId
+  ) {
+    setManualClientServiceHistory([]);
+    setManualClientServiceHistoryLoading(false);
+    setManualClientServiceHistoryError("");
+
+    return undefined;
+  }
+
+  let effectActive = true;
+  let realtimeReloadTimer = null;
+
+  const normalizeManualService = (
+    service,
+    matchedInvoice = null
+  ) => {
+    const serviceSource =
+      service.source || "manual_legacy";
+
+    const invoiceId =
+      service.invoice_id ||
+      matchedInvoice?.id ||
+      "";
+
+    return {
+      id: service.id,
+
+      clientId:
+        service.client_id,
+
+      date:
+        service.service_date || "",
+
+      serviceTime:
+        service.service_time || "",
+
+      therapist:
+        service.therapist_name || "-",
+
+      services:
+        service.service_name || "-",
+
+      totalPrice:
+        Number(
+          service.total_price || 0
+        ),
+
+      serviceAmount:
+        Number(
+          service.total_price || 0
+        ),
+
+      transportation: 0,
+
+      status:
+        service.service_status || "",
+
+      source:
+        serviceSource,
+
+      manualHistory:
+        serviceSource !== "schedule",
+
+      scheduleRowId:
+        service.schedule_row_id || "",
+
+      scheduleRowIndex:
+        Number(
+          service.schedule_row_index || 0
+        ),
+
+      scheduleItemKey:
+        service.schedule_item_key || "",
+
+      sourceKey:
+        service.source_key || "",
+
+      householdRole:
+        service.household_role ||
+        "primary",
+
+      householdClientKey:
+        service.household_client_key ||
+        "",
+
+      householdClient:
+        service.household_role ===
+        "additional",
+
+      invoiceLink:
+        invoiceId
+          ? {
+              invoiceId,
+            }
+          : null,
+
+      createdAt:
+        service.created_at || "",
+
+      updatedAt:
+        service.updated_at || "",
+    };
+  };
+
+  const findInvoiceForService = (
+    service,
+    linkedInvoices
+  ) => {
+    if (service.invoice_id) {
+      return {
+        id: service.invoice_id,
+      };
+    }
+
+    if (
+      service.source !== "schedule" ||
+      !service.schedule_row_id
+    ) {
+      return null;
+    }
+
+    const householdRole =
+      service.household_role ||
+      "primary";
+
+    const householdClientKey =
+      service.household_client_key ||
+      "";
+
+    const sameRowInvoices =
+      linkedInvoices.filter(
+        (invoice) =>
+          String(
+            invoice.schedule_row_id || ""
+          ) ===
+            String(
+              service.schedule_row_id
+            ) &&
+          String(
+            invoice.document_type ||
+              "invoice"
+          ) === "invoice"
+      );
+
+    if (householdRole === "primary") {
+      return (
+        sameRowInvoices.find(
+          (invoice) =>
+            String(
+              invoice.household_role ||
+                "primary"
+            ) === "primary"
+        ) || null
+      );
+    }
+
+    const exactAdditionalInvoice =
+      sameRowInvoices.find(
+        (invoice) =>
+          String(
+            invoice.household_role || ""
+          ) === "additional" &&
+          String(
+            invoice.household_client_key ||
+              ""
+          ) ===
+            String(
+              householdClientKey
+            )
+      );
+
+    if (exactAdditionalInvoice) {
+      return exactAdditionalInvoice;
+    }
+
+    const sameClientInvoices =
+      sameRowInvoices.filter(
+        (invoice) =>
+          String(
+            invoice.household_role || ""
+          ) === "additional" &&
+          String(
+            invoice.client_id || ""
+          ) ===
+            String(
+              service.client_id || ""
+            )
+      );
+
+    return sameClientInvoices.length === 1
+      ? sameClientInvoices[0]
+      : null;
+  };
+
+  const loadManualClientServices =
+    async () => {
+      setManualClientServiceHistoryLoading(
+        true
+      );
+
+      setManualClientServiceHistoryError(
+        ""
+      );
+
+      const {
+        data,
+        error,
+      } = await supabase
+        .from(
+          "client_service_history"
+        )
+        .select(
+          [
+            "id",
+            "client_id",
+            "service_date",
+            "service_time",
+            "therapist_name",
+            "service_name",
+            "total_price",
+            "service_status",
+            "source",
+            "source_key",
+            "invoice_id",
+            "schedule_row_id",
+            "schedule_row_index",
+            "schedule_item_key",
+            "household_role",
+            "household_client_key",
+            "created_at",
+            "updated_at",
+          ].join(",")
+        )
+        .eq(
+          "client_id",
+          selectedClientId
+        )
+        .order(
+          "service_date",
+          {
+            ascending: true,
+          }
+        )
+        .order(
+          "created_at",
+          {
+            ascending: true,
+          }
+        );
+
+      if (!effectActive) {
+        return;
+      }
+
+      if (error) {
+        console.error(
+          "Client service history load error:",
+          error
+        );
+
+        setManualClientServiceHistory(
+          []
+        );
+
+        setManualClientServiceHistoryError(
+          "تعذر تحميل سجل الخدمات."
+        );
+
+        setManualClientServiceHistoryLoading(
+          false
+        );
+
+        return;
+      }
+
+      const historyRows =
+        data || [];
+
+      const scheduleRowIds = [
+        ...new Set(
+          historyRows
+            .filter(
+              (service) =>
+                service.source ===
+                  "schedule" &&
+                service.schedule_row_id &&
+                !service.invoice_id
+            )
+            .map(
+              (service) =>
+                service.schedule_row_id
+            )
+        ),
+      ];
+
+      let linkedInvoices = [];
+
+      for (
+        let startIndex = 0;
+        startIndex <
+        scheduleRowIds.length;
+        startIndex += 100
+      ) {
+        const scheduleRowIdsBatch =
+          scheduleRowIds.slice(
+            startIndex,
+            startIndex + 100
+          );
+
+        const {
+          data: invoiceRows,
+          error: invoiceLoadError,
+        } = await supabase
+          .from("invoices")
+          .select(
+            [
+              "id",
+              "document_type",
+              "schedule_row_id",
+              "household_role",
+              "household_client_key",
+              "client_id",
+            ].join(",")
+          )
+          .in(
+            "schedule_row_id",
+            scheduleRowIdsBatch
+          )
+          .eq(
+            "document_type",
+            "invoice"
+          );
+
+        if (invoiceLoadError) {
+          console.error(
+            "Service history invoice links load error:",
+            invoiceLoadError
+          );
+
+          break;
+        }
+
+        linkedInvoices = [
+          ...linkedInvoices,
+          ...(invoiceRows || []),
+        ];
+      }
+
+      if (!effectActive) {
+        return;
+      }
+
+      setManualClientServiceHistory(
+        historyRows.map(
+          (service) =>
+            normalizeManualService(
+              service,
+              findInvoiceForService(
+                service,
+                linkedInvoices
+              )
+            )
+        )
+      );
+
+      setManualClientServiceHistoryLoading(
+        false
+      );
+    };
+
+  const scheduleRealtimeReload = () => {
+    if (realtimeReloadTimer) {
+      clearTimeout(
+        realtimeReloadTimer
+      );
+    }
+
+    realtimeReloadTimer = setTimeout(
+      () => {
+        loadManualClientServices();
+      },
+      150
+    );
+  };
+
+  const manualServicesChannel =
+    supabase
+      .channel(
+        `client-service-history-${selectedClientId}`
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table:
+            "client_service_history",
+        },
+        scheduleRealtimeReload
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "invoices",
+        },
+        scheduleRealtimeReload
+      )
+      .subscribe();
+
+  loadManualClientServices();
+
+  return () => {
+    effectActive = false;
+
+    if (realtimeReloadTimer) {
+      clearTimeout(
+        realtimeReloadTimer
+      );
+    }
+
+    supabase.removeChannel(
+      manualServicesChannel
+    );
+  };
+}, [
+  authReady,
+  isLoggedIn,
+  selectedClientId,
+]);
+
+
 const scheduleLastEditRef = useRef(0);
 const dailyManualLastEditRef = useRef(0);
 const scheduleSettingsLastEditRef = useRef(0);
@@ -4104,8 +4765,6 @@ if (error) {
 );
 
 goToScreen("clientProfile");
-
-loadClientScheduleHistory(fullClient?.phone || client.phone);
 };
 
   // 🎫 UPDATE LOYALTY CARD NAME
@@ -4591,7 +5250,12 @@ const updateClientLastActivity = async (id) => {
   const nonRevenueStatuses = ["Cancel", "Postponed"];
   const hiddenFromDashboardStatuses = ["Cancel", "Postponed", "Gift Giver"];
   const excludedFromClientCountStatuses = ["Cancel", "Postponed", "Gift Giver"];
-  const excludedFromProfileHistoryStatuses = ["Cancel", "Postponed", "Gift Giver"];
+  const excludedFromProfileHistoryStatuses = [
+    "Cancel",
+    "Postponed",
+    "Gift Giver",
+    "Not Sure",
+  ];
   const subtractVisitStatuses = ["Cancel", "Postponed"];
 
   const clientByOptions = ["Fatima", "Tahani", "Paradise F", "Paradise T"];
@@ -4870,69 +5534,7 @@ const stepScheduleOrder = (rowIndex, currentOrder, direction) => {
 
     applyScheduleRowsSnapshot(date, data || []);
   };
-  const mergeScheduleRowsIntoScheduleData = (dbRows) => {
-  const rowsByDate = {};
 
-  (dbRows || []).forEach((dbRow) => {
-    const date = dbRow.schedule_date;
-    const rowIndex = Number(dbRow.row_index);
-
-    if (!date || !Number.isInteger(rowIndex)) return;
-
-    if (!rowsByDate[date]) {
-      rowsByDate[date] = {
-        rows: timeSlots.map(createEmptyAppointmentRow),
-        cellStyles: {},
-      };
-    }
-
-    rowsByDate[date].rows[rowIndex] = {
-      ...rowsByDate[date].rows[rowIndex],
-      ...(dbRow.row_data || {}),
-    };
-
-    Object.assign(rowsByDate[date].cellStyles, dbRow.cell_styles || {});
-  });
-
-  setScheduleData((prev) => {
-    const next = { ...prev };
-
-    Object.entries(rowsByDate).forEach(([date, dayData]) => {
-      next[date] = {
-        ...(next[date] || {}),
-        rows: dayData.rows,
-        cellStyles: {
-          ...((next[date] || {}).cellStyles || {}),
-          ...dayData.cellStyles,
-        },
-      };
-    });
-
-    return next;
-  });
-};
-
-const loadClientScheduleHistory = async (phoneValue) => {
-  const comparablePhone = normalizePhone(formatSaudiPhoneForStorage(phoneValue));
-
-  if (!comparablePhone || comparablePhone.length < 9) return;
-
-  const { data, error } = await supabase
-    .from("schedule_rows")
-    .select("id, schedule_date, row_index, row_data, cell_styles, updated_at, updated_by")
-    .or(
-      `row_data->>number.eq.${comparablePhone},row_data->additionalClients.cs.[{"phone":"${comparablePhone}"}]`
-    )
-    .order("schedule_date", { ascending: true })
-    .order("row_index", { ascending: true });
-
-  if (error) {
-    console.log("Client schedule history load error:", error);
-    return;
-  }
-
-  mergeScheduleRowsIntoScheduleData((data || []).filter((row) => row.schedule_date !== selectedScheduleDate));
-};
 const getMonthStartDate = (monthKey) => `${monthKey}-01`;
 
 const getMonthEndDate = (monthKey) => {
@@ -5711,7 +6313,67 @@ return next;
     const matchedClients =
       findClientsByExactPhone(phoneNumber);
 
-    return matchedClients[0] || null;
+    return matchedClients.length === 1
+      ? matchedClients[0]
+      : null;
+  };
+
+  const openScheduleClientProfile = ({
+    targetType = "primary",
+    rowIndex,
+    extraClientIndex = null,
+    clientId = "",
+    phone = "",
+  }) => {
+    const directlyLinkedClient =
+      clients.find(
+        (client) =>
+          String(client.id) ===
+          String(clientId || "")
+      ) || null;
+
+    if (directlyLinkedClient) {
+      openClientProfile(
+        directlyLinkedClient
+      );
+      return;
+    }
+
+    const matchedClients =
+      findClientsByExactPhone(phone);
+
+    if (matchedClients.length === 1) {
+      openClientProfile(
+        matchedClients[0]
+      );
+      return;
+    }
+
+    if (matchedClients.length > 1) {
+      setDuplicateClientSearch("");
+
+      setDuplicateClientModal({
+        targetType,
+        scheduleDate:
+          selectedScheduleDate,
+        rowIndex,
+        ...(targetType === "household"
+          ? { extraClientIndex }
+          : {}),
+        phone:
+          formatSaudiPhoneForStorage(
+            phone || ""
+          ),
+        matches: matchedClients,
+        openProfileAfterSelect: true,
+      });
+
+      return;
+    }
+
+    alert(
+      "لم يتم العثور على العميلة في قائمة العملاء"
+    );
   };
 
   const loadInactiveFutureAppointments = async () => {
@@ -9453,21 +10115,171 @@ if (visitsValue === null) {
       ]).select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at").single();
 
       if (error) {
-        console.log("Additional client Send To clients copy error:", error);
+        console.log(
+          "Additional client Send To clients copy error:",
+          error
+        );
+
         return;
       }
 
       if (insertedClient) {
-        const nextClient = normalizeClientRecord(insertedClient);
-        setClients((prev) => {
-          const exists = prev.some((client) => String(client.id) === String(nextClient.id));
-          const nextClients = exists
-            ? prev.map((client) => String(client.id) === String(nextClient.id) ? nextClient : client)
-            : [nextClient, ...prev];
+        const nextClient =
+          normalizeClientRecord(
+            insertedClient
+          );
 
-          return nextClients.sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
+        setClients((prev) => {
+          const exists =
+            prev.some(
+              (client) =>
+                String(client.id) ===
+                String(nextClient.id)
+            );
+
+          const nextClients =
+            exists
+              ? prev.map((client) =>
+                  String(client.id) ===
+                  String(nextClient.id)
+                    ? nextClient
+                    : client
+                )
+              : [
+                  nextClient,
+                  ...prev,
+                ];
+
+          return nextClients.sort(
+            (a, b) =>
+              Number(b.id || 0) -
+              Number(a.id || 0)
+          );
         });
+
+        const targetRowIndex =
+          Number(
+            additionalClientModal
+              ?.rowIndex
+          );
+
+        if (
+          Number.isInteger(
+            targetRowIndex
+          ) &&
+          targetRowIndex >= 0
+        ) {
+          const linkedClientId =
+            String(
+              insertedClient.id
+            );
+
+          const linkedExtraClients =
+            getAdditionalClientsForRow(
+              baseRow
+            ).map(
+              (currentExtraClient) =>
+                String(
+                  currentExtraClient.id ||
+                    ""
+                ) ===
+                String(
+                  extraClient.id ||
+                    ""
+                )
+                  ? {
+                      ...currentExtraClient,
+                      clientId:
+                        linkedClientId,
+                    }
+                  : currentExtraClient
+            );
+
+          const linkedRowSnapshot = {
+            ...baseRow,
+
+            additionalClients:
+              linkedExtraClients,
+          };
+
+          setScheduleData((prev) => {
+            const currentDayData =
+              prev[
+                selectedScheduleDate
+              ] || {};
+
+            const currentRows =
+              currentDayData.rows ||
+              timeSlots.map(
+                createEmptyAppointmentRow
+              );
+
+            const rows =
+              currentRows.map(
+                (
+                  currentRow,
+                  currentIndex
+                ) => {
+                  if (
+                    currentIndex !==
+                    targetRowIndex
+                  ) {
+                    return currentRow;
+                  }
+
+                  const latestExtraClients =
+                    getAdditionalClientsForRow(
+                      currentRow
+                    ).map(
+                      (
+                        currentExtraClient
+                      ) =>
+                        String(
+                          currentExtraClient.id ||
+                            ""
+                        ) ===
+                        String(
+                          extraClient.id ||
+                            ""
+                        )
+                          ? {
+                              ...currentExtraClient,
+                              clientId:
+                                linkedClientId,
+                            }
+                          : currentExtraClient
+                    );
+
+                  return {
+                    ...currentRow,
+
+                    additionalClients:
+                      latestExtraClients,
+                  };
+                }
+              );
+
+            return {
+              ...prev,
+
+              [selectedScheduleDate]: {
+                ...currentDayData,
+                rows,
+              },
+            };
+          });
+
+          queueScheduleRowSave(
+            selectedScheduleDate,
+            targetRowIndex,
+            linkedRowSnapshot,
+            scheduleData[
+              selectedScheduleDate
+            ]?.cellStyles || {}
+          );
+        }
       }
+
       return;
     }
 
@@ -10034,21 +10846,115 @@ if (visitsValue === null) {
       ]).select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at").single();
 
       if (error) {
-        console.log("Send To clients copy error:", error);
+        console.log(
+          "Send To clients copy error:",
+          error
+        );
+
         return;
       }
 
       if (insertedClient) {
-        const nextClient = normalizeClientRecord(insertedClient);
-        setClients((prev) => {
-          const exists = prev.some((client) => String(client.id) === String(nextClient.id));
-          const nextClients = exists
-            ? prev.map((client) => String(client.id) === String(nextClient.id) ? nextClient : client)
-            : [nextClient, ...prev];
+        const nextClient =
+          normalizeClientRecord(
+            insertedClient
+          );
 
-          return nextClients.sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
+        setClients((prev) => {
+          const exists =
+            prev.some(
+              (client) =>
+                String(client.id) ===
+                String(nextClient.id)
+            );
+
+          const nextClients =
+            exists
+              ? prev.map((client) =>
+                  String(client.id) ===
+                  String(nextClient.id)
+                    ? nextClient
+                    : client
+                )
+              : [
+                  nextClient,
+                  ...prev,
+                ];
+
+          return nextClients.sort(
+            (a, b) =>
+              Number(b.id || 0) -
+              Number(a.id || 0)
+          );
         });
+
+        const normalizedRowIndex =
+          Number(rowIndex);
+
+        if (
+          Number.isInteger(
+            normalizedRowIndex
+          ) &&
+          normalizedRowIndex >= 0
+        ) {
+          const linkedClientId =
+            String(
+              insertedClient.id
+            );
+
+          const linkedRowSnapshot = {
+            ...row,
+            clientId:
+              linkedClientId,
+          };
+
+          setScheduleData((prev) => {
+            const currentDayData =
+              prev[
+                selectedScheduleDate
+              ] || {};
+
+            const currentRows =
+              currentDayData.rows ||
+              timeSlots.map(
+                createEmptyAppointmentRow
+              );
+
+            const rows =
+              currentRows.map(
+                (
+                  currentRow,
+                  currentIndex
+                ) =>
+                  currentIndex ===
+                  normalizedRowIndex
+                    ? {
+                        ...currentRow,
+                        clientId:
+                          linkedClientId,
+                      }
+                    : currentRow
+              );
+
+            return {
+              ...prev,
+
+              [selectedScheduleDate]: {
+                ...currentDayData,
+                rows,
+              },
+            };
+          });
+
+          queueScheduleRowSave(
+            selectedScheduleDate,
+            normalizedRowIndex,
+            linkedRowSnapshot,
+            cellStyles || {}
+          );
+        }
       }
+
       return;
     }
 
@@ -13251,25 +14157,137 @@ const sendWhatsApp = async (client) => {
       });
     });
 
-    serviceHistory.sort((a, b) => {
-      if (a.date === b.date) {
-        return String(a.serviceTime || "").localeCompare(
-          String(b.serviceTime || "")
-        );
-      }
+    const numberedServiceHistory = [
+      ...serviceHistory,
+    ]
+      .sort((a, b) => {
+        if (a.date === b.date) {
+          return String(
+            a.serviceTime || ""
+          ).localeCompare(
+            String(
+              b.serviceTime || ""
+            )
+          );
+        }
 
-      return a.date.localeCompare(b.date);
-    });
+        return String(
+          a.date || ""
+        ).localeCompare(
+          String(
+            b.date || ""
+          )
+        );
+      })
+      .map(
+        (
+          service,
+          serviceIndex
+        ) => ({
+          ...service,
+
+          // رقم عرض محسوب داخل سجل الخدمات فقط.
+          // لا يُحفظ في schedule_rows ولا يؤثر على الولاء.
+          serviceNumber:
+            serviceIndex + 1,
+        })
+      );
 
     return {
-      serviceHistory,
-      totalPaid: Number(totalPaid.toFixed(2)),
+      serviceHistory:
+        numberedServiceHistory,
+
+      totalPaid:
+        Number(
+          totalPaid.toFixed(2)
+        ),
     };
   };
 
-  const selectedClientServiceSummary = selectedClient
-    ? getClientServiceSummary(selectedClient)
-    : { serviceHistory: [], totalPaid: 0, lastVisitDate: "" };
+  const selectedClientServiceSummary =
+    selectedClient
+      ? (() => {
+          const serviceHistory = [
+            ...manualClientServiceHistory,
+          ]
+            .sort((a, b) => {
+              const dateComparison =
+                String(
+                  a.date || ""
+                ).localeCompare(
+                  String(
+                    b.date || ""
+                  )
+                );
+
+              if (dateComparison !== 0) {
+                return dateComparison;
+              }
+
+              const timeComparison =
+                String(
+                  a.serviceTime || ""
+                ).localeCompare(
+                  String(
+                    b.serviceTime || ""
+                  )
+                );
+
+              if (timeComparison !== 0) {
+                return timeComparison;
+              }
+
+              return String(
+                a.createdAt || ""
+              ).localeCompare(
+                String(
+                  b.createdAt || ""
+                )
+              );
+            })
+            .map(
+              (
+                service,
+                serviceIndex
+              ) => ({
+                ...service,
+
+                // رقم عرض محسوب من الجدول الموحد فقط.
+                // لا يُحفظ ولا يؤثر على الولاء.
+                serviceNumber:
+                  serviceIndex + 1,
+              })
+            );
+
+          const totalPaid =
+            serviceHistory.reduce(
+              (total, service) =>
+                total +
+                Number(
+                  service.totalPrice || 0
+                ),
+              0
+            );
+
+          return {
+            serviceHistory,
+
+            totalPaid:
+              Number(
+                totalPaid.toFixed(2)
+              ),
+
+            lastVisitDate:
+              serviceHistory[
+                serviceHistory.length - 1
+              ]?.date || "",
+          };
+        })()
+      : {
+          serviceHistory: [],
+          totalPaid: 0,
+          lastVisitDate: "",
+        };
 
   const openServiceHistoryInvoice = async (
     invoiceLink
@@ -18934,6 +19952,7 @@ const welcomeBoardNameStyle = {
           );
         }
 
+
         const storageInventory =
           await requestBackupApi(
             accessToken,
@@ -19420,6 +20439,10 @@ const welcomeBoardNameStyle = {
     {
       tableName: "clients",
       label: "العملاء",
+    },
+    {
+      tableName: "client_service_history",
+      label: "سجل خدمات العملاء الموحد",
     },
     {
       tableName: "daily_reports",
@@ -23604,10 +24627,11 @@ const welcomeBoardNameStyle = {
         background: "linear-gradient(145deg, rgba(255,250,243,0.98), rgba(243,232,223,0.93))",
         border: "1px solid rgba(214,199,184,0.95)",
         borderRadius: "22px",
-        padding: compact ? "0 16px" : "12px 18px",
+        padding: 0,
         height: compact ? "44px" : "auto",
         display: "flex",
         alignItems: "center",
+        boxSizing: "border-box",
         boxShadow: "0 16px 36px rgba(75,46,31,0.11)",
         pointerEvents: "auto",
         backdropFilter: "blur(12px)",
@@ -23624,13 +24648,18 @@ const welcomeBoardNameStyle = {
         }}
         style={{
           width: "100%",
+          height: compact ? "100%" : "auto",
+          minHeight: "44px",
+          padding: compact ? "0 16px" : "12px 18px",
           border: "none",
+          borderRadius: "22px",
           outline: "none",
           background: "transparent",
           color: "#4b2e1f",
-          fontSize: compact ? "13px" : "15px",
-          fontWeight: "bold",
+          fontSize: compact ? "15px" : "16px",
+          fontWeight: "800",
           textAlign: "center",
+          boxSizing: "border-box",
         }}
       />
 
@@ -23665,14 +24694,22 @@ const welcomeBoardNameStyle = {
                 style={{
                   ...buttonStyle,
                   width: "100%",
+                  minHeight: "46px",
+                  padding: "12px 14px",
                   marginBottom: "6px",
                   backgroundColor: "rgba(255,255,255,0.94)",
                   color: "#4b2e1f",
                   border: "1px solid #eadfd5",
                   borderRadius: "15px",
                   display: "flex",
+                  alignItems: "center",
                   justifyContent: "space-between",
                   gap: "12px",
+                  fontSize: "15px",
+                  fontWeight: "800",
+                  lineHeight: "1.4",
+                  cursor: "pointer",
+                  boxSizing: "border-box",
                   boxShadow: "0 8px 18px rgba(75,46,31,0.07)",
                 }}
               >
@@ -25433,9 +26470,25 @@ if (screen === "menu") {
                       <button
                         key={client.id}
                         type="button"
-                        onClick={() =>
-                          selectDuplicateClient(client)
-                        }
+                        onClick={async () => {
+                          const openProfileAfterSelect =
+                            Boolean(
+                              duplicateClientModal
+                                ?.openProfileAfterSelect
+                            );
+
+                          await selectDuplicateClient(
+                            client
+                          );
+
+                          if (
+                            openProfileAfterSelect
+                          ) {
+                            openClientProfile(
+                              client
+                            );
+                          }
+                        }}
                         style={{
                           width: "100%",
                           padding: "13px",
@@ -26420,23 +27473,12 @@ if (screen === "menu") {
       event.preventDefault();
       event.stopPropagation();
 
-      const matchedClient =
-        clients.find(
-          (client) =>
-            String(client.id) ===
-            String(row.clientId || "")
-        ) ||
-        findClientByExactPhone(
-          row.number || ""
-        );
-
-      if (matchedClient) {
-        openClientProfile(matchedClient);
-      } else {
-        alert(
-          "لم يتم العثور على العميلة في قائمة العملاء"
-        );
-      }
+      openScheduleClientProfile({
+        targetType: "primary",
+        rowIndex: index,
+        clientId: row.clientId || "",
+        phone: row.number || "",
+      });
     }}
     style={{
       display: "block",
@@ -27191,15 +28233,16 @@ margin: "0 auto",
                                     type="button"
                                     title="فتح بروفايل العميلة"
                                     onClick={() => {
-                                      if (matchedHouseholdClient) {
-                                        openClientProfile(
-                                          matchedHouseholdClient
-                                        );
-                                      } else {
-                                        alert(
-                                          "لم يتم العثور على العميلة في قائمة العملاء"
-                                        );
-                                      }
+                                      openScheduleClientProfile({
+                                        targetType: "household",
+                                        rowIndex: index,
+                                        extraClientIndex:
+                                          extraIndex,
+                                        clientId:
+                                          extraClient.clientId || "",
+                                        phone:
+                                          extraClient.phone || "",
+                                      });
                                     }}
                                     style={{
                                       display: "block",
@@ -41986,47 +43029,535 @@ if (screen === "potentialClients") {
 
               <div
                 style={{
-                  minHeight: "32px",
-                  padding: "6px 12px",
-                  boxSizing: "border-box",
-                  borderRadius: "999px",
-                  background:
-                    "linear-gradient(135deg, #4b3327, #76543f)",
-                  color: "#fffaf5",
-                  boxShadow:
-                    "0 7px 16px rgba(75,46,31,0.15)",
-                  display: "inline-flex",
+                  display: "flex",
                   alignItems: "center",
-                  justifyContent: "center",
-                  gap: "6px",
-                  fontWeight: "900",
-                  fontSize: "10px",
-                  whiteSpace: "nowrap",
+                  justifyContent: "flex-end",
+                  gap: "8px",
+                  flexWrap: "wrap",
                 }}
               >
-                <span
+                {canAddData && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (
+                        showManualClientServiceForm
+                      ) {
+                        resetManualClientServiceDraft();
+
+                        setShowManualClientServiceForm(
+                          false
+                        );
+
+                        return;
+                      }
+
+                      resetManualClientServiceDraft();
+
+                      setShowManualClientServiceForm(
+                        true
+                      );
+                    }}
+                    style={{
+                      minHeight: "32px",
+                      padding: "6px 13px",
+                      boxSizing: "border-box",
+                      border:
+                        "1px solid rgba(157,117,87,0.34)",
+                      borderRadius: "999px",
+                      background:
+                        showManualClientServiceForm
+                          ? "linear-gradient(135deg, #ead8c8, #d4b69d)"
+                          : "linear-gradient(135deg, #b98d6d, #8f6549)",
+                      color:
+                        showManualClientServiceForm
+                          ? "#4b3327"
+                          : "#fffaf5",
+                      boxShadow:
+                        "0 7px 16px rgba(75,46,31,0.12)",
+                      fontWeight: "900",
+                      fontSize: "11px",
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {showManualClientServiceForm
+                      ? "إغلاق الإضافة"
+                      : "+ إضافة خدمة"}
+                  </button>
+                )}
+
+                <div
                   style={{
-                    color: "#d9baa0",
-                    fontSize: "9px",
+                    minHeight: "32px",
+                    padding: "6px 12px",
+                    boxSizing: "border-box",
+                    borderRadius: "999px",
+                    background:
+                      "linear-gradient(135deg, #4b3327, #76543f)",
+                    color: "#fffaf5",
+                    boxShadow:
+                      "0 7px 16px rgba(75,46,31,0.15)",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "6px",
+                    fontWeight: "900",
+                    fontSize: "10px",
+                    whiteSpace: "nowrap",
                   }}
                 >
-                  SAR
-                </span>
+                  <span
+                    style={{
+                      color: "#d9baa0",
+                      fontSize: "9px",
+                    }}
+                  >
+                    SAR
+                  </span>
 
-                {selectedClientServiceSummary.totalPaid}
+                  {
+                    selectedClientServiceSummary
+                      .totalPaid
+                  }
 
-                <span
-                  style={{
-                    color: "rgba(255,250,245,0.70)",
-                    fontSize: "9px",
-                  }}
-                >
-                  إجمالي المدفوعات
-                </span>
+                  <span
+                    style={{
+                      color:
+                        "rgba(255,250,245,0.70)",
+                      fontSize: "9px",
+                    }}
+                  >
+                    إجمالي المدفوعات
+                  </span>
+                </div>
               </div>
             </div>
 
-            {selectedClientServiceSummary.serviceHistory.length === 0 ? (
+            {showManualClientServiceForm && (
+              <div
+                style={{
+                  marginBottom: "16px",
+                  padding: "16px",
+                  boxSizing: "border-box",
+                  borderRadius: "19px",
+                  border:
+                    "1px solid rgba(169,128,97,0.34)",
+                  background:
+                    "linear-gradient(145deg, rgba(255,252,248,0.98), rgba(240,224,210,0.92))",
+                  boxShadow:
+                    "0 10px 24px rgba(75,46,31,0.07)",
+                  direction: "rtl",
+                }}
+              >
+                <div
+                  style={{
+                    marginBottom: "13px",
+                    color: "#4b3327",
+                    fontSize: "13px",
+                    fontWeight: "950",
+                  }}
+                >
+                  إضافة خدمة سابقة إلى سجل{" "}
+                  {selectedClient?.name || "العميلة"}
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      "repeat(auto-fit, minmax(155px, 1fr))",
+                    gap: "11px",
+                  }}
+                >
+                  <label
+                    style={{
+                      display: "grid",
+                      gap: "6px",
+                      color: "#684a39",
+                      fontSize: "10px",
+                      fontWeight: "900",
+                    }}
+                  >
+                    تاريخ الخدمة *
+
+                    <input
+                      type="date"
+                      max={currentDate}
+                      value={
+                        manualClientServiceDraft
+                          .serviceDate
+                      }
+                      onChange={(event) =>
+                        setManualClientServiceDraft(
+                          (previousDraft) => ({
+                            ...previousDraft,
+
+                            serviceDate:
+                              event.target.value,
+                          })
+                        )
+                      }
+                      style={{
+                        width: "100%",
+                        minHeight: "39px",
+                        padding: "8px 10px",
+                        boxSizing: "border-box",
+                        border:
+                          "1px solid rgba(157,117,87,0.34)",
+                        borderRadius: "11px",
+                        background: "#fffdf9",
+                        color: "#432f24",
+                        fontSize: "12px",
+                        fontWeight: "800",
+                        outline: "none",
+                      }}
+                    />
+                  </label>
+
+                  <label
+                    style={{
+                      display: "grid",
+                      gap: "6px",
+                      color: "#684a39",
+                      fontSize: "10px",
+                      fontWeight: "900",
+                    }}
+                  >
+                    وقت الخدمة
+
+                    <input
+                      type="time"
+                      value={
+                        manualClientServiceDraft
+                          .serviceTime
+                      }
+                      onChange={(event) =>
+                        setManualClientServiceDraft(
+                          (previousDraft) => ({
+                            ...previousDraft,
+
+                            serviceTime:
+                              event.target.value,
+                          })
+                        )
+                      }
+                      style={{
+                        width: "100%",
+                        minHeight: "39px",
+                        padding: "8px 10px",
+                        boxSizing: "border-box",
+                        border:
+                          "1px solid rgba(157,117,87,0.34)",
+                        borderRadius: "11px",
+                        background: "#fffdf9",
+                        color: "#432f24",
+                        fontSize: "12px",
+                        fontWeight: "800",
+                        outline: "none",
+                      }}
+                    />
+                  </label>
+
+                  <label
+                    style={{
+                      display: "grid",
+                      gap: "6px",
+                      color: "#684a39",
+                      fontSize: "10px",
+                      fontWeight: "900",
+                    }}
+                  >
+                    الأخصائية
+
+                    <input
+                      type="text"
+                      placeholder="اسم الأخصائية"
+                      value={
+                        manualClientServiceDraft
+                          .therapistName
+                      }
+                      onChange={(event) =>
+                        setManualClientServiceDraft(
+                          (previousDraft) => ({
+                            ...previousDraft,
+
+                            therapistName:
+                              event.target.value,
+                          })
+                        )
+                      }
+                      style={{
+                        width: "100%",
+                        minHeight: "39px",
+                        padding: "8px 10px",
+                        boxSizing: "border-box",
+                        border:
+                          "1px solid rgba(157,117,87,0.34)",
+                        borderRadius: "11px",
+                        background: "#fffdf9",
+                        color: "#432f24",
+                        fontSize: "12px",
+                        fontWeight: "800",
+                        outline: "none",
+                      }}
+                    />
+                  </label>
+
+                  <label
+                    style={{
+                      display: "grid",
+                      gap: "6px",
+                      color: "#684a39",
+                      fontSize: "10px",
+                      fontWeight: "900",
+                    }}
+                  >
+                    الخدمة *
+
+                    <input
+                      type="text"
+                      placeholder="مثال: Massage Relaxing 60 Mins"
+                      value={
+                        manualClientServiceDraft
+                          .serviceName
+                      }
+                      onChange={(event) =>
+                        setManualClientServiceDraft(
+                          (previousDraft) => ({
+                            ...previousDraft,
+
+                            serviceName:
+                              event.target.value,
+                          })
+                        )
+                      }
+                      style={{
+                        width: "100%",
+                        minHeight: "39px",
+                        padding: "8px 10px",
+                        boxSizing: "border-box",
+                        border:
+                          "1px solid rgba(157,117,87,0.34)",
+                        borderRadius: "11px",
+                        background: "#fffdf9",
+                        color: "#432f24",
+                        fontSize: "12px",
+                        fontWeight: "800",
+                        outline: "none",
+                      }}
+                    />
+                  </label>
+
+                  <label
+                    style={{
+                      display: "grid",
+                      gap: "6px",
+                      color: "#684a39",
+                      fontSize: "10px",
+                      fontWeight: "900",
+                    }}
+                  >
+                    السعر شامل التوصيل *
+
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      value={
+                        manualClientServiceDraft
+                          .totalPrice
+                      }
+                      onChange={(event) =>
+                        setManualClientServiceDraft(
+                          (previousDraft) => ({
+                            ...previousDraft,
+
+                            totalPrice:
+                              event.target.value,
+                          })
+                        )
+                      }
+                      style={{
+                        width: "100%",
+                        minHeight: "39px",
+                        padding: "8px 10px",
+                        boxSizing: "border-box",
+                        border:
+                          "1px solid rgba(157,117,87,0.34)",
+                        borderRadius: "11px",
+                        background: "#fffdf9",
+                        color: "#432f24",
+                        fontSize: "12px",
+                        fontWeight: "800",
+                        outline: "none",
+                      }}
+                    />
+                  </label>
+                </div>
+
+                <div
+                  style={{
+                    marginTop: "11px",
+                    color: "#8b6a52",
+                    fontSize: "10px",
+                    fontWeight: "800",
+                    lineHeight: "1.6",
+                  }}
+                >
+                  هذه الخدمة تُضاف إلى سجل العميلة
+                  فقط، ولا تؤثر على المواعيد أو
+                  الولاء أو التقارير أو الفواتير.
+                </div>
+
+                {manualClientServiceSaveError && (
+                  <div
+                    style={{
+                      marginTop: "11px",
+                      padding: "9px 11px",
+                      borderRadius: "11px",
+                      background:
+                        "rgba(164,73,63,0.10)",
+                      color: "#8e3f38",
+                      fontSize: "11px",
+                      fontWeight: "900",
+                    }}
+                  >
+                    {
+                      manualClientServiceSaveError
+                    }
+                  </div>
+                )}
+
+                <div
+                  style={{
+                    marginTop: "14px",
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    alignItems: "center",
+                    gap: "8px",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <button
+                    type="button"
+                    disabled={
+                      manualClientServiceSaving
+                    }
+                    onClick={() => {
+                      resetManualClientServiceDraft();
+
+                      setShowManualClientServiceForm(
+                        false
+                      );
+                    }}
+                    style={{
+                      minHeight: "36px",
+                      padding: "7px 16px",
+                      border:
+                        "1px solid rgba(157,117,87,0.34)",
+                      borderRadius: "11px",
+                      background: "#f1e2d5",
+                      color: "#5b4031",
+                      fontSize: "11px",
+                      fontWeight: "900",
+                      cursor:
+                        manualClientServiceSaving
+                          ? "not-allowed"
+                          : "pointer",
+                      opacity:
+                        manualClientServiceSaving
+                          ? 0.65
+                          : 1,
+                    }}
+                  >
+                    إلغاء
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={
+                      manualClientServiceSaving
+                    }
+                    onClick={
+                      saveManualClientServiceHistory
+                    }
+                    style={{
+                      minHeight: "36px",
+                      padding: "7px 18px",
+                      border: "none",
+                      borderRadius: "11px",
+                      background:
+                        "linear-gradient(135deg, #4b3327, #76543f)",
+                      color: "#fffaf5",
+                      boxShadow:
+                        "0 7px 16px rgba(75,46,31,0.14)",
+                      fontSize: "11px",
+                      fontWeight: "900",
+                      cursor:
+                        manualClientServiceSaving
+                          ? "not-allowed"
+                          : "pointer",
+                      opacity:
+                        manualClientServiceSaving
+                          ? 0.65
+                          : 1,
+                    }}
+                  >
+                    {manualClientServiceSaving
+                      ? "جاري الحفظ..."
+                      : "حفظ الخدمة"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {manualClientServiceHistoryLoading ? (
+              <div
+                style={{
+                  minHeight: "78px",
+                  padding: "18px",
+                  boxSizing: "border-box",
+                  borderRadius: "17px",
+                  background:
+                    "rgba(255,250,245,0.65)",
+                  color: "#92725a",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  textAlign: "center",
+                  fontSize: "12px",
+                  fontWeight: "850",
+                }}
+              >
+                جاري تحميل سجل الخدمات...
+              </div>
+            ) : manualClientServiceHistoryError ? (
+              <div
+                style={{
+                  minHeight: "78px",
+                  padding: "18px",
+                  boxSizing: "border-box",
+                  borderRadius: "17px",
+                  border:
+                    "1px solid rgba(164,73,63,0.25)",
+                  background:
+                    "rgba(164,73,63,0.08)",
+                  color: "#8e3f38",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  textAlign: "center",
+                  fontSize: "12px",
+                  fontWeight: "900",
+                }}
+              >
+                {manualClientServiceHistoryError}
+              </div>
+            ) : selectedClientServiceSummary
+                .serviceHistory.length === 0 ? (
               <div
                 style={{
                   minHeight: "78px",
@@ -42046,7 +43577,7 @@ if (screen === "potentialClients") {
                   fontWeight: "850",
                 }}
               >
-                لا توجد خدمات مرتبطة من جدول المواعيد حتى الآن
+                لا توجد خدمات مسجلة حتى الآن
               </div>
             ) : (
               <div
@@ -42073,7 +43604,7 @@ if (screen === "potentialClients") {
                     style={{
                       display: "grid",
                       gridTemplateColumns:
-                        "0.9fr 0.9fr 1fr 1.8fr",
+                        "0.9fr 0.9fr 1fr 1.8fr 0.9fr",
                       alignItems: "center",
                       background:
                         "linear-gradient(135deg, #4a3226, #76513b)",
@@ -42090,13 +43621,14 @@ if (screen === "potentialClients") {
                       "Order No.",
                       "Therapist",
                       "Services",
+                      "Price",
                     ].map((header) => (
                       <div
                         key={header}
                         style={{
                           padding: "12px 10px",
                           borderRight:
-                            header !== "Services"
+                            header !== "Price"
                               ? "1px solid rgba(255,255,255,0.12)"
                               : "none",
                         }}
@@ -42121,7 +43653,7 @@ if (screen === "potentialClients") {
                           style={{
                             display: "grid",
                             gridTemplateColumns:
-                              "0.9fr 0.9fr 1fr 1.8fr",
+                              "0.9fr 0.9fr 1fr 1.8fr 0.9fr",
                             alignItems: "stretch",
                             background:
                               index % 2 === 0
@@ -42167,7 +43699,7 @@ if (screen === "potentialClients") {
                             }}
                           >
                             {formatServiceOrderNumber(
-                              service.order,
+                              service.serviceNumber,
                               index
                             )}
                           </div>
@@ -42204,6 +43736,8 @@ if (screen === "potentialClients") {
                               lineHeight: "1.55",
                               overflowWrap: "anywhere",
                               boxSizing: "border-box",
+                              borderRight:
+                                "1px solid rgba(190,157,130,0.24)",
                             }}
                           >
                             <span
@@ -42251,6 +43785,29 @@ if (screen === "potentialClients") {
                                 ▤
                               </button>
                             )}
+                          </div>
+
+                          <div
+                            style={{
+                              padding: "13px 10px",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              color: "#4f372b",
+                              fontWeight: "900",
+                              fontSize: "12px",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {Number(
+                              service.totalPrice || 0
+                            ).toLocaleString(
+                              "en-US",
+                              {
+                                maximumFractionDigits: 2,
+                              }
+                            )}{" "}
+                            SAR
                           </div>
                         </div>
                       )
