@@ -17855,14 +17855,51 @@ const leavingTime = addMinutesToDisplayTime(
         String(
           serviceHistory?.lastOrderAt ||
           ""
-        )
-          .trim()
-          .slice(0, 10);
+        ).trim();
 
       const clientLastOrderAt =
         String(
           client.last_order_at || ""
         ).trim();
+
+      const getValidOrderTime =
+        (dateValue) => {
+          if (!dateValue) {
+            return 0;
+          }
+
+          const parsedTime =
+            new Date(
+              dateValue
+            ).getTime();
+
+          return Number.isFinite(
+            parsedTime
+          )
+            ? parsedTime
+            : 0;
+        };
+
+      const historyLastOrderTime =
+        getValidOrderTime(
+          historyLastOrderAt
+        );
+
+      const clientLastOrderTime =
+        getValidOrderTime(
+          clientLastOrderAt
+        );
+
+      /*
+        آخر طلب معتمد هو أحدث تاريخ بين:
+        - آخر طلب محفوظ في بيانات العميلة.
+        - أحدث خدمة فعلية في سجل الخدمات.
+      */
+      const lastOrderAt =
+        historyLastOrderTime >=
+        clientLastOrderTime
+          ? historyLastOrderAt
+          : clientLastOrderAt;
 
       const historyServiceCount =
         Number(
@@ -17875,27 +17912,11 @@ const leavingTime = addMinutesToDisplayTime(
           client.visits || 0
         );
 
-      /*
-        سجل الخدمات الموحد هو المصدر
-        الرسمي لتاريخ آخر خدمة.
-
-        نستخدم clients.last_order_at فقط
-        كحل احتياطي للعميلات القديمات
-        اللاتي لا يوجد لهن أي سجل خدمات
-        موثق في client_service_history.
-      */
-      const hasDocumentedServiceHistory =
-        Boolean(historyLastOrderAt) &&
-        historyServiceCount > 0;
-
       return {
-        lastOrderAt:
-          hasDocumentedServiceHistory
-            ? historyLastOrderAt
-            : clientLastOrderAt,
+        lastOrderAt,
 
         serviceCount:
-          hasDocumentedServiceHistory
+          historyServiceCount > 0
             ? historyServiceCount
             : clientServiceCount,
       };
