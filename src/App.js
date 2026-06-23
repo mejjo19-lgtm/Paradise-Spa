@@ -11284,9 +11284,17 @@ const getScheduleClientBadges = (
           data
         );
 
-        alert(
+        const rejectionMessage =
           data?.message ||
-          "تعذر ربط أو إضافة العميلة داخل عملائنا."
+          "تعذر ربط أو إضافة العميلة داخل عملائنا.";
+
+        const rejectionDetails =
+          data?.details
+            ? `\n\nالتفاصيل التقنية: ${data.details}`
+            : "";
+
+        alert(
+          `${rejectionMessage}${rejectionDetails}`
         );
 
         return null;
