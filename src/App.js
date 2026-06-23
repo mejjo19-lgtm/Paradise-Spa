@@ -201,8 +201,22 @@ const [
   setManualClientServiceSaveError,
 ] = useState("");
 
+const [
+  editingManualClientServiceId,
+  setEditingManualClientServiceId,
+] = useState(null);
+
+const [
+  deletingManualClientServiceId,
+  setDeletingManualClientServiceId,
+] = useState(null);
+
 const resetManualClientServiceDraft =
   () => {
+    setEditingManualClientServiceId(
+      null
+    );
+
     setManualClientServiceDraft({
       serviceDate: "",
       serviceTime: "",
@@ -216,12 +230,195 @@ const resetManualClientServiceDraft =
     );
   };
 
-const saveManualClientServiceHistory =
-  async () => {
+const startEditingManualClientService =
+  (service) => {
     if (
       !ensureSystemWritable() ||
-      !canAddData
+      !canEditData
     ) {
+      return;
+    }
+
+    if (
+      !service?.id ||
+      service.source !==
+        "manual_legacy" ||
+      service.invoiceLink?.invoiceId
+    ) {
+      alert(
+        "هذه الخدمة مرتبطة بموعد أو فاتورة ولا يمكن تعديلها من هنا."
+      );
+
+      return;
+    }
+
+    setEditingManualClientServiceId(
+      Number(service.id)
+    );
+
+    setManualClientServiceDraft({
+      serviceDate:
+        String(
+          service.date || ""
+        ).slice(0, 10),
+
+      serviceTime:
+        String(
+          service.serviceTime || ""
+        ),
+
+      therapistName:
+        service.therapist === "-"
+          ? ""
+          : String(
+              service.therapist || ""
+            ),
+
+      serviceName:
+        service.services === "-"
+          ? ""
+          : String(
+              service.services || ""
+            ),
+
+      totalPrice:
+        String(
+          Number(
+            service.totalPrice || 0
+          )
+        ),
+    });
+
+    setManualClientServiceSaveError(
+      ""
+    );
+
+    setShowManualClientServiceForm(
+      true
+    );
+  };
+
+const deleteManualClientServiceHistory =
+  async (service) => {
+    if (!ensureDeleteAllowed()) {
+      return;
+    }
+
+    if (
+      !service?.id ||
+      service.source !==
+        "manual_legacy" ||
+      service.invoiceLink?.invoiceId
+    ) {
+      alert(
+        "هذه الخدمة مرتبطة بموعد أو فاتورة ولا يمكن حذفها من هنا."
+      );
+
+      return;
+    }
+
+    const confirmed =
+      window.confirm(
+        `هل أنت متأكد من حذف خدمة ${
+          service.services || ""
+        } من سجل العميلة؟`
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingManualClientServiceId(
+      Number(service.id)
+    );
+
+    const {
+      data,
+      error,
+    } = await supabase.rpc(
+      "paradise_delete_manual_client_service",
+      {
+        p_service_id:
+          Number(service.id),
+
+        p_client_id:
+          Number(
+            selectedClient?.id
+          ),
+      }
+    );
+
+    setDeletingManualClientServiceId(
+      null
+    );
+
+    if (error) {
+      console.error(
+        "Manual client service delete error:",
+        error
+      );
+
+      alert(
+        "تعذر حذف الخدمة. تأكد من الاتصال وجرب مرة ثانية."
+      );
+
+      return;
+    }
+
+    if (!data?.success) {
+      console.error(
+        "Manual client service delete rejected:",
+        data
+      );
+
+      alert(
+        data?.message ||
+        "تعذر حذف الخدمة."
+      );
+
+      return;
+    }
+
+    if (
+      Number(
+        editingManualClientServiceId
+      ) === Number(service.id)
+    ) {
+      resetManualClientServiceDraft();
+
+      setShowManualClientServiceForm(
+        false
+      );
+    }
+
+    alert(
+      data?.message ||
+      "تم حذف الخدمة بنجاح."
+    );
+  };
+
+const saveManualClientServiceHistory =
+  async () => {
+    const isEditingService =
+      Boolean(
+        editingManualClientServiceId
+      );
+
+    if (!ensureSystemWritable()) {
+      return;
+    }
+
+    if (
+      isEditingService
+        ? !canEditData
+        : !canAddData
+    ) {
+      alert(
+        isEditingService
+          ? "لا تملك صلاحية تعديل الخدمة."
+          : "لا تملك صلاحية إضافة الخدمة."
+      );
+
       return;
     }
 
@@ -318,31 +515,67 @@ const saveManualClientServiceHistory =
       ""
     );
 
+    const rpcName =
+      isEditingService
+        ? "paradise_update_manual_client_service"
+        : "add_manual_legacy_client_service";
+
+    const rpcParameters =
+      isEditingService
+        ? {
+            p_service_id:
+              Number(
+                editingManualClientServiceId
+              ),
+
+            p_client_id:
+              Number(
+                selectedClient.id
+              ),
+
+            p_service_date:
+              serviceDate,
+
+            p_service_time:
+              serviceTime,
+
+            p_therapist_name:
+              therapistName,
+
+            p_service_name:
+              serviceName,
+
+            p_total_price:
+              totalPrice,
+          }
+        : {
+            p_client_id:
+              Number(
+                selectedClient.id
+              ),
+
+            p_service_date:
+              serviceDate,
+
+            p_service_time:
+              serviceTime,
+
+            p_therapist_name:
+              therapistName,
+
+            p_service_name:
+              serviceName,
+
+            p_total_price:
+              totalPrice,
+          };
+
     const {
+      data,
       error,
     } = await supabase.rpc(
-      "add_manual_legacy_client_service",
-      {
-        p_client_id:
-          Number(
-            selectedClient.id
-          ),
-
-        p_service_date:
-          serviceDate,
-
-        p_service_time:
-          serviceTime,
-
-        p_therapist_name:
-          therapistName,
-
-        p_service_name:
-          serviceName,
-
-        p_total_price:
-          totalPrice,
-      }
+      rpcName,
+      rpcParameters
     );
 
     setManualClientServiceSaving(
@@ -356,11 +589,36 @@ const saveManualClientServiceHistory =
       );
 
       setManualClientServiceSaveError(
-        "تعذر حفظ الخدمة. تأكد من البيانات والاتصال."
+        isEditingService
+          ? "تعذر تعديل الخدمة. تأكد من الاتصال."
+          : "تعذر حفظ الخدمة. تأكد من البيانات والاتصال."
       );
 
       return;
     }
+
+    if (
+      isEditingService &&
+      !data?.success
+    ) {
+      console.error(
+        "Manual client service update rejected:",
+        data
+      );
+
+      setManualClientServiceSaveError(
+        data?.message ||
+        "تعذر تعديل الخدمة."
+      );
+
+      return;
+    }
+
+    const successMessage =
+      isEditingService
+        ? data?.message ||
+          "تم تعديل الخدمة بنجاح."
+        : "تمت إضافة الخدمة إلى سجل العميلة فقط.";
 
     resetManualClientServiceDraft();
 
@@ -368,9 +626,7 @@ const saveManualClientServiceHistory =
       false
     );
 
-    alert(
-      "تمت إضافة الخدمة إلى سجل العميلة فقط."
-    );
+    alert(successMessage);
   };
 
 
@@ -7111,6 +7367,18 @@ return next;
         let from = 0;
         let hasMore = true;
 
+        /*
+          المصدر الرسمي والموحد للخدمات هو
+          client_service_history.
+
+          يشمل:
+          - خدمات المواعيد.
+          - الخدمات اليدوية القديمة.
+          - العميلة الأساسية.
+          - عميلات نفس المنزل.
+
+          الربط يتم بواسطة client_id فقط.
+        */
         while (hasMore) {
           const to =
             from + pageSize - 1;
@@ -7119,17 +7387,37 @@ return next;
             data,
             error,
           } = await supabase
-            .from("schedule_rows")
+            .from(
+              "client_service_history"
+            )
             .select(
-              "schedule_date,row_data"
+              [
+                "id",
+                "client_id",
+                "service_date",
+                "service_status",
+              ].join(",")
+            )
+            .not(
+              "client_id",
+              "is",
+              null
             )
             .lte(
-              "schedule_date",
+              "service_date",
               todayKey
             )
             .order(
-              "schedule_date",
-              { ascending: true }
+              "service_date",
+              {
+                ascending: true,
+              }
+            )
+            .order(
+              "id",
+              {
+                ascending: true,
+              }
             )
             .range(from, to);
 
@@ -7146,170 +7434,89 @@ return next;
           ];
 
           hasMore =
-            pageRows.length === pageSize;
+            pageRows.length ===
+            pageSize;
 
           from += pageSize;
         }
 
         const historyByClientId = {};
 
-        const resolveHistoryClientId = (
-          clientId
-        ) => {
-          /*
-            سجل الخدمات المستخدم في حساب
-            الانقطاع يعتمد على clientId فقط.
-
-            لا نستخدم رقم الجوال لتخمين
-            صاحبة الخدمة.
-          */
-          return String(
-            clientId || ""
-          ).trim();
-        };
-
-        const registerServiceHistory = (
-          clientId,
-          serviceDate
-        ) => {
-          const resolvedClientId =
-            resolveHistoryClientId(
-              clientId
-            );
-
-          if (
-            !resolvedClientId ||
-            !serviceDate
-          ) {
-            return;
-          }
-
-          const currentHistory =
-            historyByClientId[
-              resolvedClientId
-            ];
-
-          if (!currentHistory) {
-            historyByClientId[
-              resolvedClientId
-            ] = {
-              lastOrderAt:
-                serviceDate,
-
-              serviceCount:
-                1,
-            };
-
-            return;
-          }
-
-          historyByClientId[
-            resolvedClientId
-          ] = {
-            lastOrderAt:
-              serviceDate >
-              currentHistory.lastOrderAt
-                ? serviceDate
-                : currentHistory.lastOrderAt,
-
-            serviceCount:
-              Number(
-                currentHistory.serviceCount ||
-                  0
-              ) + 1,
-          };
-        };
-
         allHistoryRows.forEach(
-          (scheduleRow) => {
-            const row =
-              scheduleRow.row_data || {};
+          (serviceRow) => {
+            const clientId =
+              String(
+                serviceRow.client_id ||
+                  ""
+              ).trim();
 
             const serviceDate =
-              scheduleRow.schedule_date;
+              String(
+                serviceRow.service_date ||
+                  ""
+              )
+                .trim()
+                .slice(0, 10);
 
-            const primaryStatus =
-              row.status || "";
-
-            const primaryHasService =
-              Boolean(
-                String(
-                  row.services ||
-                    row.service ||
-                    ""
-                ).trim() ||
-                  String(
-                    row.order || ""
-                  ).trim() ||
-                  String(
-                    row.therapist || ""
-                  ).trim() ||
-                  String(
-                    row.serviceAmount || ""
-                  ).trim()
-              );
+            const serviceStatus =
+              String(
+                serviceRow.service_status ||
+                  ""
+              ).trim();
 
             if (
-              primaryHasService &&
-              !excludedFromProfileHistoryStatuses.includes(
-                primaryStatus
-              )
+              !clientId ||
+              !serviceDate
             ) {
-              registerServiceHistory(
-                row.clientId,
-                serviceDate
-              );
+              return;
             }
 
-            const additionalClients =
-              Array.isArray(
-                row.additionalClients
+            /*
+              لا تدخل الحالات المستبعدة
+              في سجل الخدمة الفعلي أو
+              حساب تاريخ آخر طلب.
+            */
+            if (
+              excludedFromProfileHistoryStatuses.includes(
+                serviceStatus
               )
-                ? row.additionalClients
-                : [];
+            ) {
+              return;
+            }
 
-            additionalClients.forEach(
-              (extraClient) => {
-                const extraStatus =
-                  extraClient.status ||
-                  primaryStatus;
+            const currentHistory =
+              historyByClientId[
+                clientId
+              ];
 
-                const extraHasService =
-                  Boolean(
-                    String(
-                      extraClient.service ||
-                        extraClient.services ||
-                        ""
-                    ).trim() ||
-                      String(
-                        extraClient.order ||
-                          ""
-                      ).trim() ||
-                      String(
-                        extraClient.therapist ||
-                          ""
-                      ).trim() ||
-                      String(
-                        extraClient.serviceAmount ||
-                          ""
-                      ).trim()
-                  );
+            if (!currentHistory) {
+              historyByClientId[
+                clientId
+              ] = {
+                lastOrderAt:
+                  serviceDate,
 
-                if (
-                  !extraHasService ||
-                  excludedFromProfileHistoryStatuses.includes(
-                    extraStatus
-                  )
-                ) {
-                  return;
-                }
+                serviceCount: 1,
+              };
 
-                registerServiceHistory(
-                  extraClient.clientId,
-                  serviceDate
-                );
-              }
-            );
+              return;
+            }
+
+            historyByClientId[
+              clientId
+            ] = {
+              lastOrderAt:
+                serviceDate >
+                currentHistory.lastOrderAt
+                  ? serviceDate
+                  : currentHistory.lastOrderAt,
+
+              serviceCount:
+                Number(
+                  currentHistory.serviceCount ||
+                    0
+                ) + 1,
+            };
           }
         );
 
@@ -7340,6 +7547,9 @@ return next;
     let futureAppointmentsRefreshTimer =
       null;
 
+    let serviceHistoryRefreshTimer =
+      null;
+
     const refreshFutureAppointments =
       () => {
         if (
@@ -7353,19 +7563,37 @@ return next;
         futureAppointmentsRefreshTimer =
           setTimeout(() => {
             loadInactiveFutureAppointments();
-          }, 1500);
+          }, 600);
       };
 
-    // تحميل بيانات العملاء المنقطعين
-    // مباشرة بعد تسجيل الدخول حتى يعمل
-    // إشعار المتابعة في جميع الصفحات.
+    const refreshInactiveServiceHistory =
+      () => {
+        if (
+          serviceHistoryRefreshTimer
+        ) {
+          clearTimeout(
+            serviceHistoryRefreshTimer
+          );
+        }
+
+        serviceHistoryRefreshTimer =
+          setTimeout(() => {
+            loadInactiveServiceHistory();
+          }, 350);
+      };
+
+    /*
+      تحميل بيانات العملاء المنقطعين
+      مباشرة بعد تسجيل الدخول حتى يعمل
+      الجدول وإشعار المتابعة في جميع الصفحات.
+    */
     loadInactiveFutureAppointments();
     loadInactiveServiceHistory();
 
     const inactiveClientsChannel =
       supabase
         .channel(
-          "inactive-clients-schedule-sync"
+          "inactive-clients-data-sync"
         )
         .on(
           "postgres_changes",
@@ -7375,9 +7603,28 @@ return next;
             table: "schedule_rows",
           },
           () => {
-            // تحديث قائمة المواعيد القادمة
-            // عند أي تغيير في جدول المواعيد.
+            /*
+              schedule_rows مسؤول هنا عن
+              معرفة المواعيد القادمة فقط.
+            */
             refreshFutureAppointments();
+          }
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table:
+              "client_service_history",
+          },
+          () => {
+            /*
+              أي إضافة أو تعديل أو حذف
+              لخدمة يعيد حساب آخر طلب
+              وعدد الخدمات فورًا.
+            */
+            refreshInactiveServiceHistory();
           }
         )
         .subscribe();
@@ -7388,6 +7635,14 @@ return next;
       ) {
         clearTimeout(
           futureAppointmentsRefreshTimer
+        );
+      }
+
+      if (
+        serviceHistoryRefreshTimer
+      ) {
+        clearTimeout(
+          serviceHistoryRefreshTimer
         );
       }
 
@@ -12060,6 +12315,12 @@ const getScheduleClientBadges = (
         linkedExtraClients
       );
 
+      alert(
+        safeClientResult.created
+          ? "تمت إضافة العميلة بنجاح"
+          : "العميلة موجودة مسبقًا "
+      );
+
       return;
     }
 
@@ -12859,6 +13120,12 @@ if (
         normalizedRowIndex,
         linkedRowSnapshot,
         cellStyles || {}
+      );
+
+      alert(
+        safeClientResult.created
+          ? "تمت إضافة العميلة بنجاح"
+          : "العميلة موجودة مسبقًا "
       );
 
       return;
@@ -45340,7 +45607,10 @@ if (screen === "potentialClients") {
                     fontWeight: "950",
                   }}
                 >
-                  إضافة خدمة سابقة إلى سجل{" "}
+                  {editingManualClientServiceId
+                    ? "تعديل الخدمة اليدوية في سجل "
+                    : "إضافة خدمة سابقة إلى سجل "}
+
                   {selectedClient?.name || "العميلة"}
                 </div>
 
@@ -45689,8 +45959,12 @@ if (screen === "potentialClients") {
                     }}
                   >
                     {manualClientServiceSaving
-                      ? "جاري الحفظ..."
-                      : "حفظ الخدمة"}
+                      ? editingManualClientServiceId
+                        ? "جاري التعديل..."
+                        : "جاري الحفظ..."
+                      : editingManualClientServiceId
+                        ? "حفظ التعديل"
+                        : "حفظ الخدمة"}
                   </button>
                 </div>
               </div>
@@ -45967,6 +46241,116 @@ if (screen === "potentialClients") {
                                 ▤
                               </button>
                             )}
+
+                            {service.source ===
+                              "manual_legacy" &&
+                              !service.invoiceLink
+                                ?.invoiceId && (
+                                <>
+                                  {canEditData && (
+                                    <button
+                                      type="button"
+                                      title="تعديل الخدمة"
+                                      aria-label="تعديل الخدمة"
+                                      disabled={
+                                        manualClientServiceSaving ||
+                                        Boolean(
+                                          deletingManualClientServiceId
+                                        )
+                                      }
+                                      onClick={() =>
+                                        startEditingManualClientService(
+                                          service
+                                        )
+                                      }
+                                      style={{
+                                        minHeight: "27px",
+                                        padding: "4px 9px",
+                                        border:
+                                          "1px solid rgba(132,94,66,0.34)",
+                                        borderRadius: "9px",
+                                        background:
+                                          "linear-gradient(145deg, #f5e8dc, #ddc2ac)",
+                                        color: "#4b3327",
+                                        boxShadow:
+                                          "0 5px 11px rgba(75,46,31,0.08)",
+                                        fontSize: "10px",
+                                        fontWeight: "900",
+                                        cursor:
+                                          manualClientServiceSaving ||
+                                          Boolean(
+                                            deletingManualClientServiceId
+                                          )
+                                            ? "not-allowed"
+                                            : "pointer",
+                                        opacity:
+                                          manualClientServiceSaving ||
+                                          Boolean(
+                                            deletingManualClientServiceId
+                                          )
+                                            ? 0.55
+                                            : 1,
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      تعديل
+                                    </button>
+                                  )}
+
+                                  {canDeleteData && (
+                                    <button
+                                      type="button"
+                                      title="حذف الخدمة"
+                                      aria-label="حذف الخدمة"
+                                      disabled={
+                                        manualClientServiceSaving ||
+                                        Boolean(
+                                          deletingManualClientServiceId
+                                        )
+                                      }
+                                      onClick={() =>
+                                        deleteManualClientServiceHistory(
+                                          service
+                                        )
+                                      }
+                                      style={{
+                                        minHeight: "27px",
+                                        padding: "4px 9px",
+                                        border:
+                                          "1px solid rgba(164,73,63,0.30)",
+                                        borderRadius: "9px",
+                                        background:
+                                          "rgba(164,73,63,0.10)",
+                                        color: "#8e3f38",
+                                        fontSize: "10px",
+                                        fontWeight: "900",
+                                        cursor:
+                                          manualClientServiceSaving ||
+                                          Boolean(
+                                            deletingManualClientServiceId
+                                          )
+                                            ? "not-allowed"
+                                            : "pointer",
+                                        opacity:
+                                          Number(
+                                            deletingManualClientServiceId
+                                          ) ===
+                                          Number(service.id)
+                                            ? 0.55
+                                            : 1,
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      {Number(
+                                        deletingManualClientServiceId
+                                      ) ===
+                                      Number(service.id)
+                                        ? "جاري الحذف..."
+                                        : "حذف"}
+                                    </button>
+                                  )}
+                                </>
+                              )}
                           </div>
 
                           <div
