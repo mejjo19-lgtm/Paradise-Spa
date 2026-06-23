@@ -252,8 +252,12 @@ const startEditingManualClientService =
       return;
     }
 
+    /*
+      معرف سجل الخدمة يُحفظ كنص حتى
+      يطابق توقيع دالة Supabase الحالية.
+    */
     setEditingManualClientServiceId(
-      Number(service.id)
+      String(service.id || "")
     );
 
     setManualClientServiceDraft({
@@ -317,6 +321,32 @@ const deleteManualClientServiceHistory =
       return;
     }
 
+    const serviceId =
+      String(
+        service.id || ""
+      ).trim();
+
+    const serviceClientId =
+      Number(
+        service.clientId ||
+        selectedClient?.id ||
+        selectedClientId
+      );
+
+    if (
+      !serviceId ||
+      !Number.isInteger(
+        serviceClientId
+      ) ||
+      serviceClientId <= 0
+    ) {
+      alert(
+        "تعذر تحديد الخدمة أو العميلة."
+      );
+
+      return;
+    }
+
     const confirmed =
       window.confirm(
         `هل أنت متأكد من حذف خدمة ${
@@ -329,7 +359,7 @@ const deleteManualClientServiceHistory =
     }
 
     setDeletingManualClientServiceId(
-      Number(service.id)
+      serviceId
     );
 
     const {
@@ -339,12 +369,10 @@ const deleteManualClientServiceHistory =
       "paradise_delete_manual_client_service",
       {
         p_service_id:
-          Number(service.id),
+          serviceId,
 
         p_client_id:
-          Number(
-            selectedClient?.id
-          ),
+          serviceClientId,
       }
     );
 
@@ -359,6 +387,7 @@ const deleteManualClientServiceHistory =
       );
 
       alert(
+        error.message ||
         "تعذر حذف الخدمة. تأكد من الاتصال وجرب مرة ثانية."
       );
 
@@ -372,17 +401,20 @@ const deleteManualClientServiceHistory =
       );
 
       alert(
-        data?.message ||
-        "تعذر حذف الخدمة."
+        data?.details
+          ? `${data.message || "تعذر حذف الخدمة."}\n\n${data.details}`
+          : data?.message ||
+            "تعذر حذف الخدمة."
       );
 
       return;
     }
 
     if (
-      Number(
-        editingManualClientServiceId
-      ) === Number(service.id)
+      String(
+        editingManualClientServiceId ||
+        ""
+      ) === serviceId
     ) {
       resetManualClientServiceDraft();
 
@@ -523,14 +555,20 @@ const saveManualClientServiceHistory =
     const rpcParameters =
       isEditingService
         ? {
+            /*
+              دالة التعديل تستقبل معرف
+              سجل الخدمة من نوع text.
+            */
             p_service_id:
-              Number(
-                editingManualClientServiceId
+              String(
+                editingManualClientServiceId ||
+                ""
               ),
 
             p_client_id:
               Number(
-                selectedClient.id
+                selectedClient?.id ||
+                selectedClientId
               ),
 
             p_service_date:
@@ -551,7 +589,8 @@ const saveManualClientServiceHistory =
         : {
             p_client_id:
               Number(
-                selectedClient.id
+                selectedClient?.id ||
+                selectedClientId
               ),
 
             p_service_date:
