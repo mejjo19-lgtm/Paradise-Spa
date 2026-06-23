@@ -6401,6 +6401,11 @@ return next;
       const requestedName =
         String(name || "").trim();
 
+      const phoneMatches =
+        findClientsByExactPhone(
+          phone
+        );
+
       const directlyLinkedClient =
         clients.find(
           (client) =>
@@ -6408,29 +6413,64 @@ return next;
             String(clientId || "")
         ) || null;
 
-      /*
-        لا نثق بـ clientId وحده.
-
-        يجب أن يكون الاسم والجوال داخل الموعد
-        مطابقين لصاحبة clientId.
-      */
-      const directIdentityMatches =
-        Boolean(
-          directlyLinkedClient &&
-          (
-            !requestedName ||
-            isSameNameAndPhone(
-              directlyLinkedClient.name ||
-                directlyLinkedClient.arabic_name ||
-                "",
-              directlyLinkedClient.phone || "",
-              requestedName,
-              phone
-            )
+      const normalizedRequestedPhone =
+        normalizeDigits(
+          formatSaudiPhoneForStorage(
+            phone || ""
           )
         );
 
-      if (directIdentityMatches) {
+      const normalizedLinkedPhone =
+        normalizeDigits(
+          formatSaudiPhoneForStorage(
+            directlyLinkedClient
+              ?.phone || ""
+          )
+        );
+
+      /*
+        clientId هو هوية العميلة الأساسية.
+
+        نعتمد الربط المباشر إذا كان الجوال مطابقًا
+        وكان الرقم غير مشترك بين أكثر من عميلة.
+
+        اختلاف لغة الاسم مثل:
+        Adwa’a / أضواء
+        لا يمنع فتح البروفايل عندما يكون الجوال
+        تابعًا لعميلة واحدة فقط.
+      */
+      const directPhoneMatches =
+        Boolean(
+          directlyLinkedClient &&
+          (
+            !normalizedRequestedPhone ||
+            normalizedLinkedPhone ===
+              normalizedRequestedPhone
+          )
+        );
+
+      const directNameMatches =
+        Boolean(
+          directlyLinkedClient &&
+          requestedName &&
+          isSameNameAndPhone(
+            directlyLinkedClient.name ||
+              directlyLinkedClient.arabic_name ||
+              "",
+            directlyLinkedClient.phone ||
+              "",
+            requestedName,
+            phone
+          )
+        );
+
+      if (
+        directPhoneMatches &&
+        (
+          phoneMatches.length <= 1 ||
+          directNameMatches
+        )
+      ) {
         await openClientProfile(
           directlyLinkedClient
         );
@@ -6438,14 +6478,9 @@ return next;
         return;
       }
 
-      const phoneMatches =
-        findClientsByExactPhone(
-          phone
-        );
-
       /*
-        عند تكرار الجوال نحدد العميلة
-        بالاسم والجوال معًا.
+        إذا كان الجوال مشتركًا بين عدة عميلات،
+        نحاول تحديد العميلة بالاسم والجوال معًا.
       */
       const identityMatches =
         requestedName
@@ -6462,13 +6497,17 @@ return next;
             )
           : [];
 
+      /*
+        إذا كان الجوال تابعًا لعميلة واحدة فقط،
+        نستخدمها حتى لو كان اسم الموعد بالإنجليزية
+        واسم البروفايل بالعربية.
+
+        إذا كان الجوال مشتركًا، لا نختار عشوائيًا.
+      */
       const resolvedClient =
         identityMatches.length === 1
           ? identityMatches[0]
-          : (
-              !requestedName &&
-              phoneMatches.length === 1
-            )
+          : phoneMatches.length === 1
             ? phoneMatches[0]
             : null;
 
@@ -6478,11 +6517,8 @@ return next;
           String(resolvedClient.id);
 
         /*
-          إذا كان الصف يحمل clientId خاطئًا،
-          نصلحه في الجدول وفي Supabase قبل
-          فتح البروفايل.
-
-          هذا يصلح أيضًا حالة أخت بيان الحالية.
+          إصلاح clientId داخل صف الموعد إذا كان
+          فارغًا أو يشير إلى عميلة غير صحيحة.
         */
         if (
           linkNeedsRepair &&
@@ -6608,10 +6644,6 @@ return next;
             }
           );
 
-          /*
-            نلغي أي حفظ قديم منتظر يحمل
-            clientId الخطأ.
-          */
           const scheduleRowId =
             getScheduleRowId(
               selectedScheduleDate,
@@ -6637,10 +6669,6 @@ return next;
               ];
           }
 
-          /*
-            حفظ فوري حتى يعمل تريغر سجل
-            الخدمات وينقل الخدمة للعميلة الصحيحة.
-          */
           await saveScheduleRowToSupabase(
             selectedScheduleDate,
             numericRowIndex,
@@ -6657,6 +6685,11 @@ return next;
         return;
       }
 
+      /*
+        عند وجود أكثر من عميلة بنفس الجوال،
+        نظهر قائمة الاختيار ولا نفتح أول بروفايل
+        بطريقة عشوائية.
+      */
       const selectableMatches =
         identityMatches.length > 1
           ? identityMatches
@@ -6700,7 +6733,7 @@ return next;
       }
 
       alert(
-        "لم يتم العثور على عميلة مطابقة للاسم والجوال داخل عملائنا."
+        "لم يتم العثور على العميلة داخل عملائنا."
       );
     };
 
