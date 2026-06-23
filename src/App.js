@@ -1625,6 +1625,59 @@ function fetchSharedClientLists() {
   const [showForm, setShowForm] = useState(false);
   const [showGlobalClientForm, setShowGlobalClientForm] = useState(false);
 
+  /*
+    إغلاق أي نافذة منبثقة مؤقتة قد تبقى
+    محفوظة عند استعادة التبويب من ذاكرة
+    المتصفح أو الرجوع إلى الصفحة.
+  */
+  useEffect(() => {
+    const closeStaleTransientModals =
+      () => {
+        setShowGlobalClientForm(false);
+
+        setDuplicateClientModal(null);
+        setDuplicateClientSearch("");
+
+        setGiftDoneLinkModal(null);
+        setGiftDoneLinkSearch("");
+
+        setAdditionalClientModal(null);
+        setAdditionalClientPhoneNotice("");
+      };
+
+    closeStaleTransientModals();
+
+    window.addEventListener(
+      "pageshow",
+      closeStaleTransientModals
+    );
+
+    return () => {
+      window.removeEventListener(
+        "pageshow",
+        closeStaleTransientModals
+      );
+    };
+  }, []);
+
+  /*
+    عند الانتقال بين صفحات النظام لا
+    نسمح ببقاء خلفية نافذة قديمة فوق
+    الصفحة الجديدة.
+  */
+  useEffect(() => {
+    setShowGlobalClientForm(false);
+
+    setDuplicateClientModal(null);
+    setDuplicateClientSearch("");
+
+    setGiftDoneLinkModal(null);
+    setGiftDoneLinkSearch("");
+
+    setAdditionalClientModal(null);
+    setAdditionalClientPhoneNotice("");
+  }, [screen]);
+
   const getCurrentLocalDate = () => {
     const now = new Date();
     const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
@@ -4493,63 +4546,102 @@ const deletePurchase = async (
 
   // ➕ ADD CLIENT
   const addClient = async () => {
-    if (!ensureSystemWritable() || !canAddData) return;
-    if (!name || !phone) return;
-
-    const cleanNewPhone = formatSaudiPhoneForStorage(phone);
-
-    const phoneExists = clients.some(
-      (c) => formatSaudiPhoneForStorage(c.phone) === cleanNewPhone
-    );
-
-    if (phoneExists) {
-      const confirmDuplicate = window.confirm(
-        "هذا الرقم موجود مسبقاً، هل تريد إضافة العميلة رغم ذلك؟"
-      );
-
-      if (!confirmDuplicate) return;
+    if (
+      !ensureSystemWritable() ||
+      !canAddData
+    ) {
+      return;
     }
 
-   const { data: insertedClient, error } = await supabase.from("clients").insert([
-  {
-    name,
-    arabic_name: name,
-    phone: cleanNewPhone,
-    address,
-    visits: 0,
-    frame: false,
-    blacklist: false,
-    notes: "",
-    total_paid: 0,
-    service_history: [],
-  },
-]).select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at").single();
+    const cleanName =
+      String(
+        name || ""
+      ).trim();
 
-if (error) {
-  console.error("ADD CLIENT ERROR:", error);
-  console.error("ADD CLIENT ERROR JSON:", JSON.stringify(error, null, 2));
-  alert("لم يتم حفظ العميلة. تأكد من الاتصال وجرب مرة ثانية.");
-  return;
-}
+    const cleanPhone =
+      formatSaudiPhoneForStorage(
+        phone || ""
+      );
 
-if (insertedClient) {
-  const nextClient = normalizeClientRecord(insertedClient);
+    const cleanAddress =
+      String(
+        address || ""
+      ).trim();
 
-  setClients((prev) => {
-    const exists = prev.some((client) => String(client.id) === String(nextClient.id));
-    const nextClients = exists
-      ? prev.map((client) => String(client.id) === String(nextClient.id) ? nextClient : client)
-      : [nextClient, ...prev];
+    if (!cleanName) {
+      alert(
+        "اكتبي اسم العميلة أولًا."
+      );
 
-    return nextClients.sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
-  });
+      return;
+    }
 
-  setName("");
-  setPhone("");
-  setAddress("");
-  setShowForm(false);
-setShowGlobalClientForm(false);
-}
+    if (
+      normalizeDigits(
+        cleanPhone
+      ).length < 9
+    ) {
+      alert(
+        "اكتبي رقم جوال صحيحًا أولًا."
+      );
+
+      return;
+    }
+
+    /*
+      الإضافة اليدوية تستخدم نفس الدالة
+      الآمنة المستخدمة في Send To.
+
+      نفس الاسم والجوال:
+      لا يُنشأ بروفايل مكرر.
+
+      اسم مختلف بنفس الجوال:
+      يظهر تأكيد لإنشاء بروفايل مستقل.
+    */
+    const safeClientResult =
+      await findOrCreateClientSafely({
+        claimedClientId:
+          "",
+
+        name:
+          cleanName,
+
+        phone:
+          cleanPhone,
+
+        address:
+          cleanAddress,
+
+        /*
+          إضافة العميلة وحدها لا ترفع
+          عدد الخدمات تلقائيًا.
+        */
+        visits:
+          0,
+
+        frame:
+          false,
+      });
+
+    if (
+      !safeClientResult?.client?.id
+    ) {
+      return;
+    }
+
+    setName("");
+    setPhone("");
+    setAddress("");
+    setShowForm(false);
+    setShowGlobalClientForm(false);
+
+    if (
+      !safeClientResult.created
+    ) {
+      alert(
+        "العميلة موجودة مسبقًا داخل عملائنا، لذلك لم يتم إنشاء بروفايل مكرر."
+      );
+    }
   };
 
   // ✏️ START EDIT CLIENT
@@ -4562,38 +4654,145 @@ setShowGlobalClientForm(false);
   };
 
   // 💾 SAVE EDIT CLIENT
-  const saveEditClient = async (id) => {
-    if (!ensureSystemWritable() || !canEditData) return;
-    if (!editedName || !editedPhone) return;
+  const saveEditClient =
+    async (id) => {
+      if (
+        !ensureSystemWritable() ||
+        !canEditData
+      ) {
+        return;
+      }
 
-const { data: updatedClient, error } = await supabase
-  .from("clients")
-  .update({
-    name: editedName,
-    arabic_name: editedName,
-    phone: formatSaudiPhoneForStorage(editedPhone),
-    address: editedAddress,
-  })
-  .eq("id", id)
-  .select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at")
-  .single();
+      const numericClientId =
+        Number(id);
 
-if (error) {
-  console.log("Client edit save error:", error);
-  alert("لم يتم حفظ تعديل العميلة. تأكد من الاتصال وجرب مرة ثانية.");
-  return;
-} else if (updatedClient) {
-  const nextClient = normalizeClientRecord(updatedClient);
-  setClients((prev) =>
-    prev.map((client) => String(client.id) === String(nextClient.id) ? nextClient : client)
-  );
-}
+      const cleanName =
+        String(
+          editedName || ""
+        ).trim();
 
-    setEditingId(null);
-    setEditedName("");
-    setEditedPhone("");
-    setEditedAddress("");
-  };
+      const cleanPhone =
+        formatSaudiPhoneForStorage(
+          editedPhone || ""
+        );
+
+      const cleanAddress =
+        String(
+          editedAddress || ""
+        ).trim();
+
+      if (
+        !Number.isInteger(
+          numericClientId
+        ) ||
+        numericClientId <= 0
+      ) {
+        alert(
+          "تعذر تحديد بروفايل العميلة."
+        );
+
+        return;
+      }
+
+      if (!cleanName) {
+        alert(
+          "اكتبي اسم العميلة أولًا."
+        );
+
+        return;
+      }
+
+      if (
+        normalizeDigits(
+          cleanPhone
+        ).length < 9
+      ) {
+        alert(
+          "اكتبي رقم جوال صحيحًا أولًا."
+        );
+
+        return;
+      }
+
+      /*
+        تعديل الهوية ينفذ داخل قاعدة
+        البيانات بفحص ذرّي.
+
+        نفس الجوال مع اسم مختلف مسموح،
+        لكن الاسم والجوال نفسيهما في
+        بروفايل آخر غير مسموحين.
+      */
+      const {
+        data,
+        error,
+      } = await supabase.rpc(
+        "paradise_update_client_identity",
+        {
+          p_client_id:
+            numericClientId,
+
+          p_name:
+            cleanName,
+
+          p_phone:
+            cleanPhone,
+
+          p_address:
+            cleanAddress,
+        }
+      );
+
+      if (error) {
+        console.error(
+          "Safe client edit RPC error:",
+          error
+        );
+
+        alert(
+          "لم يتم حفظ تعديل العميلة. تأكد من الاتصال وجرب مرة ثانية."
+        );
+
+        return;
+      }
+
+      if (
+        !data?.success ||
+        !data?.client?.id
+      ) {
+        console.error(
+          "Safe client edit rejected:",
+          data
+        );
+
+        alert(
+          data?.message ||
+          "لم يتم حفظ تعديل بيانات العميلة."
+        );
+
+        return;
+      }
+
+      const nextClient =
+        normalizeClientRecord(
+          data.client
+        );
+
+      setClients(
+        (previousClients) =>
+          previousClients.map(
+            (client) =>
+              String(client.id) ===
+              String(nextClient.id)
+                ? nextClient
+                : client
+          )
+      );
+
+      setEditingId(null);
+      setEditedName("");
+      setEditedPhone("");
+      setEditedAddress("");
+    };
 
   // ❌ CANCEL EDIT CLIENT
   const cancelEditClient = () => {
@@ -6401,6 +6600,13 @@ return next;
       const requestedName =
         String(name || "").trim();
 
+      const normalizedRequestedPhone =
+        normalizeDigits(
+          formatSaudiPhoneForStorage(
+            phone || ""
+          )
+        );
+
       const phoneMatches =
         findClientsByExactPhone(
           phone
@@ -6413,13 +6619,6 @@ return next;
             String(clientId || "")
         ) || null;
 
-      const normalizedRequestedPhone =
-        normalizeDigits(
-          formatSaudiPhoneForStorage(
-            phone || ""
-          )
-        );
-
       const normalizedLinkedPhone =
         normalizeDigits(
           formatSaudiPhoneForStorage(
@@ -6428,17 +6627,6 @@ return next;
           )
         );
 
-      /*
-        clientId هو هوية العميلة الأساسية.
-
-        نعتمد الربط المباشر إذا كان الجوال مطابقًا
-        وكان الرقم غير مشترك بين أكثر من عميلة.
-
-        اختلاف لغة الاسم مثل:
-        Adwa’a / أضواء
-        لا يمنع فتح البروفايل عندما يكون الجوال
-        تابعًا لعميلة واحدة فقط.
-      */
       const directPhoneMatches =
         Boolean(
           directlyLinkedClient &&
@@ -6464,13 +6652,32 @@ return next;
           )
         );
 
-      if (
-        directPhoneMatches &&
-        (
-          phoneMatches.length <= 1 ||
-          directNameMatches
-        )
-      ) {
+      /*
+        نثق بـ clientId في حالتين فقط:
+
+        1) الرقم غير مشترك بين عدة عميلات
+           والجوال داخل الموعد يطابق البروفايل.
+
+        2) الرقم مشترك، لكن الاسم والجوال
+           يطابقان صاحبة clientId.
+
+        بهذا نسمح بحالة:
+        Adwa’a / أضواء
+        عندما يكون رقمها غير مشترك.
+
+        ونمنع فتح بيان عندما يكون clientId قديمًا
+        والرقم نفسه تستخدمه أختها.
+      */
+      const directLinkIsSafe =
+        Boolean(
+          directPhoneMatches &&
+          (
+            phoneMatches.length <= 1 ||
+            directNameMatches
+          )
+        );
+
+      if (directLinkIsSafe) {
         await openClientProfile(
           directlyLinkedClient
         );
@@ -6479,8 +6686,12 @@ return next;
       }
 
       /*
-        إذا كان الجوال مشتركًا بين عدة عميلات،
-        نحاول تحديد العميلة بالاسم والجوال معًا.
+        عند عدم وجود clientId صالح،
+        لا نستخدم الجوال وحده إذا كان داخل
+        الموعد اسم مختلف.
+
+        الربط التلقائي يحتاج تطابق الاسم
+        والجوال معًا.
       */
       const identityMatches =
         requestedName
@@ -6497,17 +6708,13 @@ return next;
             )
           : [];
 
-      /*
-        إذا كان الجوال تابعًا لعميلة واحدة فقط،
-        نستخدمها حتى لو كان اسم الموعد بالإنجليزية
-        واسم البروفايل بالعربية.
-
-        إذا كان الجوال مشتركًا، لا نختار عشوائيًا.
-      */
       const resolvedClient =
         identityMatches.length === 1
           ? identityMatches[0]
-          : phoneMatches.length === 1
+          : (
+              !requestedName &&
+              phoneMatches.length === 1
+            )
             ? phoneMatches[0]
             : null;
 
@@ -6516,15 +6723,12 @@ return next;
           String(clientId || "") !==
           String(resolvedClient.id);
 
-        /*
-          إصلاح clientId داخل صف الموعد إذا كان
-          فارغًا أو يشير إلى عميلة غير صحيحة.
-        */
         if (
           linkNeedsRepair &&
           Number.isInteger(
             Number(rowIndex)
-          )
+          ) &&
+          Number(rowIndex) >= 0
         ) {
           const numericRowIndex =
             Number(rowIndex);
@@ -6560,7 +6764,10 @@ return next;
               Number(
                 extraClientIndex
               )
-            )
+            ) &&
+            Number(
+              extraClientIndex
+            ) >= 0
           ) {
             const numericExtraIndex =
               Number(
@@ -6686,18 +6893,17 @@ return next;
       }
 
       /*
-        عند وجود أكثر من عميلة بنفس الجوال،
-        نظهر قائمة الاختيار ولا نفتح أول بروفايل
-        بطريقة عشوائية.
-      */
-      const selectableMatches =
-        identityMatches.length > 1
-          ? identityMatches
-          : phoneMatches;
+        يوجد بروفايل أو أكثر يحمل الجوال،
+        لكن لا يوجد تطابق آمن للاسم.
 
-      if (
-        selectableMatches.length > 1
-      ) {
+        نظهر قائمة الاختيار حتى لو كانت
+        النتيجة بروفايلًا واحدًا فقط.
+
+        هذا مهم للتمييز بين:
+        - الاسم مكتوب بلغة مختلفة لنفس العميلة.
+        - أخت جديدة تستخدم رقم أختها.
+      */
+      if (phoneMatches.length > 0) {
         setDuplicateClientSearch(
           ""
         );
@@ -6723,7 +6929,7 @@ return next;
             ),
 
           matches:
-            selectableMatches,
+            phoneMatches,
 
           openProfileAfterSelect:
             true,
@@ -6801,29 +7007,27 @@ return next;
       ];
 
       const addMatchedClient = (
-        clientId,
-        phoneNumber
+        clientId
       ) => {
-        if (clientId) {
-          futureClientIds.add(
-            String(clientId)
-          );
+        /*
+          الموعد القادم يُنسب إلى البروفايل
+          المرتبط صراحةً بواسطة clientId فقط.
 
+          رقم الجوال لا يمثل هوية العميلة؛
+          لأنه قد يكون مشتركًا بين أفراد المنزل.
+        */
+        const cleanClientId =
+          String(
+            clientId || ""
+          ).trim();
+
+        if (!cleanClientId) {
           return;
         }
 
-        const matchedClients =
-          findClientsByExactPhone(
-            phoneNumber || ""
-          );
-
-        if (matchedClients.length === 1) {
-          futureClientIds.add(
-            String(
-              matchedClients[0].id
-            )
-          );
-        }
+        futureClientIds.add(
+          cleanClientId
+        );
       };
 
       allFutureRows.forEach(
@@ -6840,8 +7044,7 @@ return next;
             )
           ) {
             addMatchedClient(
-              row.clientId,
-              row.number
+              row.clientId
             );
           }
 
@@ -6867,8 +7070,7 @@ return next;
               }
 
               addMatchedClient(
-                extraClient.clientId,
-                extraClient.phone
+                extraClient.clientId
               );
             }
           );
@@ -6952,38 +7154,27 @@ return next;
         const historyByClientId = {};
 
         const resolveHistoryClientId = (
-          clientId,
-          phoneNumber
+          clientId
         ) => {
-          if (clientId) {
-            return String(clientId);
-          }
+          /*
+            سجل الخدمات المستخدم في حساب
+            الانقطاع يعتمد على clientId فقط.
 
-          const matchedClients =
-            findClientsByExactPhone(
-              phoneNumber || ""
-            );
-
-          if (
-            matchedClients.length === 1
-          ) {
-            return String(
-              matchedClients[0].id
-            );
-          }
-
-          return "";
+            لا نستخدم رقم الجوال لتخمين
+            صاحبة الخدمة.
+          */
+          return String(
+            clientId || ""
+          ).trim();
         };
 
         const registerServiceHistory = (
           clientId,
-          phoneNumber,
           serviceDate
         ) => {
           const resolvedClientId =
             resolveHistoryClientId(
-              clientId,
-              phoneNumber
+              clientId
             );
 
           if (
@@ -7004,7 +7195,9 @@ return next;
             ] = {
               lastOrderAt:
                 serviceDate,
-              serviceCount: 1,
+
+              serviceCount:
+                1,
             };
 
             return;
@@ -7018,6 +7211,7 @@ return next;
               currentHistory.lastOrderAt
                 ? serviceDate
                 : currentHistory.lastOrderAt,
+
             serviceCount:
               Number(
                 currentHistory.serviceCount ||
@@ -7063,7 +7257,6 @@ return next;
             ) {
               registerServiceHistory(
                 row.clientId,
-                row.number,
                 serviceDate
               );
             }
@@ -7113,7 +7306,6 @@ return next;
 
                 registerServiceHistory(
                   extraClient.clientId,
-                  extraClient.phone,
                   serviceDate
                 );
               }
@@ -7204,12 +7396,35 @@ return next;
       );
     };
   }, [isLoggedIn]);
-const getScheduleClientBadges = (row) => {
-  const client = findClientByExactPhone(row?.number || "");
+const getScheduleClientBadges = (
+  row
+) => {
+  /*
+    الملاحظات والقائمة السوداء تخص
+    بروفايل clientId المرتبط بالصف فقط.
+
+    لا نستخدم رقم الجوال لأن الرقم قد
+    يكون مشتركًا بين أفراد المنزل.
+  */
+  const client =
+    clients.find(
+      (clientItem) =>
+        String(clientItem.id) ===
+        String(
+          row?.clientId || ""
+        )
+    ) || null;
 
   return {
-    notes: String(client?.notes || "").trim(),
-    blacklist: Boolean(client?.blacklist),
+    notes:
+      String(
+        client?.notes || ""
+      ).trim(),
+
+    blacklist:
+      Boolean(
+        client?.blacklist
+      ),
   };
 };
   const orderToVisits = (order) => {
@@ -8044,156 +8259,279 @@ const getScheduleClientBadges = (row) => {
     };
   }, [scheduleSelection, selectedScheduleDate, scheduleData, scheduleSettings]);
 
-  const applyScheduleNumberLookup = (rowIndex, phoneValue) => {
-    scheduleLastEditRef.current = Date.now();
+  const applyScheduleNumberLookup = (
+    rowIndex,
+    phoneValue
+  ) => {
+    scheduleLastEditRef.current =
+      Date.now();
 
     let rowToSave = null;
     let stylesToSave = {};
-    let duplicateMatches = [];
-    let shouldOpenDuplicateModal = false;
+    let selectableMatches = [];
+    let shouldOpenClientModal = false;
 
-    setScheduleData((prev) => {
-      const currentDayData =
-        prev[selectedScheduleDate] || {};
+    setScheduleData(
+      (previousScheduleData) => {
+        const currentDayData =
+          previousScheduleData[
+            selectedScheduleDate
+          ] || {};
 
-      const currentRows =
-        currentDayData.rows ||
-        timeSlots.map(createEmptyAppointmentRow);
-
-      const rowToCheck =
-        currentRows[rowIndex] || {};
-
-      const numberToCheck =
-        phoneValue ??
-        rowToCheck.number ??
-        "";
-
-      const formattedNumber =
-        formatSaudiPhoneForStorage(numberToCheck);
-
-      const matchedClients =
-        findClientsByExactPhone(
-          formattedNumber || numberToCheck
-        );
-
-      const previouslyLinkedClient =
-        matchedClients.find(
-          (client) =>
-            String(client.id) ===
-            String(rowToCheck.clientId || "")
-        ) || null;
-
-      const matchedClient =
-        previouslyLinkedClient ||
-        (matchedClients.length === 1
-          ? matchedClients[0]
-          : null);
-
-      duplicateMatches = matchedClients;
-
-      shouldOpenDuplicateModal =
-        matchedClients.length > 1 &&
-        !previouslyLinkedClient;
-
-      const rows = currentRows.map(
-        (row, index) => {
-          if (index !== rowIndex) return row;
-
-          rowToSave = {
-            ...row,
-            number: formattedNumber,
-            ...(matchedClient
-              ? {
-                  clientId: String(
-                    matchedClient.id
-                  ),
-                  client:
-                    matchedClient.name || "",
-                  district:
-                    matchedClient.address || "",
-                  frame: Boolean(
-                    matchedClient.frame
-                  ),
-                  order: String(
-                    getVisitLabel(
-                      matchedClient.visits || 0
-                    )
-                  ),
-                }
-              : {
-                  clientId: "",
-                }),
-          };
-
-          return rowToSave;
-        }
-      );
-
-      stylesToSave =
-        currentDayData.cellStyles || {};
-
-      return {
-        ...prev,
-        [selectedScheduleDate]: {
-          ...currentDayData,
-          rows,
-        },
-      };
-    });
-
-    setTimeout(() => {
-      if (rowToSave) {
-        queueScheduleRowSave(
-          selectedScheduleDate,
-          rowIndex,
-          rowToSave,
-          stylesToSave
-        );
-
-        queueScheduleGiftGiverSync({
-          scheduleDate:
-            selectedScheduleDate,
-          rowIndex,
-          rowSnapshot: rowToSave,
-          cellStyles: stylesToSave,
-        });
-      }
-
-      if (shouldOpenDuplicateModal) {
-        setDuplicateClientSearch("");
-
-        setDuplicateClientModal({
-          targetType: "primary",
-          scheduleDate: selectedScheduleDate,
-          rowIndex,
-          phone: rowToSave?.number || "",
-          matches: duplicateMatches,
-        });
-      }
-
-      if (
-        rowToSave?.status === "Gift Done" &&
-        normalizeDigits(
-          formatSaudiPhoneForStorage(
-            rowToSave?.number || ""
-          )
-        ).length >= 9
-      ) {
-        const giftMatchResult =
-          findGiftDoneMatchForScheduleRow(
-            rowToSave
+        const currentRows =
+          currentDayData.rows ||
+          timeSlots.map(
+            createEmptyAppointmentRow
           );
+
+        const rowToCheck =
+          currentRows[rowIndex] || {};
+
+        const numberToCheck =
+          phoneValue ??
+          rowToCheck.number ??
+          "";
+
+        const formattedNumber =
+          formatSaudiPhoneForStorage(
+            numberToCheck
+          );
+
+        const requestedName =
+          String(
+            rowToCheck.client || ""
+          ).trim();
+
+        const matchedClients =
+          findClientsByExactPhone(
+            formattedNumber ||
+              numberToCheck
+          );
+
+        const previouslyLinkedClient =
+          matchedClients.find(
+            (client) =>
+              String(client.id) ===
+              String(
+                rowToCheck.clientId ||
+                  ""
+              )
+          ) || null;
+
+        /*
+          عند وجود clientId سابق والجوال
+          ما زال مطابقًا، نحافظ على الربط.
+
+          تغيير الاسم أو الجوال يمسح clientId
+          مسبقًا من updateScheduleRow.
+        */
+        const exactIdentityMatches =
+          requestedName
+            ? matchedClients.filter(
+                (client) =>
+                  isSameNameAndPhone(
+                    client.name ||
+                      client.arabic_name ||
+                      "",
+                    client.phone || "",
+                    requestedName,
+                    formattedNumber
+                  )
+              )
+            : [];
+
+        const matchedClient =
+          previouslyLinkedClient ||
+          (
+            exactIdentityMatches.length ===
+              1
+              ? exactIdentityMatches[0]
+              : (
+                  !requestedName &&
+                  matchedClients.length ===
+                    1
+                )
+                ? matchedClients[0]
+                : null
+          );
+
+        selectableMatches =
+          matchedClients;
+
+        /*
+          نظهر قائمة الاختيار حتى لو كان
+          الرقم موجودًا لدى عميلة واحدة فقط،
+          عندما يكون الاسم المكتوب مختلفًا.
+
+          بهذا لا يتم ربط أخت جديدة بصاحبة
+          الرقم الحالية تلقائيًا.
+        */
+        shouldOpenClientModal =
+          matchedClients.length > 0 &&
+          !matchedClient;
+
+        const rows =
+          currentRows.map(
+            (row, index) => {
+              if (
+                index !== rowIndex
+              ) {
+                return row;
+              }
+
+              rowToSave =
+                matchedClient
+                  ? {
+                      ...row,
+
+                      number:
+                        formattedNumber,
+
+                      clientId:
+                        String(
+                          matchedClient.id
+                        ),
+
+                      /*
+                        نحافظ على الاسم المكتوب
+                        في الموعد إذا كان موجودًا،
+                        مثل Adwa’a بدل أضواء.
+                      */
+                      client:
+                        requestedName ||
+                        matchedClient.name ||
+                        matchedClient.arabic_name ||
+                        "",
+
+                      district:
+                        matchedClient.address ||
+                        "",
+
+                      frame:
+                        Boolean(
+                          matchedClient.frame
+                        ),
+
+                      order:
+                        String(
+                          getVisitLabel(
+                            matchedClient.visits ||
+                              0
+                          )
+                        ),
+                    }
+                  : {
+                      ...row,
+
+                      number:
+                        formattedNumber,
+
+                      /*
+                        لا يوجد تطابق آمن:
+                        نلغي كل بيانات الهوية
+                        المستوردة من بروفايل قديم.
+                      */
+                      clientId: "",
+                      sendTo: "",
+                      district: "",
+                      frame: false,
+                      order: "",
+                    };
+
+              return rowToSave;
+            }
+          );
+
+        stylesToSave =
+          currentDayData.cellStyles ||
+          {};
+
+        return {
+          ...previousScheduleData,
+
+          [selectedScheduleDate]: {
+            ...currentDayData,
+            rows,
+          },
+        };
+      }
+    );
+
+    setTimeout(
+      () => {
+        if (rowToSave) {
+          queueScheduleRowSave(
+            selectedScheduleDate,
+            rowIndex,
+            rowToSave,
+            stylesToSave
+          );
+
+          queueScheduleGiftGiverSync({
+            scheduleDate:
+              selectedScheduleDate,
+
+            rowIndex,
+
+            rowSnapshot:
+              rowToSave,
+
+            cellStyles:
+              stylesToSave,
+          });
+        }
 
         if (
-          giftMatchResult.status ===
-          "not-found"
+          shouldOpenClientModal
         ) {
-          alert(
-            "لا توجد هدية غير مأخوذة بهذا الرقم في عملاء الإهداء."
+          setDuplicateClientSearch(
+            ""
           );
+
+          setDuplicateClientModal({
+            targetType:
+              "primary",
+
+            scheduleDate:
+              selectedScheduleDate,
+
+            rowIndex,
+
+            phone:
+              rowToSave?.number ||
+              "",
+
+            matches:
+              selectableMatches,
+          });
         }
-      }
-    }, 0);
+
+        if (
+          rowToSave?.status ===
+            "Gift Done" &&
+          normalizeDigits(
+            formatSaudiPhoneForStorage(
+              rowToSave?.number || ""
+            )
+          ).length >= 9
+        ) {
+          const giftMatchResult =
+            findGiftDoneMatchForScheduleRow(
+              rowToSave
+            );
+
+          if (
+            giftMatchResult.status ===
+              "not-found"
+          ) {
+            alert(
+              "لا توجد هدية غير مأخوذة بهذا الرقم في عملاء الإهداء."
+            );
+          }
+        }
+      },
+      0
+    );
   };
 
   const syncScheduleGiftGiverToGiftClients = async ({
@@ -9628,25 +9966,57 @@ const getScheduleClientBadges = (row) => {
       field === "order" &&
       updatedExtraClient
     ) {
+      /*
+        عميلة نفس المنزل قد تشترك في رقم
+        الجوال مع أكثر من شخص.
+
+        لذلك لا نحدّث كرت الولاء أو تاريخ
+        آخر طلب إلا للبروفايل المرتبط
+        صراحةً بواسطة clientId.
+      */
       const matchedClient =
         clients.find(
           (client) =>
             String(client.id) ===
             String(
-              updatedExtraClient.clientId ||
-                ""
+              updatedExtraClient
+                .clientId || ""
             )
-        ) ||
-        findClientByExactPhone(
-          updatedExtraClient.phone || ""
-        );
+        ) || null;
 
       const visitsValue =
         orderToVisits(value);
 
+      const excludedOrderStatuses = [
+        "Cancel",
+        "Postponed",
+        "Gift Giver",
+      ];
+
+      /*
+        إذا كانت حالة عميلة المنزل فارغة،
+        فهي تتبع حالة الموعد الأساسي.
+
+        لذلك يجب قراءة الحالتين معًا حتى
+        لا نرفع كرت الولاء لعميلة داخل
+        موعد أساسي ملغي.
+      */
+      const effectiveStatus =
+        String(
+          updatedExtraClient.status ||
+          baseRow.status ||
+          ""
+        ).trim();
+
+      const orderCanUpdateProfile =
+        !excludedOrderStatuses.includes(
+          effectiveStatus
+        );
+
       if (
         matchedClient &&
-        visitsValue !== null
+        visitsValue !== null &&
+        orderCanUpdateProfile
       ) {
         const activityTime =
           new Date().toISOString();
@@ -9657,22 +10027,15 @@ const getScheduleClientBadges = (row) => {
         const appointmentDate =
           String(
             selectedScheduleDate || ""
-          ).slice(0, 10);
-
-        const excludedOrderStatuses = [
-          "Cancel",
-          "Postponed",
-          "Gift Giver",
-        ];
+          ).slice(
+            0,
+            10
+          );
 
         const canUpdateLastOrder =
           appointmentDate &&
           appointmentDate <=
-            currentLocalDate &&
-          !excludedOrderStatuses.includes(
-            updatedExtraClient.status ||
-              ""
-          );
+            currentLocalDate;
 
         const appointmentTimestamp =
           canUpdateLastOrder
@@ -9699,11 +10062,14 @@ const getScheduleClientBadges = (row) => {
           appointmentTime >=
           currentLastOrderTime
             ? appointmentTimestamp
-            : matchedClient.last_order_at ||
+            : matchedClient
+                .last_order_at ||
               null;
 
         const clientUpdate = {
-          visits: visitsValue,
+          visits:
+            visitsValue,
+
           last_activity_at:
             activityTime,
         };
@@ -9718,7 +10084,9 @@ const getScheduleClientBadges = (row) => {
           error,
         } = await supabase
           .from("clients")
-          .update(clientUpdate)
+          .update(
+            clientUpdate
+          )
           .eq(
             "id",
             matchedClient.id
@@ -9747,258 +10115,729 @@ const getScheduleClientBadges = (row) => {
               updatedClient
             );
 
-          setClients((prev) =>
-            prev.map((client) =>
-              String(client.id) ===
-              String(nextClient.id)
-                ? nextClient
-                : client
-            )
+          setClients(
+            (previousClients) =>
+              previousClients.map(
+                (client) =>
+                  String(client.id) ===
+                  String(nextClient.id)
+                    ? nextClient
+                    : client
+              )
           );
         }
       }
     }
-  };
 
-  const applyAdditionalClientNumberLookup = async (
-    rowIndex,
-    extraClientIndex,
-    phoneValue
-  ) => {
-    if (!ensureSystemWritable() || !canEditData) return null;
+    /*
+      تغيير حالة عميلة واحدة من نفس المنزل.
 
-    const currentDayData =
-      scheduleData[selectedScheduleDate] || {};
+      الخصم يحصل فقط عند الانتقال لأول مرة
+      من حالة عادية إلى Cancel أو Postponed.
 
-    const currentRows =
-      currentDayData.rows ||
-      timeSlots.map(createEmptyAppointmentRow);
-
-    const baseRow =
-      currentRows[rowIndex] ||
-      createEmptyAppointmentRow(
-        timeSlots[rowIndex] || ""
-      );
-
-    const formattedPhone =
-      formatSaudiPhoneForStorage(
-        phoneValue || ""
-      );
-
-    const extraClients =
-      getAdditionalClientsForRow(baseRow);
-
-    const currentExtraClient =
-      extraClients[extraClientIndex] || {};
-
-    const matchedClients =
-      findClientsByExactPhone(
-        formattedPhone || phoneValue
-      );
-
-    const previouslyLinkedClient =
-      matchedClients.find(
-        (client) =>
-          String(client.id) ===
-          String(
-            currentExtraClient.clientId || ""
-          )
-      ) || null;
-
-    const matchedClient =
-      previouslyLinkedClient ||
-      (matchedClients.length === 1
-        ? matchedClients[0]
-        : null);
-
-    const nextExtraClients =
-      extraClients.map((client, index) => {
-        if (index !== extraClientIndex) {
-          return client;
-        }
-
-        return {
-          ...client,
-          phone: formattedPhone,
-          ...(matchedClient
-            ? {
-                clientId: String(
-                  matchedClient.id
-                ),
-                name:
-                  matchedClient.name || "",
-                district:
-                  matchedClient.address || "",
-                frame: Boolean(
-                  matchedClient.frame
-                ),
-                order: String(
-                  getVisitLabel(
-                    matchedClient.visits || 0
-                  )
-                ),
-              }
-            : {
-                clientId: "",
-              }),
-        };
-      });
-
-    await updateScheduleRow(
-      rowIndex,
-      "additionalClients",
-      nextExtraClients
-    );
-
+      الرجوع إلى حالة عادية لا يعيد الخدمة.
+      الانتقال بين Cancel وPostponed لا يخصم
+      مرة ثانية.
+    */
     if (
-      matchedClients.length > 1 &&
-      !previouslyLinkedClient
+      field === "status" &&
+      updatedExtraClient
     ) {
-      setDuplicateClientSearch("");
+      const previousEffectiveStatus =
+        currentExtraClient.status ||
+        baseRow.status ||
+        "";
 
-      setDuplicateClientModal({
-        targetType: "household",
-        scheduleDate: selectedScheduleDate,
-        rowIndex,
-        extraClientIndex,
-        phone: formattedPhone,
-        matches: matchedClients,
-      });
-    }
+      const nextEffectiveStatus =
+        value ||
+        baseRow.status ||
+        "";
 
-    return matchedClient;
-  };
-
-  const selectDuplicateClient = async (client) => {
-    if (!duplicateClientModal || !client) return;
-    if (!ensureSystemWritable() || !canEditData) return;
-
-    const targetDate =
-      duplicateClientModal.scheduleDate ||
-      selectedScheduleDate;
-
-    const rowIndex =
-      duplicateClientModal.rowIndex;
-
-    const currentDayData =
-      scheduleData[targetDate] || {};
-
-    const currentRows =
-      currentDayData.rows ||
-      timeSlots.map(createEmptyAppointmentRow);
-
-    const currentRow =
-      currentRows[rowIndex] ||
-      createEmptyAppointmentRow(
-        timeSlots[rowIndex] || ""
-      );
-
-    const formattedPhone =
-      formatSaudiPhoneForStorage(
-        client.phone ||
-        duplicateClientModal.phone ||
-        ""
-      );
-
-    let updatedRowSnapshot = currentRow;
-
-    if (
-      duplicateClientModal.targetType ===
-      "household"
-    ) {
-      const extraClientIndex =
-        duplicateClientModal.extraClientIndex;
-
-      const extraClients =
-        getAdditionalClientsForRow(currentRow);
-
-      const nextExtraClients =
-        extraClients.map(
-          (extraClient, index) => {
-            if (index !== extraClientIndex) {
-              return extraClient;
-            }
-
-            return {
-              ...extraClient,
-              clientId: String(client.id),
-              name: client.name || "",
-              phone: formattedPhone,
-              district: client.address || "",
-              frame: Boolean(client.frame),
-              order: String(
-                getVisitLabel(
-                  client.visits || 0
-                )
-              ),
-            };
-          }
+      const wasExcluded =
+        subtractVisitStatuses.includes(
+          previousEffectiveStatus
         );
 
-      updatedRowSnapshot = {
-        ...currentRow,
-        additionalClients:
-          nextExtraClients,
-      };
-    } else {
-      updatedRowSnapshot = {
-        ...currentRow,
-        clientId: String(client.id),
-        client: client.name || "",
-        number: formattedPhone,
-        district: client.address || "",
-        frame: Boolean(client.frame),
-        order: String(
-          getVisitLabel(client.visits || 0)
-        ),
-      };
+      const isExcluded =
+        subtractVisitStatuses.includes(
+          nextEffectiveStatus
+        );
+
+      if (
+        isExcluded &&
+        !wasExcluded
+      ) {
+        await subtractOneVisitForClientId(
+          updatedExtraClient.clientId ||
+            ""
+        );
+      }
     }
+  };
 
-    setScheduleData((prev) => {
-      const dayData =
-        prev[targetDate] || {};
+  const applyAdditionalClientNumberLookup =
+    async (
+      rowIndex,
+      extraClientIndex,
+      phoneValue
+    ) => {
+      if (
+        !ensureSystemWritable() ||
+        !canEditData
+      ) {
+        return null;
+      }
 
-      const rowsForDate =
-        dayData.rows ||
+      const numericRowIndex =
+        Number(rowIndex);
+
+      const numericExtraClientIndex =
+        Number(extraClientIndex);
+
+      if (
+        !Number.isInteger(
+          numericRowIndex
+        ) ||
+        numericRowIndex < 0 ||
+        !Number.isInteger(
+          numericExtraClientIndex
+        ) ||
+        numericExtraClientIndex < 0
+      ) {
+        return null;
+      }
+
+      const currentDayData =
+        scheduleData[
+          selectedScheduleDate
+        ] || {};
+
+      const currentRows =
+        currentDayData.rows ||
         timeSlots.map(
           createEmptyAppointmentRow
         );
 
-      const rows = rowsForDate.map(
-        (row, index) =>
-          index === rowIndex
-            ? updatedRowSnapshot
-            : row
+      const baseRow =
+        currentRows[
+          numericRowIndex
+        ] ||
+        createEmptyAppointmentRow(
+          timeSlots[
+            numericRowIndex
+          ] || ""
+        );
+
+      const formattedPhone =
+        formatSaudiPhoneForStorage(
+          phoneValue || ""
+        );
+
+      const extraClients =
+        getAdditionalClientsForRow(
+          baseRow
+        );
+
+      const currentExtraClient =
+        extraClients[
+          numericExtraClientIndex
+        ];
+
+      if (!currentExtraClient) {
+        return null;
+      }
+
+      const requestedName =
+        String(
+          currentExtraClient.name ||
+            ""
+        ).trim();
+
+      const matchedClients =
+        findClientsByExactPhone(
+          formattedPhone ||
+            phoneValue
+        );
+
+      const previouslyLinkedClient =
+        matchedClients.find(
+          (client) =>
+            String(client.id) ===
+            String(
+              currentExtraClient
+                .clientId || ""
+            )
+        ) || null;
+
+      const previousNameMatches =
+        Boolean(
+          previouslyLinkedClient &&
+          requestedName &&
+          isSameNameAndPhone(
+            previouslyLinkedClient.name ||
+              previouslyLinkedClient
+                .arabic_name ||
+              "",
+            previouslyLinkedClient.phone ||
+              "",
+            requestedName,
+            formattedPhone
+          )
+        );
+
+      /*
+        clientId السابق يكون آمنًا عندما:
+        - الجوال غير مشترك.
+        - أو الاسم والجوال يطابقان البروفايل.
+
+        هذا يسمح باختلاف اللغة عند وجود
+        clientId صحيح ورقم غير مشترك.
+      */
+      const previousLinkIsSafe =
+        Boolean(
+          previouslyLinkedClient &&
+          (
+            matchedClients.length <= 1 ||
+            previousNameMatches
+          )
+        );
+
+      const exactIdentityMatches =
+        requestedName
+          ? matchedClients.filter(
+              (client) =>
+                isSameNameAndPhone(
+                  client.name ||
+                    client.arabic_name ||
+                    "",
+                  client.phone || "",
+                  requestedName,
+                  formattedPhone
+                )
+            )
+          : [];
+
+      /*
+        لا نستخدم الجوال وحده إذا كان
+        في الصف اسم مختلف.
+
+        الجوال وحده يستخدم فقط عندما
+        يكون الاسم فارغًا والنتيجة واحدة.
+      */
+      const matchedClient =
+        previousLinkIsSafe
+          ? previouslyLinkedClient
+          : exactIdentityMatches.length ===
+              1
+            ? exactIdentityMatches[0]
+            : (
+                !requestedName &&
+                matchedClients.length ===
+                  1
+              )
+              ? matchedClients[0]
+              : null;
+
+      const nextExtraClients =
+        extraClients.map(
+          (extraClient, index) => {
+            if (
+              index !==
+              numericExtraClientIndex
+            ) {
+              return extraClient;
+            }
+
+            if (matchedClient) {
+              return {
+                ...extraClient,
+
+                phone:
+                  formattedPhone,
+
+                clientId:
+                  String(
+                    matchedClient.id
+                  ),
+
+                /*
+                  إذا كان الاسم مكتوبًا في الموعد
+                  نحافظ عليه، مثل Adwa’a.
+
+                  إذا كان فارغًا نستخدم اسم
+                  البروفايل الموجود.
+                */
+                name:
+                  requestedName ||
+                  matchedClient.name ||
+                  matchedClient
+                    .arabic_name ||
+                  "",
+
+                district:
+                  matchedClient.address ||
+                  "",
+
+                frame:
+                  Boolean(
+                    matchedClient.frame
+                  ),
+
+                order:
+                  String(
+                    getVisitLabel(
+                      matchedClient.visits ||
+                        0
+                    )
+                  ),
+              };
+            }
+
+            /*
+              لا يوجد تطابق آمن.
+
+              نمسح كل البيانات المستوردة من
+              بروفايل سابق حتى لا يبقى اسم
+              أخت مع clientId أخت أخرى.
+            */
+            return {
+              ...extraClient,
+
+              phone:
+                formattedPhone,
+
+              clientId: "",
+              sendTo: "",
+              district: "",
+              frame: false,
+              order: "",
+            };
+          }
+        );
+
+      await updateScheduleRow(
+        numericRowIndex,
+        "additionalClients",
+        nextExtraClients
       );
 
-      return {
-        ...prev,
-        [targetDate]: {
-          ...dayData,
-          rows,
-        },
-      };
-    });
+      /*
+        إذا كان الرقم موجودًا لكن لا يوجد
+        تطابق آمن، نظهر قائمة الاختيار حتى
+        لو كانت النتيجة عميلة واحدة فقط.
 
-    queueScheduleRowSave(
-      targetDate,
-      rowIndex,
-      updatedRowSnapshot,
-      currentDayData.cellStyles || {}
-    );
+        هذا يفرّق بين:
+        - نفس العميلة واسم مختلف اللغة.
+        - أخت جديدة تستخدم نفس الرقم.
+      */
+      if (
+        matchedClients.length > 0 &&
+        !matchedClient
+      ) {
+        setDuplicateClientSearch(
+          ""
+        );
 
-    queueScheduleGiftGiverSync({
-      scheduleDate: targetDate,
-      rowIndex,
-      rowSnapshot:
+        setDuplicateClientModal({
+          targetType:
+            "household",
+
+          scheduleDate:
+            selectedScheduleDate,
+
+          rowIndex:
+            numericRowIndex,
+
+          extraClientIndex:
+            numericExtraClientIndex,
+
+          phone:
+            formattedPhone,
+
+          matches:
+            matchedClients,
+        });
+      }
+
+      return matchedClient;
+    };
+
+  const selectDuplicateClient =
+    async (client) => {
+      const modalSnapshot =
+        duplicateClientModal;
+
+      if (
+        !modalSnapshot ||
+        !client?.id
+      ) {
+        return null;
+      }
+
+      const openProfileAfterSelect =
+        Boolean(
+          modalSnapshot
+            .openProfileAfterSelect
+        );
+
+      /*
+        فتح البروفايل مسموح حتى عند عدم
+        وجود صلاحية تعديل أو عند تجميد النظام.
+
+        في هذه الحالة نفتح فقط دون تعديل
+        صف الموعد.
+      */
+      if (
+        !canEditData ||
+        isSystemFrozen
+      ) {
+        if (
+          !openProfileAfterSelect
+        ) {
+          if (!canEditData) {
+            alert(
+              "لا تملك صلاحية تعديل بيانات الموعد."
+            );
+          } else {
+            ensureSystemWritable();
+          }
+
+          return null;
+        }
+
+        setDuplicateClientModal(
+          null
+        );
+
+        setDuplicateClientSearch(
+          ""
+        );
+
+        return client;
+      }
+
+      if (
+        !ensureSystemWritable()
+      ) {
+        return null;
+      }
+
+      const targetDate =
+        modalSnapshot.scheduleDate ||
+        selectedScheduleDate;
+
+      const numericRowIndex =
+        Number(
+          modalSnapshot.rowIndex
+        );
+
+      if (
+        !targetDate ||
+        !Number.isInteger(
+          numericRowIndex
+        ) ||
+        numericRowIndex < 0
+      ) {
+        alert(
+          "تعذر تحديد صف الموعد المطلوب."
+        );
+
+        return null;
+      }
+
+      const currentDayData =
+        scheduleData[
+          targetDate
+        ] || {};
+
+      const currentRows =
+        currentDayData.rows ||
+        timeSlots.map(
+          createEmptyAppointmentRow
+        );
+
+      const currentRow =
+        currentRows[
+          numericRowIndex
+        ];
+
+      if (!currentRow) {
+        alert(
+          "تعذر العثور على صف الموعد."
+        );
+
+        return null;
+      }
+
+      const formattedPhone =
+        formatSaudiPhoneForStorage(
+          client.phone ||
+          modalSnapshot.phone ||
+          ""
+        );
+
+      let updatedRowSnapshot =
+        currentRow;
+
+      if (
+        modalSnapshot.targetType ===
+          "household"
+      ) {
+        const numericExtraClientIndex =
+          Number(
+            modalSnapshot
+              .extraClientIndex
+          );
+
+        const extraClients =
+          getAdditionalClientsForRow(
+            currentRow
+          );
+
+        if (
+          !Number.isInteger(
+            numericExtraClientIndex
+          ) ||
+          numericExtraClientIndex < 0 ||
+          numericExtraClientIndex >=
+            extraClients.length
+        ) {
+          alert(
+            "تعذر تحديد عميلة نفس المنزل."
+          );
+
+          return null;
+        }
+
+        const nextExtraClients =
+          extraClients.map(
+            (
+              extraClient,
+              index
+            ) => {
+              if (
+                index !==
+                numericExtraClientIndex
+              ) {
+                return extraClient;
+              }
+
+              /*
+                عند فتح البروفايل فقط نحافظ
+                على الاسم المكتوب في الموعد،
+                مثل Adwa’a بدل أضواء.
+
+                عند اختيار العميلة من بحث
+                الرقم نستخدم اسم البروفايل
+                المختار لمنع بقاء اسم شخص
+                مع clientId شخص آخر.
+              */
+              const nextName =
+                openProfileAfterSelect
+                  ? String(
+                      extraClient.name ||
+                        ""
+                    ).trim() ||
+                    client.name ||
+                    client.arabic_name ||
+                    ""
+                  : client.name ||
+                    client.arabic_name ||
+                    "";
+
+              return {
+                ...extraClient,
+
+                clientId:
+                  String(
+                    client.id
+                  ),
+
+                name:
+                  nextName,
+
+                phone:
+                  formattedPhone,
+
+                district:
+                  client.address || "",
+
+                frame:
+                  Boolean(
+                    client.frame
+                  ),
+
+                order:
+                  String(
+                    getVisitLabel(
+                      client.visits || 0
+                    )
+                  ),
+              };
+            }
+          );
+
+        updatedRowSnapshot = {
+          ...currentRow,
+
+          additionalClients:
+            nextExtraClients,
+        };
+      } else {
+        const nextName =
+          openProfileAfterSelect
+            ? String(
+                currentRow.client ||
+                  ""
+              ).trim() ||
+              client.name ||
+              client.arabic_name ||
+              ""
+            : client.name ||
+              client.arabic_name ||
+              "";
+
+        updatedRowSnapshot = {
+          ...currentRow,
+
+          clientId:
+            String(
+              client.id
+            ),
+
+          client:
+            nextName,
+
+          number:
+            formattedPhone,
+
+          district:
+            client.address || "",
+
+          frame:
+            Boolean(
+              client.frame
+            ),
+
+          order:
+            String(
+              getVisitLabel(
+                client.visits || 0
+              )
+            ),
+        };
+      }
+
+      scheduleLastEditRef.current =
+        Date.now();
+
+      setScheduleData(
+        (
+          previousScheduleData
+        ) => {
+          const dayData =
+            previousScheduleData[
+              targetDate
+            ] || {};
+
+          const rowsForDate =
+            dayData.rows ||
+            timeSlots.map(
+              createEmptyAppointmentRow
+            );
+
+          const nextRows =
+            rowsForDate.map(
+              (
+                scheduleRow,
+                index
+              ) =>
+                index ===
+                numericRowIndex
+                  ? updatedRowSnapshot
+                  : scheduleRow
+            );
+
+          return {
+            ...previousScheduleData,
+
+            [targetDate]: {
+              ...dayData,
+
+              rows:
+                nextRows,
+            },
+          };
+        }
+      );
+
+      /*
+        نلغي أي حفظ مؤجل قديم يحمل
+        clientId غير صحيح.
+      */
+      const scheduleRowId =
+        getScheduleRowId(
+          targetDate,
+          numericRowIndex
+        );
+
+      if (
+        scheduleRowSaveTimersRef
+          .current[
+            scheduleRowId
+          ]
+      ) {
+        clearTimeout(
+          scheduleRowSaveTimersRef
+            .current[
+              scheduleRowId
+            ]
+        );
+
+        delete scheduleRowSaveTimersRef
+          .current[
+            scheduleRowId
+          ];
+      }
+
+      /*
+        حفظ فوري قبل فتح البروفايل،
+        حتى يتحدث سجل الخدمات بالـclientId
+        الصحيح ولا يبقى الربط القديم.
+      */
+      await saveScheduleRowToSupabase(
+        targetDate,
+        numericRowIndex,
         updatedRowSnapshot,
-      cellStyles:
-        currentDayData.cellStyles || {},
-    });
+        currentDayData.cellStyles ||
+          {}
+      );
 
-    setDuplicateClientModal(null);
-    setDuplicateClientSearch("");
-  };
+      queueScheduleGiftGiverSync({
+        scheduleDate:
+          targetDate,
+
+        rowIndex:
+          numericRowIndex,
+
+        rowSnapshot:
+          updatedRowSnapshot,
+
+        cellStyles:
+          currentDayData.cellStyles ||
+          {},
+      });
+
+      setDuplicateClientModal(
+        null
+      );
+
+      setDuplicateClientSearch(
+        ""
+      );
+
+      return client;
+    };
 
   const resetAdditionalClientDraft =
     () => {
@@ -10170,38 +11009,353 @@ const getScheduleClientBadges = (row) => {
     );
   };
 
-  const confirmDuplicateBeforeSendTo = (targetList, clientName, clientPhone, giftDate = selectedScheduleDate) => {
+  const confirmDuplicateBeforeSendTo = (
+    targetList,
+    clientName,
+    clientPhone,
+    giftDate = selectedScheduleDate
+  ) => {
+    /*
+      مسار عملائنا محمي بواسطة
+      paradise_find_or_create_client.
+
+      لذلك لا نظهر رسالة تكرار عامة:
+      - التطابق الكامل يربط البروفايل الموجود.
+      - الاسم المختلف بنفس الرقم يطلب
+        تأكيد إنشاء بروفايل مستقل.
+    */
+    if (
+      targetList ===
+      "عملائنا"
+    ) {
+      return true;
+    }
+
     let exists = false;
 
-    if (targetList === "عملائنا") {
-      exists = clients.some((client) =>
-        isSameNameAndPhone(client.name || client.arabic_name, client.phone, clientName, clientPhone)
-      );
+    if (
+      targetList ===
+      "عملاء الإهداء"
+    ) {
+      exists =
+        giftClients.some(
+          (gift) =>
+            isSameNameAndPhone(
+              gift.toName,
+              gift.toPhone,
+              clientName,
+              clientPhone
+            ) &&
+            String(
+              gift.giftDate || ""
+            ).slice(
+              0,
+              10
+            ) ===
+              String(
+                giftDate || ""
+              ).slice(
+                0,
+                10
+              )
+        );
     }
 
-    if (targetList === "عملاء الإهداء") {
-      exists = giftClients.some((gift) =>
-        isSameNameAndPhone(gift.toName, gift.toPhone, clientName, clientPhone) &&
-        String(gift.giftDate || "").slice(0, 10) === String(giftDate || "").slice(0, 10)
-      );
+    if (
+      targetList ===
+      "عملاء مرشحين"
+    ) {
+      exists =
+        manualReferrals.some(
+          (referral) =>
+            isSameNameAndPhone(
+              referral.name,
+              referral.phone,
+              clientName,
+              clientPhone
+            )
+        );
     }
 
-    if (targetList === "عملاء مرشحين") {
-      exists = manualReferrals.some((referral) =>
-        isSameNameAndPhone(referral.name, referral.phone, clientName, clientPhone)
-      );
+    if (
+      targetList ===
+      "عملاء محتملين"
+    ) {
+      exists =
+        potentialClients.some(
+          (client) =>
+            isSameNameAndPhone(
+              client.name,
+              client.phone,
+              clientName,
+              clientPhone
+            )
+        );
     }
 
-    if (targetList === "عملاء محتملين") {
-      exists = potentialClients.some((client) =>
-        isSameNameAndPhone(client.name, client.phone, clientName, clientPhone)
-      );
+    if (!exists) {
+      return true;
     }
 
-    if (!exists) return true;
-
-    return window.confirm("هذا العميل موجود مسبقاً، هل ترغب بإكمال نقل البيانات؟");
+    return window.confirm(
+      "هذا العميل موجود مسبقاً، هل ترغب بإكمال نقل البيانات؟"
+    );
   };
+
+
+  const findOrCreateClientSafely =
+    async ({
+      claimedClientId = "",
+      name = "",
+      phone = "",
+      address = "",
+      visits = 0,
+      frame = false,
+    }) => {
+      const cleanName =
+        String(
+          name || ""
+        ).trim();
+
+      const cleanPhone =
+        formatSaudiPhoneForStorage(
+          phone || ""
+        );
+
+      const numericVisits =
+        Math.max(
+          0,
+          Number(
+            visits || 0
+          )
+        );
+
+      if (!cleanName) {
+        alert(
+          "اكتبي اسم العميلة أولًا."
+        );
+
+        return null;
+      }
+
+      if (
+        normalizeDigits(
+          cleanPhone
+        ).length < 9
+      ) {
+        alert(
+          "اكتبي رقم جوال صحيحًا أولًا."
+        );
+
+        return null;
+      }
+
+      const callSafeClientRpc =
+        async (
+          allowSharedPhoneNew
+        ) =>
+          supabase.rpc(
+            "paradise_find_or_create_client",
+            {
+              p_claimed_client_id:
+                Number(
+                  claimedClientId
+                ) > 0
+                  ? Number(
+                      claimedClientId
+                    )
+                  : null,
+
+              p_name:
+                cleanName,
+
+              p_phone:
+                cleanPhone,
+
+              p_address:
+                String(
+                  address || ""
+                ).trim(),
+
+              p_visits:
+                Number.isFinite(
+                  numericVisits
+                )
+                  ? numericVisits
+                  : 0,
+
+              p_frame:
+                Boolean(
+                  frame
+                ),
+
+              p_allow_shared_phone_new:
+                Boolean(
+                  allowSharedPhoneNew
+                ),
+            }
+          );
+
+      let {
+        data,
+        error,
+      } = await callSafeClientRpc(
+        false
+      );
+
+      if (error) {
+        console.error(
+          "Safe client link RPC error:",
+          error
+        );
+
+        alert(
+          "تعذر ربط العميلة بعملائنا. تأكد من الاتصال وحاول مرة أخرى."
+        );
+
+        return null;
+      }
+
+      if (
+        data?.code ===
+        "shared_phone_confirmation_required"
+      ) {
+        const matchingNames =
+          Array.isArray(
+            data.matches
+          )
+            ? data.matches
+                .map(
+                  (matchedClient) =>
+                    matchedClient.name ||
+                    "بدون اسم"
+                )
+                .filter(
+                  Boolean
+                )
+                .join("، ")
+            : "";
+
+        const createIndependentClient =
+          window.confirm(
+            `رقم الجوال مستخدم لدى: ${
+              matchingNames ||
+              "عميلة أخرى"
+            }.\n\nهل ${cleanName} عميلة مختلفة وتريد إنشاء بروفايل مستقل لها بنفس الرقم؟`
+          );
+
+        if (
+          !createIndependentClient
+        ) {
+          return null;
+        }
+
+        const retryResult =
+          await callSafeClientRpc(
+            true
+          );
+
+        data =
+          retryResult.data;
+
+        error =
+          retryResult.error;
+
+        if (error) {
+          console.error(
+            "Safe shared-phone client create error:",
+            error
+          );
+
+          alert(
+            "تعذر إنشاء البروفايل المستقل للعميلة."
+          );
+
+          return null;
+        }
+      }
+
+      if (
+        !data?.success ||
+        !data?.client?.id
+      ) {
+        console.error(
+          "Safe client link rejected:",
+          data
+        );
+
+        alert(
+          data?.message ||
+          "تعذر ربط أو إضافة العميلة داخل عملائنا."
+        );
+
+        return null;
+      }
+
+      const nextClient =
+        normalizeClientRecord(
+          data.client
+        );
+
+      setClients(
+        (previousClients) => {
+          const clientAlreadyExists =
+            previousClients.some(
+              (client) =>
+                String(
+                  client.id
+                ) ===
+                String(
+                  nextClient.id
+                )
+            );
+
+          const nextClients =
+            clientAlreadyExists
+              ? previousClients.map(
+                  (client) =>
+                    String(
+                      client.id
+                    ) ===
+                      String(
+                        nextClient.id
+                      )
+                      ? nextClient
+                      : client
+                )
+              : [
+                  nextClient,
+                  ...previousClients,
+                ];
+
+          return nextClients.sort(
+            (
+              firstClient,
+              secondClient
+            ) =>
+              Number(
+                secondClient.id || 0
+              ) -
+              Number(
+                firstClient.id || 0
+              )
+          );
+        }
+      );
+
+      return {
+        client:
+          nextClient,
+
+        created:
+          Boolean(
+            data.created
+          ),
+
+        code:
+          data.code || "",
+      };
+    };
 
   const findGiftDoneMatchForScheduleRow = (row) => {
     const savedGiftClientId = String(
@@ -10475,55 +11629,132 @@ const getScheduleClientBadges = (row) => {
     setGiftDoneLinkSearch("");
   };
 
-  const subtractOneVisitForScheduleRow = async (row) => {
-    const matchedClient =
-      clients.find(
-        (client) =>
-          String(client.id) ===
-          String(row?.clientId || "")
-      ) ||
-      findClientByExactPhone(
-        row?.number || ""
+  const subtractOneVisitForClientId =
+    async (clientIdValue) => {
+      const numericClientId =
+        Number(clientIdValue);
+
+      /*
+        ممنوع استخدام رقم الجوال لتحديد
+        صاحبة الخصم.
+
+        إذا لم يوجد clientId صحيح،
+        لا نخصم من أي بروفايل.
+      */
+      if (
+        !Number.isInteger(
+          numericClientId
+        ) ||
+        numericClientId <= 0
+      ) {
+        console.warn(
+          "Visit subtraction skipped: missing valid clientId",
+          clientIdValue
+        );
+
+        return false;
+      }
+
+      /*
+        الخصم ينفذ داخل قاعدة البيانات
+        بقفل آمن على سجل العميلة.
+
+        يمنع ضياع أحد الخصمين عندما يعمل
+        جهازان على العميلة نفسها في الوقت
+        نفسه.
+      */
+      const {
+        data,
+        error,
+      } = await supabase.rpc(
+        "paradise_subtract_client_visit",
+        {
+          p_client_id:
+            numericClientId,
+        }
       );
 
-    if (!matchedClient) return;
+      if (error) {
+        console.error(
+          "Atomic client visit subtraction RPC error:",
+          error
+        );
 
-    const nextVisits = Math.max(
-      0,
-      Number(matchedClient.visits || 0) - 1
-    );
+        alert(
+          "تم تغيير حالة الموعد، لكن تعذر خصم الخدمة من بروفايل العميلة. تأكد من الاتصال."
+        );
 
-    const { data: updatedClient, error } = await supabase
-      .from("clients")
-      .update({ visits: nextVisits })
-      .eq("id", matchedClient.id)
-      .select(
-        "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at"
-      )
-      .single();
+        return false;
+      }
 
-    if (error) {
-      console.log(
-        "Schedule status visit subtract error:",
-        error
-      );
-      return;
-    }
+      if (
+        !data?.success ||
+        !data?.client?.id
+      ) {
+        console.error(
+          "Atomic client visit subtraction rejected:",
+          data
+        );
 
-    if (updatedClient) {
+        alert(
+          data?.message ||
+          "تم تغيير حالة الموعد، لكن تعذر خصم الخدمة من بروفايل العميلة."
+        );
+
+        return false;
+      }
+
       const nextClient =
-        normalizeClientRecord(updatedClient);
+        normalizeClientRecord(
+          data.client
+        );
 
-      setClients((prev) =>
-        prev.map((client) =>
-          String(client.id) ===
-          String(nextClient.id)
-            ? nextClient
-            : client
-        )
+      setClients(
+        (previousClients) => {
+          const clientExists =
+            previousClients.some(
+              (client) =>
+                String(client.id) ===
+                String(nextClient.id)
+            );
+
+          if (!clientExists) {
+            return [
+              nextClient,
+              ...previousClients,
+            ].sort(
+              (
+                firstClient,
+                secondClient
+              ) =>
+                Number(
+                  secondClient.id || 0
+                ) -
+                Number(
+                  firstClient.id || 0
+                )
+            );
+          }
+
+          return previousClients.map(
+            (client) =>
+              String(client.id) ===
+              String(nextClient.id)
+                ? nextClient
+                : client
+          );
+        }
       );
-    }
-  };
+
+      return true;
+    };
+
+
+  const subtractOneVisitForScheduleRow =
+    async (row) =>
+      subtractOneVisitForClientId(
+        row?.clientId || ""
+      );
 
   const updateAdditionalClientDraft = (
     field,
@@ -10611,192 +11842,215 @@ const getScheduleClientBadges = (row) => {
     if (!confirmDuplicateBeforeSendTo(targetList, clientName, clientPhone)) return;
 
     if (targetList === "عملائنا") {
-      const visitsValue = orderToVisits(extraClient.order);
+      const visitsValue =
+        orderToVisits(
+          extraClient.order
+        );
 
-if (visitsValue === null) {
-  alert("اختاري رقم الخدمة للعميلة الإضافية أولاً قبل إرسالها إلى عملائنا");
-  return;
-}
-      const { data: insertedClient, error } = await supabase.from("clients").insert([
-        {
-          name: clientName,
-          arabic_name: clientName,
-          phone: clientPhone,
-          address: district,
-          visits: visitsValue,
-          frame: false,
-          blacklist: false,
-          notes: "",
-          total_paid: 0,
-          service_history: [],
-        },
-      ]).select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at").single();
-
-      if (error) {
-        console.log(
-          "Additional client Send To clients copy error:",
-          error
+      if (visitsValue === null) {
+        alert(
+          "اختاري رقم الخدمة للعميلة الإضافية أولاً قبل إرسالها إلى عملائنا"
         );
 
         return;
       }
 
-      if (insertedClient) {
-        const nextClient =
-          normalizeClientRecord(
-            insertedClient
-          );
+      const baseExtraClients =
+        getAdditionalClientsForRow(
+          baseRow
+        );
 
-        setClients((prev) => {
-          const exists =
-            prev.some(
-              (client) =>
-                String(client.id) ===
-                String(nextClient.id)
-            );
+      const extraClientLocalId =
+        String(
+          extraClient.id || ""
+        ).trim();
 
-          const nextClients =
-            exists
-              ? prev.map((client) =>
-                  String(client.id) ===
-                  String(nextClient.id)
-                    ? nextClient
-                    : client
-                )
-              : [
-                  nextClient,
-                  ...prev,
-                ];
-
-          return nextClients.sort(
-            (a, b) =>
-              Number(b.id || 0) -
-              Number(a.id || 0)
-          );
-        });
-
-        const targetRowIndex =
-          Number(
-            additionalClientModal
-              ?.rowIndex
-          );
-
-        if (
-          Number.isInteger(
-            targetRowIndex
-          ) &&
-          targetRowIndex >= 0
-        ) {
-          const linkedClientId =
-            String(
-              insertedClient.id
-            );
-
-          const linkedExtraClients =
-            getAdditionalClientsForRow(
-              baseRow
-            ).map(
+      let targetExtraClientIndex =
+        extraClientLocalId
+          ? baseExtraClients.findIndex(
               (currentExtraClient) =>
                 String(
                   currentExtraClient.id ||
                     ""
                 ) ===
-                String(
-                  extraClient.id ||
-                    ""
+                extraClientLocalId
+            )
+          : -1;
+
+      if (
+        targetExtraClientIndex < 0
+      ) {
+        const identityMatches =
+          baseExtraClients
+            .map(
+              (
+                currentExtraClient,
+                index
+              ) => ({
+                currentExtraClient,
+                index,
+              })
+            )
+            .filter(
+              ({
+                currentExtraClient,
+              }) =>
+                isSameNameAndPhone(
+                  currentExtraClient.name ||
+                    "",
+                  currentExtraClient.phone ||
+                    "",
+                  clientName,
+                  clientPhone
                 )
-                  ? {
-                      ...currentExtraClient,
-                      clientId:
-                        linkedClientId,
-                    }
-                  : currentExtraClient
             );
 
-          const linkedRowSnapshot = {
-            ...baseRow,
-
-            additionalClients:
-              linkedExtraClients,
-          };
-
-          setScheduleData((prev) => {
-            const currentDayData =
-              prev[
-                selectedScheduleDate
-              ] || {};
-
-            const currentRows =
-              currentDayData.rows ||
-              timeSlots.map(
-                createEmptyAppointmentRow
-              );
-
-            const rows =
-              currentRows.map(
-                (
-                  currentRow,
-                  currentIndex
-                ) => {
-                  if (
-                    currentIndex !==
-                    targetRowIndex
-                  ) {
-                    return currentRow;
-                  }
-
-                  const latestExtraClients =
-                    getAdditionalClientsForRow(
-                      currentRow
-                    ).map(
-                      (
-                        currentExtraClient
-                      ) =>
-                        String(
-                          currentExtraClient.id ||
-                            ""
-                        ) ===
-                        String(
-                          extraClient.id ||
-                            ""
-                        )
-                          ? {
-                              ...currentExtraClient,
-                              clientId:
-                                linkedClientId,
-                            }
-                          : currentExtraClient
-                    );
-
-                  return {
-                    ...currentRow,
-
-                    additionalClients:
-                      latestExtraClients,
-                  };
-                }
-              );
-
-            return {
-              ...prev,
-
-              [selectedScheduleDate]: {
-                ...currentDayData,
-                rows,
-              },
-            };
-          });
-
-          queueScheduleRowSave(
-            selectedScheduleDate,
-            targetRowIndex,
-            linkedRowSnapshot,
-            scheduleData[
-              selectedScheduleDate
-            ]?.cellStyles || {}
-          );
+        if (
+          identityMatches.length === 1
+        ) {
+          targetExtraClientIndex =
+            identityMatches[0].index;
         }
       }
+
+      let targetRowIndex =
+        Number(
+          additionalClientModal
+            ?.rowIndex
+        );
+
+      const rowsForSelectedDate =
+        scheduleData[
+          selectedScheduleDate
+        ]?.rows ||
+        timeSlots.map(
+          createEmptyAppointmentRow
+        );
+
+      if (
+        !Number.isInteger(
+          targetRowIndex
+        ) ||
+        targetRowIndex < 0
+      ) {
+        targetRowIndex =
+          rowsForSelectedDate.findIndex(
+            (currentRow) =>
+              currentRow === baseRow
+          );
+      }
+
+      if (
+        (
+          !Number.isInteger(
+            targetRowIndex
+          ) ||
+          targetRowIndex < 0
+        ) &&
+        extraClientLocalId
+      ) {
+        targetRowIndex =
+          rowsForSelectedDate.findIndex(
+            (currentRow) =>
+              getAdditionalClientsForRow(
+                currentRow
+              ).some(
+                (currentExtraClient) =>
+                  String(
+                    currentExtraClient.id ||
+                      ""
+                  ) ===
+                    extraClientLocalId
+              )
+          );
+      }
+
+      if (
+        !Number.isInteger(
+          targetRowIndex
+        ) ||
+        targetRowIndex < 0 ||
+        targetExtraClientIndex < 0
+      ) {
+        alert(
+          "تعذر تحديد صف عميلة نفس المنزل. لم يتم إنشاء أو ربط البروفايل."
+        );
+
+        return;
+      }
+
+      const safeClientResult =
+        await findOrCreateClientSafely({
+          claimedClientId:
+            extraClient.clientId ||
+            "",
+
+          name:
+            clientName,
+
+          phone:
+            clientPhone,
+
+          address:
+            district,
+
+          visits:
+            visitsValue,
+
+          frame:
+            Boolean(
+              extraClient.frame
+            ),
+        });
+
+      if (
+        !safeClientResult?.client?.id
+      ) {
+        return;
+      }
+
+      const linkedClientId =
+        String(
+          safeClientResult.client.id
+        );
+
+      const linkedExtraClients =
+        baseExtraClients.map(
+          (
+            currentExtraClient,
+            index
+          ) =>
+            index ===
+            targetExtraClientIndex
+              ? {
+                  ...currentExtraClient,
+
+                  /*
+                    ندمج أحدث بيانات الاختيار،
+                    ومنها Send To، ثم نحفظ
+                    هوية البروفايل الصحيحة.
+                  */
+                  ...extraClient,
+
+                  clientId:
+                    linkedClientId,
+
+                  sendTo:
+                    "عملائنا",
+                }
+              : currentExtraClient
+        );
+
+      /*
+        تحديث صف الموعد وحفظ clientId
+        حتى تستخدمه الخدمات والبروفايل
+        وبطاقة الولاء بدل رقم الجوال.
+      */
+      await updateScheduleRow(
+        targetRowIndex,
+        "additionalClients",
+        linkedExtraClients
+      );
 
       return;
     }
@@ -11437,136 +12691,167 @@ if (
     }
 
     if (targetList === "عملائنا") {
-      const visitsValue = orderToVisits(row.order);
+      const visitsValue =
+        orderToVisits(
+          row.order
+        );
 
-if (visitsValue === null) {
-  alert("اختاري رقم الخدمة أولاً قبل إرسال العميلة إلى عملائنا");
-  return;
-}
-      const { data: insertedClient, error } = await supabase.from("clients").insert([
-        {
-          name: clientName,
-          arabic_name: clientName,
-          phone: clientPhone,
-          address: district,
-          visits: visitsValue,
-          frame: Boolean(row.frame),
-          blacklist: false,
-          notes: "",
-          total_paid: 0,
-          service_history: [],
-        },
-      ]).select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at").single();
-
-      if (error) {
-        console.log(
-          "Send To clients copy error:",
-          error
+      if (visitsValue === null) {
+        alert(
+          "اختاري رقم الخدمة أولاً قبل إرسال العميلة إلى عملائنا"
         );
 
         return;
       }
 
-      if (insertedClient) {
-        const nextClient =
-          normalizeClientRecord(
-            insertedClient
-          );
+      const normalizedRowIndex =
+        Number(rowIndex);
 
-        setClients((prev) => {
-          const exists =
-            prev.some(
-              (client) =>
-                String(client.id) ===
-                String(nextClient.id)
-            );
+      if (
+        !Number.isInteger(
+          normalizedRowIndex
+        ) ||
+        normalizedRowIndex < 0
+      ) {
+        alert(
+          "تعذر تحديد صف الموعد. لم يتم إنشاء أو ربط البروفايل."
+        );
 
-          const nextClients =
-            exists
-              ? prev.map((client) =>
-                  String(client.id) ===
-                  String(nextClient.id)
-                    ? nextClient
-                    : client
-                )
-              : [
-                  nextClient,
-                  ...prev,
-                ];
+        return;
+      }
 
-          return nextClients.sort(
-            (a, b) =>
-              Number(b.id || 0) -
-              Number(a.id || 0)
-          );
+      const safeClientResult =
+        await findOrCreateClientSafely({
+          claimedClientId:
+            row.clientId || "",
+
+          name:
+            clientName,
+
+          phone:
+            clientPhone,
+
+          address:
+            district,
+
+          visits:
+            visitsValue,
+
+          frame:
+            Boolean(
+              row.frame
+            ),
         });
 
-        const normalizedRowIndex =
-          Number(rowIndex);
+      if (
+        !safeClientResult?.client?.id
+      ) {
+        return;
+      }
 
-        if (
-          Number.isInteger(
-            normalizedRowIndex
-          ) &&
-          normalizedRowIndex >= 0
-        ) {
-          const linkedClientId =
-            String(
-              insertedClient.id
+      const linkedClientId =
+        String(
+          safeClientResult.client.id
+        );
+
+      const linkedRowSnapshot = {
+        ...row,
+
+        clientId:
+          linkedClientId,
+
+        sendTo:
+          "عملائنا",
+      };
+
+      /*
+        إلغاء أي حفظ مؤجل قديم قبل حفظ
+        clientId الصحيح.
+      */
+      const scheduleRowId =
+        getScheduleRowId(
+          selectedScheduleDate,
+          normalizedRowIndex
+        );
+
+      if (
+        scheduleRowSaveTimersRef
+          .current[
+            scheduleRowId
+          ]
+      ) {
+        clearTimeout(
+          scheduleRowSaveTimersRef
+            .current[
+              scheduleRowId
+            ]
+        );
+
+        delete scheduleRowSaveTimersRef
+          .current[
+            scheduleRowId
+          ];
+      }
+
+      setScheduleData(
+        (
+          previousScheduleData
+        ) => {
+          const currentDayData =
+            previousScheduleData[
+              selectedScheduleDate
+            ] || {};
+
+          const currentRows =
+            currentDayData.rows ||
+            timeSlots.map(
+              createEmptyAppointmentRow
             );
 
-          const linkedRowSnapshot = {
-            ...row,
-            clientId:
-              linkedClientId,
+          const nextRows =
+            currentRows.map(
+              (
+                currentRow,
+                currentIndex
+              ) =>
+                currentIndex ===
+                normalizedRowIndex
+                  ? {
+                      ...currentRow,
+
+                      clientId:
+                        linkedClientId,
+
+                      sendTo:
+                        "عملائنا",
+                    }
+                  : currentRow
+            );
+
+          return {
+            ...previousScheduleData,
+
+            [selectedScheduleDate]: {
+              ...currentDayData,
+
+              rows:
+                nextRows,
+            },
           };
-
-          setScheduleData((prev) => {
-            const currentDayData =
-              prev[
-                selectedScheduleDate
-              ] || {};
-
-            const currentRows =
-              currentDayData.rows ||
-              timeSlots.map(
-                createEmptyAppointmentRow
-              );
-
-            const rows =
-              currentRows.map(
-                (
-                  currentRow,
-                  currentIndex
-                ) =>
-                  currentIndex ===
-                  normalizedRowIndex
-                    ? {
-                        ...currentRow,
-                        clientId:
-                          linkedClientId,
-                      }
-                    : currentRow
-              );
-
-            return {
-              ...prev,
-
-              [selectedScheduleDate]: {
-                ...currentDayData,
-                rows,
-              },
-            };
-          });
-
-          queueScheduleRowSave(
-            selectedScheduleDate,
-            normalizedRowIndex,
-            linkedRowSnapshot,
-            cellStyles || {}
-          );
         }
-      }
+      );
+
+      /*
+        حفظ فوري للهوية الصحيحة حتى لا
+        ينشئ تريغر سجل الخدمات ربطًا مؤقتًا
+        بالجوال وحده.
+      */
+      await saveScheduleRowToSupabase(
+        selectedScheduleDate,
+        normalizedRowIndex,
+        linkedRowSnapshot,
+        cellStyles || {}
+      );
 
       return;
     }
@@ -12014,10 +13299,44 @@ const handleScheduleRowAction = (rowIndex, action) => {
 
     const currentDayData = scheduleData[selectedScheduleDate] || {};
     const currentRows = currentDayData.rows || timeSlots.map(createEmptyAppointmentRow);
-    const originalRow = currentRows[rowIndex] || createEmptyAppointmentRow(timeSlots[rowIndex] || "");
+    const originalRow =
+      currentRows[rowIndex] ||
+      createEmptyAppointmentRow(
+        timeSlots[rowIndex] || ""
+      );
+
+    const identityChanged =
+      (
+        field === "client" ||
+        field === "number"
+      ) &&
+      String(
+        originalRow[field] ?? ""
+      ) !==
+        String(
+          value ?? ""
+        );
+
     const updatedRowSnapshot = {
       ...originalRow,
-      [field]: value,
+
+      [field]:
+        value,
+
+      /*
+        تغيير اسم العميلة أو رقمها قد يعني
+        أن الموعد أصبح لشخص مختلف.
+
+        لذلك نلغي clientId القديم واختيار
+        Send To السابق، حتى لا يبقى اسم
+        عميلة مع هوية عميلة أخرى.
+      */
+      ...(identityChanged
+        ? {
+            clientId: "",
+            sendTo: "",
+          }
+        : {}),
     };
 
     if (field === "serviceAmount" || field === "transportation") {
@@ -12077,23 +13396,54 @@ const handleScheduleRowAction = (rowIndex, action) => {
     }
 
     if (field === "order") {
+      /*
+        تحديث عدد الخدمات داخل البروفايل
+        يتم بواسطة clientId فقط.
+
+        يمنع ذلك تعديل خدمات أخت أو فرد آخر
+        يستخدم رقم الجوال نفسه.
+      */
       const matchedClientForOrder =
         clients.find(
           (client) =>
             String(client.id) ===
             String(
-              updatedRowSnapshot?.clientId || ""
+              updatedRowSnapshot
+                ?.clientId || ""
             )
-        ) ||
-        findClientByExactPhone(
-          updatedRowSnapshot?.number || ""
-        );
+        ) || null;
 
-      const visitsValue = orderToVisits(value);
+      const visitsValue =
+        orderToVisits(value);
+
+      const excludedOrderStatuses = [
+        "Cancel",
+        "Postponed",
+        "Gift Giver",
+      ];
+
+      const appointmentStatus =
+        String(
+          updatedRowSnapshot.status || ""
+        ).trim();
+
+      /*
+        يمكن تعديل Order داخل الصف، لكن
+        لا نغيّر بطاقة الولاء إذا كانت
+        الخدمة ملغاة أو مؤجلة.
+
+        هذا يمنع إعادة الخدمة تلقائيًا
+        بعد أن سبق خصمها عند الإلغاء.
+      */
+      const orderCanUpdateProfile =
+        !excludedOrderStatuses.includes(
+          appointmentStatus
+        );
 
       if (
         matchedClientForOrder &&
-        visitsValue !== null
+        visitsValue !== null &&
+        orderCanUpdateProfile
       ) {
         const activityTime =
           new Date().toISOString();
@@ -12102,21 +13452,17 @@ const handleScheduleRowAction = (rowIndex, action) => {
           getCurrentLocalDate();
 
         const appointmentDate =
-          String(selectedScheduleDate || "")
-            .slice(0, 10);
-
-        const excludedOrderStatuses = [
-          "Cancel",
-          "Postponed",
-          "Gift Giver",
-        ];
+          String(
+            selectedScheduleDate || ""
+          ).slice(
+            0,
+            10
+          );
 
         const canUpdateLastOrder =
           appointmentDate &&
-          appointmentDate <= currentLocalDate &&
-          !excludedOrderStatuses.includes(
-            updatedRowSnapshot.status || ""
-          );
+          appointmentDate <=
+            currentLocalDate;
 
         const appointmentTimestamp =
           canUpdateLastOrder
@@ -12126,9 +13472,11 @@ const handleScheduleRowAction = (rowIndex, action) => {
             : "";
 
         const currentLastOrderTime =
-          matchedClientForOrder.last_order_at
+          matchedClientForOrder
+            .last_order_at
             ? new Date(
-                matchedClientForOrder.last_order_at
+                matchedClientForOrder
+                  .last_order_at
               ).getTime()
             : 0;
 
@@ -12140,14 +13488,19 @@ const handleScheduleRowAction = (rowIndex, action) => {
             : 0;
 
         const nextLastOrderAt =
-          appointmentTime >= currentLastOrderTime
+          appointmentTime >=
+          currentLastOrderTime
             ? appointmentTimestamp
-            : matchedClientForOrder.last_order_at ||
+            : matchedClientForOrder
+                .last_order_at ||
               null;
 
         const clientUpdate = {
-          visits: visitsValue,
-          last_activity_at: activityTime,
+          visits:
+            visitsValue,
+
+          last_activity_at:
+            activityTime,
         };
 
         if (nextLastOrderAt) {
@@ -12160,7 +13513,9 @@ const handleScheduleRowAction = (rowIndex, action) => {
           error,
         } = await supabase
           .from("clients")
-          .update(clientUpdate)
+          .update(
+            clientUpdate
+          )
           .eq(
             "id",
             matchedClientForOrder.id
@@ -12181,13 +13536,15 @@ const handleScheduleRowAction = (rowIndex, action) => {
               updatedClient
             );
 
-          setClients((prev) =>
-            prev.map((client) =>
-              String(client.id) ===
-              String(nextClient.id)
-                ? nextClient
-                : client
-            )
+          setClients(
+            (previousClients) =>
+              previousClients.map(
+                (client) =>
+                  String(client.id) ===
+                  String(nextClient.id)
+                    ? nextClient
+                    : client
+              )
           );
         }
       }
@@ -12205,17 +13562,23 @@ const handleScheduleRowAction = (rowIndex, action) => {
       );
     }
 if (field === "frame") {
+  /*
+    Frame يُحدّث بروفايل العميلة
+    المرتبطة بالموعد بواسطة clientId فقط.
+
+    رقم الجوال قد يكون مشتركًا بين أكثر
+    من عميلة، لذلك لا نستخدمه لتحديد
+    صاحبة التحديث.
+  */
   const matchedClientForFrame =
     clients.find(
       (client) =>
         String(client.id) ===
         String(
-          updatedRowSnapshot?.clientId || ""
+          updatedRowSnapshot
+            ?.clientId || ""
         )
-    ) ||
-    findClientByExactPhone(
-      updatedRowSnapshot?.number || ""
-    );
+    ) || null;
 
   if (matchedClientForFrame) {
     await updateClientFrame(
@@ -12430,10 +13793,93 @@ if (field === "frame") {
 
     if (
       field === "status" &&
-      subtractVisitStatuses.includes(value) &&
-      !subtractVisitStatuses.includes(originalRow.status)
+      subtractVisitStatuses.includes(
+        value
+      ) &&
+      !subtractVisitStatuses.includes(
+        originalRow.status
+      )
     ) {
-      await subtractOneVisitForScheduleRow(updatedRowSnapshot);
+      /*
+        خصم خدمة العميلة الأساسية فقط
+        من بروفايل clientId المرتبط بها.
+      */
+      await subtractOneVisitForScheduleRow(
+        updatedRowSnapshot
+      );
+
+      /*
+        عميلة نفس المنزل التي لا تملك
+        Status مستقلًا تتبع Status الموعد
+        الأساسي.
+
+        لذلك عند إلغاء الموعد الأساسي
+        نخصم خدمة كل عميلة مرتبطة بهويتها
+        الخاصة، دون استخدام رقم الجوال.
+      */
+      const additionalClients =
+        getAdditionalClientsForRow(
+          originalRow
+        );
+
+      for (
+        let extraClientIndex = 0;
+        extraClientIndex <
+        additionalClients.length;
+        extraClientIndex += 1
+      ) {
+        const extraClient =
+          additionalClients[
+            extraClientIndex
+          ];
+
+        const hasClientData =
+          Boolean(
+            String(
+              extraClient.name || ""
+            ).trim() ||
+            String(
+              extraClient.phone || ""
+            ).trim() ||
+            String(
+              extraClient.service || ""
+            ).trim() ||
+            String(
+              extraClient.order || ""
+            ).trim()
+          );
+
+        if (!hasClientData) {
+          continue;
+        }
+
+        const previousEffectiveStatus =
+          extraClient.status ||
+          originalRow.status ||
+          "";
+
+        const nextEffectiveStatus =
+          extraClient.status ||
+          value ||
+          "";
+
+        const shouldSubtractVisit =
+          subtractVisitStatuses.includes(
+            nextEffectiveStatus
+          ) &&
+          !subtractVisitStatuses.includes(
+            previousEffectiveStatus
+          );
+
+        if (!shouldSubtractVisit) {
+          continue;
+        }
+
+        await subtractOneVisitForClientId(
+          extraClient.clientId ||
+            ""
+        );
+      }
     }
   };
 
@@ -15017,42 +16463,83 @@ const sendWhatsApp = async (client) => {
     setSelectedScheduleDate(date.toISOString().slice(0, 10));
   };
 
-  const getDashboardAppointments = (date) => {
+  const getDashboardAppointments = (
+    date
+  ) => {
     return getRowsForDate(date)
       .filter((row) => {
-  const hasRealAppointment =
-    String(row.client || "").trim() ||
-    String(row.number || "").trim() ||
-    String(row.services || "").trim();
+        const hasRealAppointment =
+          String(
+            row.client || ""
+          ).trim() ||
+          String(
+            row.number || ""
+          ).trim() ||
+          String(
+            row.services || ""
+          ).trim();
 
-  return (
-    !hiddenFromDashboardStatuses.includes(row.status) &&
-    Boolean(hasRealAppointment)
-  );
-})
-      .map((row, index) => {
-        const matchedClient =
-          clients.find(
-            (client) =>
-              String(client.id) ===
-              String(row.clientId || "")
-          ) ||
-          clients.find(
-            (client) =>
-              normalizePhone(client.phone) ===
-              normalizePhone(row.number)
-          );
+        return (
+          !hiddenFromDashboardStatuses.includes(
+            row.status
+          ) &&
+          Boolean(
+            hasRealAppointment
+          )
+        );
+      })
+      .map(
+        (
+          row,
+          index
+        ) => {
+          /*
+            ربط بطاقة الموعد بالبروفايل
+            يتم بواسطة clientId فقط.
 
-        return {
-          ...row,
-          index,
-          displayName: row.client || matchedClient?.name || "عميلة بدون اسم",
-          displayPhone: row.number || matchedClient?.phone || "",
-          displayAddress: row.district || matchedClient?.address || "-",
-          displayOrder: row.order || "-",
-          matchedClientId: matchedClient?.id || null,
-        };
-      });
+            لا نستخدم رقم الجوال لأن الرقم
+            قد يكون مشتركًا بين عدة عميلات.
+          */
+          const matchedClient =
+            clients.find(
+              (client) =>
+                String(
+                  client.id
+                ) ===
+                String(
+                  row.clientId || ""
+                )
+            ) || null;
+
+          return {
+            ...row,
+
+            index,
+
+            displayName:
+              row.client ||
+              matchedClient?.name ||
+              "عميلة بدون اسم",
+
+            displayPhone:
+              row.number ||
+              matchedClient?.phone ||
+              "",
+
+            displayAddress:
+              row.district ||
+              matchedClient?.address ||
+              "-",
+
+            displayOrder:
+              row.order || "-",
+
+            matchedClientId:
+              matchedClient?.id ||
+              null,
+          };
+        }
+      );
   };
 
   const getAppointmentTotalPrice = (appointment) =>
@@ -16640,13 +18127,48 @@ const leavingTime = addMinutesToDisplayTime(
       : "0 12px 30px rgba(75,46,31,0.10)";
   };
 
-  const appointmentCard = (appointment, date) => {
-    const linkedClient = appointment.matchedClientId
-      ? clients.find((client) => client.id === appointment.matchedClientId)
-      : clients.find((client) => normalizePhone(client.phone) === normalizePhone(appointment.displayPhone));
-    const appointmentTotal = getAppointmentTotalPrice(appointment);
-    const appointmentKey = `${date}-${appointment.index}`;
-    const selectedStaff = appointmentStaffSelections[appointmentKey] || "";
+  const appointmentCard = (
+    appointment,
+    date
+  ) => {
+    /*
+      زر اسم العميلة يفتح البروفايل
+      المرتبط بواسطة clientId فقط.
+
+      إذا لم يوجد clientId فلن نفتح
+      بروفايلًا عشوائيًا اعتمادًا على
+      رقم الجوال المشترك.
+    */
+    const linkedClientId =
+      String(
+        appointment.matchedClientId ||
+        appointment.clientId ||
+        ""
+      ).trim();
+
+    const linkedClient =
+      linkedClientId
+        ? clients.find(
+            (client) =>
+              String(
+                client.id
+              ) ===
+              linkedClientId
+          ) || null
+        : null;
+
+    const appointmentTotal =
+      getAppointmentTotalPrice(
+        appointment
+      );
+
+    const appointmentKey =
+      `${date}-${appointment.index}`;
+
+    const selectedStaff =
+      appointmentStaffSelections[
+        appointmentKey
+      ] || "";
 
     return (
       <div
@@ -25694,6 +27216,23 @@ const welcomeBoardNameStyle = {
 {showGlobalLayout && showGlobalClientForm && (
   <div
     className="paradise-global-client-modal-overlay"
+    onMouseDown={(event) => {
+      /*
+        الإغلاق فقط عند الضغط على الخلفية،
+        وليس عند الضغط داخل بطاقة الإضافة.
+      */
+      if (
+        event.target !==
+        event.currentTarget
+      ) {
+        return;
+      }
+
+      setShowGlobalClientForm(false);
+      setName("");
+      setPhone("");
+      setAddress("");
+    }}
     style={{
       position: "fixed",
       inset: 0,
@@ -28405,17 +29944,23 @@ margin: "0 auto",
 
                                     ...getAdditionalClientsForRow(row).map(
                     (extraClient, extraIndex, extraClients) => {
+                      /*
+                        عميلة نفس المنزل تُحدد بواسطة
+                        clientId فقط.
+
+                        رقم الجوال قد يكون مشتركًا بين
+                        أختين أو أكثر، لذلك لا نستخدمه
+                        لتحديد كرت الولاء أو Frame.
+                      */
                       const matchedHouseholdClient =
                         clients.find(
                           (client) =>
                             String(client.id) ===
                             String(
-                              extraClient.clientId || ""
+                              extraClient.clientId ||
+                                ""
                             )
-                        ) ||
-                        findClientByExactPhone(
-                          extraClient.phone || ""
-                        );
+                        ) || null;
 
                       const householdStatus =
                         extraClient.status ?? "";
