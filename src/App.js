@@ -17852,55 +17852,50 @@ const leavingTime = addMinutesToDisplayTime(
         ];
 
       const historyLastOrderAt =
-        serviceHistory?.lastOrderAt || "";
+        String(
+          serviceHistory?.lastOrderAt ||
+          ""
+        )
+          .trim()
+          .slice(0, 10);
 
       const clientLastOrderAt =
-        client.last_order_at || "";
-
-      const getValidOrderTime =
-        (dateValue) => {
-          if (!dateValue) return 0;
-
-          const parsedTime =
-            new Date(
-              dateValue
-            ).getTime();
-
-          return Number.isFinite(
-            parsedTime
-          )
-            ? parsedTime
-            : 0;
-        };
-
-      const historyLastOrderTime =
-        getValidOrderTime(
-          historyLastOrderAt
-        );
-
-      const clientLastOrderTime =
-        getValidOrderTime(
-          clientLastOrderAt
-        );
-
-      const lastOrderAt =
-        historyLastOrderTime >=
-        clientLastOrderTime
-          ? historyLastOrderAt
-          : clientLastOrderAt;
+        String(
+          client.last_order_at || ""
+        ).trim();
 
       const historyServiceCount =
         Number(
-          serviceHistory?.serviceCount || 0
+          serviceHistory?.serviceCount ||
+          0
         );
 
       const clientServiceCount =
-        Number(client.visits || 0);
+        Number(
+          client.visits || 0
+        );
+
+      /*
+        سجل الخدمات الموحد هو المصدر
+        الرسمي لتاريخ آخر خدمة.
+
+        نستخدم clients.last_order_at فقط
+        كحل احتياطي للعميلات القديمات
+        اللاتي لا يوجد لهن أي سجل خدمات
+        موثق في client_service_history.
+      */
+      const hasDocumentedServiceHistory =
+        Boolean(historyLastOrderAt) &&
+        historyServiceCount > 0;
 
       return {
-        lastOrderAt,
+        lastOrderAt:
+          hasDocumentedServiceHistory
+            ? historyLastOrderAt
+            : clientLastOrderAt,
+
         serviceCount:
-          historyServiceCount > 0
+          hasDocumentedServiceHistory
             ? historyServiceCount
             : clientServiceCount,
       };
