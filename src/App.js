@@ -850,12 +850,17 @@ const [duplicateClientSearch, setDuplicateClientSearch] = useState("");
 const [giftDoneLinkModal, setGiftDoneLinkModal] = useState(null);
 const [giftDoneLinkSearch, setGiftDoneLinkSearch] = useState("");
 
-const [additionalClientDraft, setAdditionalClientDraft] = useState({
+const [
+  additionalClientDraft,
+  setAdditionalClientDraft,
+] = useState({
+  clientId: "",
   name: "",
   phone: "",
   order: "",
   service: "",
   therapist: "",
+  serviceAmount: "",
   sendTo: "",
 });
 const [additionalClientPhoneNotice, setAdditionalClientPhoneNotice] = useState("");
@@ -4598,28 +4603,94 @@ if (error) {
     setEditedAddress("");
   };
 
-  // 🗑️ DELETE CLIENT
-  const deleteClient = async (client) => {
-    if (!ensureDeleteAllowed()) return;
-    if (!client?.id) return;
-
-    const confirmDelete = window.confirm(
-      `هل أنت متأكد من حذف العميلة ${client.name || ""}؟\nلا يمكن التراجع عن الحذف.`
-    );
-
-    if (!confirmDelete) return;
-
-    const { error } = await supabase.from("clients").delete().eq("id", client.id);
-
-    if (error) {
-      console.log("Client delete error:", error);
-      alert("لم يتم حذف العميلة. تأكد من الاتصال وجرب مرة ثانية.");
+  // 🗑️ DELETE CLIENT SAFELY
+  const deleteClient = async (
+    client
+  ) => {
+    if (
+      !ensureDeleteAllowed()
+    ) {
       return;
     }
 
-    setSelectedLoyaltyClientId(null);
-    setSelectedClientId(null);
-    setClients((prev) => prev.filter((clientItem) => String(clientItem.id) !== String(client.id)));
+    if (!client?.id) {
+      return;
+    }
+
+    const confirmDelete =
+      window.confirm(
+        `هل أنت متأكد من حذف العميلة ${
+          client.name || ""
+        } من عملائنا؟\n\nسيبقى موعدها موجودًا، وسيتم فقط فك ارتباطها من الموعد.`
+      );
+
+    if (!confirmDelete) {
+      return;
+    }
+
+    const {
+      data,
+      error,
+    } = await supabase.rpc(
+      "delete_client_safely",
+      {
+        p_client_id:
+          Number(client.id),
+      }
+    );
+
+    if (error) {
+      console.error(
+        "Safe client delete error:",
+        error
+      );
+
+      alert(
+        "تعذر الاتصال بخدمة الحذف الآمن. تأكد من الاتصال وحاول مرة أخرى."
+      );
+
+      return;
+    }
+
+    if (!data?.success) {
+      console.error(
+        "Safe client delete rejected:",
+        data
+      );
+
+      alert(
+        data?.message ||
+          "تعذر حذف العميلة بسبب بيانات مرتبطة بها."
+      );
+
+      return;
+    }
+
+    setSelectedLoyaltyClientId(
+      null
+    );
+
+    setSelectedClientId(
+      null
+    );
+
+    setClients(
+      (previousClients) =>
+        previousClients.filter(
+          (clientItem) =>
+            String(
+              clientItem.id
+            ) !==
+              String(
+                client.id
+              )
+        )
+    );
+
+    alert(
+      data.message ||
+        "تم حذف العميلة من عملائنا مع إبقاء موعدها."
+    );
   };
 
   const getSharedReferralsForClient = async (clientId) => {
@@ -9619,47 +9690,121 @@ const getScheduleClientBadges = (row) => {
     setDuplicateClientSearch("");
   };
 
-  const resetAdditionalClientDraft = () => {
-    setAdditionalClientDraft({
-      name: "",
-      phone: "",
-      order: "",
-      service: "",
-      therapist: "",
-      serviceAmount: "",
-      sendTo: "",
-    });
-    setAdditionalClientPhoneNotice("");
-  };
-
-  const openAdditionalClientModal = (rowIndex, editIndex = null, event = null) => {
-    const rows = getRowsForDate(selectedScheduleDate);
-    const row = rows[rowIndex] || createEmptyAppointmentRow(timeSlots[rowIndex] || "");
-    const extraClients = getAdditionalClientsForRow(row);
-    const editClient = Number.isInteger(editIndex) ? extraClients[editIndex] : null;
-    const buttonRect = event?.currentTarget?.getBoundingClientRect?.();
-    const modalWidth = 520;
-    const modalPosition = buttonRect
-      ? {
-          left: Math.max(12, Math.min(buttonRect.right - modalWidth, window.innerWidth - modalWidth - 12)),
-          top: Math.max(12, Math.min(buttonRect.bottom + 8, window.innerHeight - 520)),
-        }
-      : null;
-
-    setAdditionalClientModal({ rowIndex, editIndex, position: modalPosition });
-
-        if (editClient) {
+  const resetAdditionalClientDraft =
+    () => {
       setAdditionalClientDraft({
-        id: editClient.id || "",
-        name: editClient.name || "",
-        phone: editClient.phone || "",
-        order: editClient.order || "",
-        service: editClient.service || "",
-        therapist: editClient.therapist || "",
-        serviceAmount: editClient.serviceAmount || "",
-        sendTo: editClient.sendTo || "",
+        clientId: "",
+        name: "",
+        phone: "",
+        order: "",
+        service: "",
+        therapist: "",
+        serviceAmount: "",
+        sendTo: "",
       });
-      setAdditionalClientPhoneNotice("");
+
+      setAdditionalClientPhoneNotice(
+        ""
+      );
+    };
+
+  const openAdditionalClientModal = (
+    rowIndex,
+    editIndex = null,
+    event = null
+  ) => {
+    const rows =
+      getRowsForDate(
+        selectedScheduleDate
+      );
+
+    const row =
+      rows[rowIndex] ||
+      createEmptyAppointmentRow(
+        timeSlots[rowIndex] || ""
+      );
+
+    const extraClients =
+      getAdditionalClientsForRow(
+        row
+      );
+
+    const editClient =
+      Number.isInteger(editIndex)
+        ? extraClients[editIndex]
+        : null;
+
+    const buttonRect =
+      event?.currentTarget
+        ?.getBoundingClientRect?.();
+
+    const modalWidth = 520;
+
+    const modalPosition =
+      buttonRect
+        ? {
+            left: Math.max(
+              12,
+              Math.min(
+                buttonRect.right -
+                  modalWidth,
+                window.innerWidth -
+                  modalWidth -
+                  12
+              )
+            ),
+
+            top: Math.max(
+              12,
+              Math.min(
+                buttonRect.bottom + 8,
+                window.innerHeight -
+                  520
+              )
+            ),
+          }
+        : null;
+
+    setAdditionalClientModal({
+      rowIndex,
+      editIndex,
+      position:
+        modalPosition,
+    });
+
+    if (editClient) {
+      setAdditionalClientDraft({
+        id:
+          editClient.id || "",
+
+        clientId:
+          editClient.clientId || "",
+
+        name:
+          editClient.name || "",
+
+        phone:
+          editClient.phone || "",
+
+        order:
+          editClient.order || "",
+
+        service:
+          editClient.service || "",
+
+        therapist:
+          editClient.therapist || "",
+
+        serviceAmount:
+          editClient.serviceAmount || "",
+
+        sendTo:
+          editClient.sendTo || "",
+      });
+
+      setAdditionalClientPhoneNotice(
+        ""
+      );
     } else {
       resetAdditionalClientDraft();
     }
@@ -9670,14 +9815,30 @@ const getScheduleClientBadges = (row) => {
     resetAdditionalClientDraft();
   };
 
-  const findExistingClientByPhone = (phoneValue) => {
-    const comparablePhone = normalizeDigits(formatSaudiPhoneForStorage(phoneValue));
+  const findExistingClientsByPhone = (
+    phoneValue
+  ) => {
+    const comparablePhone =
+      normalizeDigits(
+        formatSaudiPhoneForStorage(
+          phoneValue
+        )
+      );
 
-    if (comparablePhone.length < 9) return null;
+    if (
+      comparablePhone.length < 9
+    ) {
+      return [];
+    }
 
-    return clients.find(
-      (client) => normalizeDigits(formatSaudiPhoneForStorage(client.phone)) === comparablePhone
-    ) || null;
+    return clients.filter(
+      (client) =>
+        normalizeDigits(
+          formatSaudiPhoneForStorage(
+            client.phone
+          )
+        ) === comparablePhone
+    );
   };
 
   const normalizeNameForCompare = (value) =>
@@ -10054,27 +10215,74 @@ const getScheduleClientBadges = (row) => {
     }
   };
 
-  const updateAdditionalClientDraft = (field, value) => {
+  const updateAdditionalClientDraft = (
+    field,
+    value
+  ) => {
     if (field === "phone") {
-      const existingClient = findExistingClientByPhone(value);
+      const matchedClients =
+        findExistingClientsByPhone(
+          value
+        );
+
+      const matchedNames =
+        matchedClients
+          .slice(0, 5)
+          .map(
+            (client) =>
+              client.name ||
+              client.arabic_name ||
+              "بدون اسم"
+          )
+          .join("، ");
 
       setAdditionalClientPhoneNotice(
-        existingClient ? `العميلة موجودة: ${existingClient.name || existingClient.arabic_name || "بدون اسم"}` : ""
+        matchedClients.length > 0
+          ? `الرقم مستخدم لدى: ${matchedNames}. سيتم الربط بالاسم والجوال معًا عند الحفظ.`
+          : ""
       );
 
-      setAdditionalClientDraft((prev) => ({
-        ...prev,
-        phone: value,
-        name: existingClient ? existingClient.name || existingClient.arabic_name || prev.name : prev.name,
-        order: existingClient ? String(getVisitLabel(existingClient.visits || 0)) : prev.order,
-      }));
+      setAdditionalClientDraft(
+        (previousDraft) => ({
+          ...previousDraft,
+
+          phone: value,
+
+          /*
+            عند تغيير الجوال نلغي الربط السابق؛
+            حتى لا يبقى clientId لعميلة مختلفة.
+          */
+          clientId: "",
+        })
+      );
+
       return;
     }
 
-    setAdditionalClientDraft((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
+    if (field === "name") {
+      setAdditionalClientDraft(
+        (previousDraft) => ({
+          ...previousDraft,
+
+          name: value,
+
+          /*
+            عند تغيير الاسم نلغي الربط السابق؛
+            ويعاد تحديد العميلة الصحيحة عند الحفظ.
+          */
+          clientId: "",
+        })
+      );
+
+      return;
+    }
+
+    setAdditionalClientDraft(
+      (previousDraft) => ({
+        ...previousDraft,
+        [field]: value,
+      })
+    );
   };
 
   const copyAdditionalClientToSelectedList = async (baseRow, extraClient) => {
@@ -10428,6 +10636,8 @@ if (
     }
 
     const cleanDraftFields = {
+      clientId: "",
+
       name: String(
         additionalClientDraft.name || ""
       ).trim(),
@@ -10450,14 +10660,94 @@ if (
       ).trim(),
 
       serviceAmount: String(
-        additionalClientDraft.serviceAmount ||
-          ""
+        additionalClientDraft
+          .serviceAmount || ""
       ).trim(),
 
       sendTo: String(
         additionalClientDraft.sendTo || ""
       ).trim(),
     };
+
+    /*
+      نبحث فقط داخل العميلات اللاتي يحملن
+      نفس الجوال، ثم نطابق الاسم والجوال معًا.
+    */
+    const exactMatchingClients =
+      findExistingClientsByPhone(
+        cleanDraftFields.phone
+      ).filter(
+        (client) =>
+          isSameNameAndPhone(
+            client.name ||
+              client.arabic_name ||
+              "",
+            client.phone || "",
+            cleanDraftFields.name,
+            cleanDraftFields.phone
+          )
+      );
+
+    /*
+      وجود أكثر من سجل مطابق تمامًا يعني أن
+      قاعدة العملاء تحتوي على نسخ مكررة فعلًا.
+      لا نختار أول سجل عشوائيًا.
+    */
+    if (
+      exactMatchingClients.length > 1
+    ) {
+      alert(
+        "يوجد أكثر من سجل مطابق لنفس الاسم والجوال داخل عملائنا. لم يتم الحفظ حتى لا ترتبط الخدمة بالعميلة الخطأ."
+      );
+
+      return;
+    }
+
+    const exactExistingClient =
+      exactMatchingClients[0] || null;
+
+    /*
+      عند تعديل العميلة دون تغيير اسمها أو جوالها،
+      نحتفظ بالربط السابق حتى لو لم تكن قائمة
+      العملاء قد اكتملت في الذاكرة بعد.
+    */
+    const identityUnchanged =
+      Boolean(
+        isEditing &&
+        currentExtraClient &&
+        isSameNameAndPhone(
+          currentExtraClient.name || "",
+          currentExtraClient.phone || "",
+          cleanDraftFields.name,
+          cleanDraftFields.phone
+        )
+      );
+
+    cleanDraftFields.clientId =
+      exactExistingClient
+        ? String(
+            exactExistingClient.id
+          )
+        : identityUnchanged
+          ? String(
+              currentExtraClient
+                .clientId || ""
+            )
+          : "";
+
+    /*
+      إذا كانت العميلة موجودة أصلًا،
+      نعرض رقم خدمتها الحالي من سجلها.
+    */
+    if (exactExistingClient) {
+      cleanDraftFields.order =
+        String(
+          getVisitLabel(
+            exactExistingClient
+              .visits || 0
+          )
+        );
+    }
 
     if (
       !cleanDraftFields.name &&
@@ -10592,10 +10882,23 @@ if (
       cleanExtraClient.sendTo &&
       sendToChanged
     ) {
-      await copyAdditionalClientToSelectedList(
-        updatedRow,
-        cleanExtraClient
-      );
+      const alreadyLinkedToClients =
+        cleanExtraClient.sendTo ===
+          "عملائنا" &&
+        Boolean(
+          cleanExtraClient.clientId
+        );
+
+      /*
+        إذا كانت العميلة موجودة أصلًا ومربوطة
+        بـ clientId، لا ننشئ نسخة جديدة منها.
+      */
+      if (!alreadyLinkedToClients) {
+        await copyAdditionalClientToSelectedList(
+          updatedRow,
+          cleanExtraClient
+        );
+      }
     }
 
     closeAdditionalClientModal();
