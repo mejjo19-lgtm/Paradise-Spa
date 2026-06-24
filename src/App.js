@@ -46827,7 +46827,7 @@ if (screen === "potentialClients") {
                 maxWidth: "100%",
                 aspectRatio: "360 / 222",
                 margin: "0 auto",
-                borderRadius: "17px",
+                borderRadius: "0px",
                 overflow: "hidden",
                 position: "relative",
                 border:
@@ -46848,7 +46848,7 @@ if (screen === "potentialClients") {
                   height: "100%",
                   display: "block",
                   objectFit: "cover",
-                  borderRadius: "17px",
+                  borderRadius: "0px",
                 }}
               />
 
