@@ -9130,13 +9130,25 @@ const getScheduleClientBadges = (
             possibleGiftRows || []
           ).find(
             (gift) =>
+              isSameNameAndPhone(
+                gift.from_name,
+                gift.from_phone,
+                fromName,
+                fromPhone
+              ) &&
+              isSameNameAndPhone(
+                gift.to_name,
+                gift.to_phone,
+                toName,
+                toPhone
+              ) &&
               String(
                 gift.gift_date ||
                   gift.items
                     ?.giftDate ||
                   ""
               ).slice(0, 10) ===
-              giftDate
+                giftDate
           ) || null;
 
         if (duplicateGiftRecord) {
@@ -9147,9 +9159,9 @@ const getScheduleClientBadges = (
               ];
 
           /*
-            إذا ضغط المستخدم إلغاء سابقًا
-            لن يظهر التحذير مع كل حرف،
-            إلا إذا تغيرت بيانات الهدية.
+            لا نكرر الإشعار مع كل حرف
+            ما دامت بيانات الهدية نفسها
+            لم تتغير.
           */
           if (
             previousDecision
@@ -9162,56 +9174,27 @@ const getScheduleClientBadges = (
             return null;
           }
 
-          const shouldAddDuplicate =
-            window.confirm(
-              [
-                "هذه الهدية موجودة مسبقًا في صفحة عملاء الإهداء.",
-                "",
-                `المُهدية: ${fromName}`,
-                `المستلمة: ${toName}`,
-                `التاريخ: ${giftDate}`,
-                "",
-                "هل ترغب بإضافتها مرة أخرى؟",
-              ].join("\n")
-            );
-
-          if (
-            !shouldAddDuplicate
-          ) {
-            scheduleGiftDuplicateDecisionRef
-              .current[
-                giftSyncKey
-              ] = {
-                signature:
-                  giftSignature,
-                allowDuplicate:
-                  false,
-              };
-
-            return null;
-          }
-
-          /*
-            عند الموافقة لا نربط بالسجل
-            القديم، بل نترك المعرّف فارغًا
-            حتى يتم إنشاء هدية جديدة.
-          */
-          delete scheduleGiftDuplicateDecisionRef
+          scheduleGiftDuplicateDecisionRef
             .current[
               giftSyncKey
-            ];
+            ] = {
+              signature:
+                giftSignature,
+              allowDuplicate:
+                false,
+            };
 
-          existingGiftRecord =
-            null;
+          alert(
+            "العميلة مسجلة مسبقًا في عملاء الإهداء."
+          );
 
-          linkedGiftClientId =
-            "";
-        } else {
-          delete scheduleGiftDuplicateDecisionRef
-            .current[
-              giftSyncKey
-            ];
+          return null;
         }
+
+        delete scheduleGiftDuplicateDecisionRef
+          .current[
+            giftSyncKey
+          ];
       }
     }
 
@@ -12516,30 +12499,109 @@ const getScheduleClientBadges = (
     }
 
     if (targetList === "عملاء الإهداء") {
+      const duplicateGift =
+        giftClients.some(
+          (gift) =>
+            isSameNameAndPhone(
+              gift.fromName,
+              gift.fromPhone,
+              giftFromNameValue,
+              giftFromPhoneValue
+            ) &&
+            isSameNameAndPhone(
+              gift.toName,
+              gift.toPhone,
+              clientName,
+              clientPhone
+            ) &&
+            String(
+              gift.giftDate ||
+                gift.items?.giftDate ||
+                ""
+            ).slice(0, 10) ===
+              selectedScheduleDate
+        );
+
+      if (duplicateGift) {
+        alert(
+          "العميلة مسجلة مسبقًا في عملاء الإهداء."
+        );
+
+        return;
+      }
+
       const giftRecord = {
-        gift_date: selectedScheduleDate,
-        from_name: giftFromNameValue,
-        from_phone: giftFromPhoneValue,
-        to_name: clientName,
-        to_phone: clientPhone,
+        gift_date:
+          selectedScheduleDate,
+
+        from_name:
+          giftFromNameValue,
+
+        from_phone:
+          giftFromPhoneValue,
+
+        to_name:
+          clientName,
+
+        to_phone:
+          clientPhone,
+
         service,
+
         items: {
           balloon: false,
           flowers: false,
           cake: false,
           giftTaken: false,
-          giftDate: selectedScheduleDate,
+          giftDate:
+            selectedScheduleDate,
         },
       };
 
-      const { error } = await supabase.from("gift_clients").insert([giftRecord]);
+      const {
+        error,
+      } = await supabase
+        .from("gift_clients")
+        .insert([giftRecord]);
 
       if (error) {
-        console.log("Additional client Send To gift clients copy error:", error);
+        console.log(
+          "Additional client Send To gift clients copy error:",
+          error
+        );
+
+        const isDuplicateGift =
+          String(
+            error.code || ""
+          ) === "23505" ||
+          String(
+            error.message || ""
+          ).includes(
+            "gift_clients_unique_parties_date_idx"
+          ) ||
+          String(
+            error.details || ""
+          ).includes(
+            "gift_clients_unique_parties_date_idx"
+          );
+
+        if (isDuplicateGift) {
+          alert(
+            "العميلة مسجلة مسبقًا في عملاء الإهداء."
+          );
+
+          return;
+        }
+
+        alert(
+          "تعذر حفظ عميلة الإهداء. تأكدي من البيانات والاتصال."
+        );
+
         return;
       }
 
       fetchGiftClients();
+
       return;
     }
 
@@ -13373,49 +13435,118 @@ if (
     }
 
     if (targetList === "عملاء الإهداء") {
+      /*
+        فحص سريع من البيانات المحملة في
+        الواجهة حتى يظهر الإشعار مباشرة.
+      */
+      const duplicateGift =
+        giftClients.some(
+          (gift) =>
+            isSameNameAndPhone(
+              gift.fromName,
+              gift.fromPhone,
+              giftFromNameValue,
+              giftFromPhoneValue
+            ) &&
+            isSameNameAndPhone(
+              gift.toName,
+              gift.toPhone,
+              clientName,
+              clientPhone
+            ) &&
+            String(
+              gift.giftDate ||
+                gift.items?.giftDate ||
+                ""
+            ).slice(0, 10) ===
+              selectedScheduleDate
+        );
+
+      if (duplicateGift) {
+        alert(
+          "العميلة مسجلة مسبقًا في عملاء الإهداء."
+        );
+
+        return;
+      }
+
       const giftRecord = {
-        gift_date: selectedScheduleDate,
-        from_name: giftFromNameValue,
-        from_phone: giftFromPhoneValue,
-        to_name: clientName,
-        to_phone: clientPhone,
+        gift_date:
+          selectedScheduleDate,
+
+        from_name:
+          giftFromNameValue,
+
+        from_phone:
+          giftFromPhoneValue,
+
+        to_name:
+          clientName,
+
+        to_phone:
+          clientPhone,
+
         service,
+
         items: {
           balloon: false,
           flowers: false,
           cake: false,
           giftTaken: false,
-          giftDate: selectedScheduleDate,
+          giftDate:
+            selectedScheduleDate,
         },
       };
 
-      const { error } = await supabase.from("gift_clients").insert([giftRecord]);
+      const {
+        error,
+      } = await supabase
+        .from("gift_clients")
+        .insert([giftRecord]);
 
       if (error) {
-        const { error: fallbackError } = await supabase.from("gift_clients").insert([
-          {
-            from_name: giftFromNameValue,
-            from_phone: giftFromPhoneValue,
-            to_name: clientName,
-            to_phone: clientPhone,
-            service,
-            items: {
-              balloon: false,
-              flowers: false,
-              cake: false,
-              giftTaken: false,
-              giftDate: selectedScheduleDate,
-            },
-          },
-        ]);
+        console.log(
+          "Send To gift clients copy error:",
+          error
+        );
 
-        if (fallbackError) {
-          console.log("Send To gift clients copy error:", fallbackError);
+        /*
+          الحماية النهائية من قاعدة
+          البيانات في حال كان جهاز آخر
+          أضاف السجل في نفس اللحظة.
+        */
+        const isDuplicateGift =
+          String(
+            error.code || ""
+          ) === "23505" ||
+          String(
+            error.message || ""
+          ).includes(
+            "gift_clients_unique_parties_date_idx"
+          ) ||
+          String(
+            error.details || ""
+          ).includes(
+            "gift_clients_unique_parties_date_idx"
+          );
+
+        if (isDuplicateGift) {
+          alert(
+            "العميلة مسجلة مسبقًا في عملاء الإهداء."
+          );
+
           return;
         }
+
+        alert(
+          "تعذر حفظ عميلة الإهداء. تأكدي من البيانات والاتصال."
+        );
+
+        return;
       }
 
       fetchGiftClients();
+
       return;
     }
 
@@ -17110,29 +17241,29 @@ const appointmentServicesText = (() => {
   "Wood Therapy Massage 60 Mins": "مساج أخشاب 60 دقيقة",
   "Wood Therapy Massage 90 Mins": "مساج أخشاب 90 دقيقة",
 
-  "Mani/Pedi": "كلاسيك بديكير ومنيكير",
-  "Pedicure/Manicure": "كلاسيك بديكير ومنيكير",
+  "Mani/Pedi": "كلاسيك بدكير منكير ",
+  "Pedicure/Manicure": "كلاسيك بدكير منكير ",
 
   "Massage Relaxing 60 Mins + Mani/Pedi":
-    "مساج استرخائي 60 دقيقة + كلاسيك بديكير ومنيكير",
+    "مساج استرخائي 60 دقيقة + كلاسيك بدكير منكير ",
 
   "Massage Relaxing 90 Mins + Mani/Pedi":
-    "مساج استرخائي 90 دقيقة + كلاسيك بديكير ومنيكير",
+    "مساج استرخائي 90 دقيقة + كلاسيك بدكير منكير ",
 
   "Massage Hot Stone 60 Mins + Mani/Pedi":
-    "مساج أحجار ساخنة 60 دقيقة + كلاسيك بديكير ومنيكير",
+    "مساج أحجار ساخنة 60 دقيقة + كلاسيك بدكير منكير ",
 
   "Massage Hot Stone 90 Mins + Mani/Pedi":
-    "مساج أحجار ساخنة 90 دقيقة + كلاسيك بديكير ومنيكير",
+    "مساج أحجار ساخنة 90 دقيقة + كلاسيك بدكير منكير ",
 
   "Therapeutic Massage 60 Mins + Mani/Pedi":
-    "مساج علاجي 60 دقيقة + كلاسيك بديكير ومنيكير",
+    "مساج علاجي 60 دقيقة + كلاسيك بدكير منكير ",
 
   "Therapeutic Massage 90 Mins + Mani/Pedi":
-    "مساج علاجي 90 دقيقة + كلاسيك بديكير ومنيكير",
+    "مساج علاجي 90 دقيقة + كلاسيك بدكير منكير ",
 
   "Sports Massage 60 Mins + Mani/Pedi":
-    "مساج رياضي 60 دقيقة + كلاسيك بديكير ومنيكير",
+    "مساج رياضي 60 دقيقة + كلاسيك بدكير منكير ",
 
   "Sports Massage 90 Mins + Mani/Pedi":
     "مساج رياضي 90 دقيقة + كلاسيك بدكير منكير",
@@ -17193,7 +17324,7 @@ messageType === "reminder"
       `كنت حابه أذكرك بموعدك اليوم إن شاء الله ما بين الساعة ${appointmentServiceTime}💗`,
     ].join("\n")
         : [
-            `تم تأكيد موعدك يوم ${appointmentDate}`,
+            `تم تأكيد موعدك يوم ${appointmentWeekday} ${appointmentDate}`,
             "",
             `الموقع: ${formatEnglishDigits(appointment.displayAddress || appointment.district || "-")}`,
             "",
@@ -18361,38 +18492,111 @@ const leavingTime = addMinutesToDisplayTime(
     );
 
   const addGiftClient = async () => {
-    if (!ensureSystemWritable() || !canAddData) return;
-    if (!giftFromName && !giftFromPhone && !giftToName && !giftToPhone) return;
+    if (
+      !ensureSystemWritable() ||
+      !canAddData
+    ) {
+      return;
+    }
 
-    const { error } = await supabase.from("gift_clients").insert([
-      {
-        from_name: giftFromName,
-        from_phone: formatSaudiPhoneForStorage(giftFromPhone),
-        to_name: giftToName,
-        to_phone: formatSaudiPhoneForStorage(giftToPhone),
-        gift_date: giftDate || getCurrentLocalDate(),
-        service: giftService,
-        items: giftItems,
-      },
-    ]);
+    if (
+      !giftFromName &&
+      !giftFromPhone &&
+      !giftToName &&
+      !giftToPhone
+    ) {
+      return;
+    }
+
+    const {
+      error,
+    } = await supabase
+      .from("gift_clients")
+      .insert([
+        {
+          from_name:
+            giftFromName,
+
+          from_phone:
+            formatSaudiPhoneForStorage(
+              giftFromPhone
+            ),
+
+          to_name:
+            giftToName,
+
+          to_phone:
+            formatSaudiPhoneForStorage(
+              giftToPhone
+            ),
+
+          gift_date:
+            giftDate ||
+            getCurrentLocalDate(),
+
+          service:
+            giftService,
+
+          items:
+            giftItems,
+        },
+      ]);
 
     if (error) {
-      console.log(error);
+      console.log(
+        "Gift client add error:",
+        error
+      );
+
+      const isDuplicateGift =
+        String(
+          error.code || ""
+        ) === "23505" ||
+        String(
+          error.message || ""
+        ).includes(
+          "gift_clients_unique_parties_date_idx"
+        ) ||
+        String(
+          error.details || ""
+        ).includes(
+          "gift_clients_unique_parties_date_idx"
+        );
+
+      if (isDuplicateGift) {
+        alert(
+          "العميلة مسجلة مسبقًا في عملاء الإهداء."
+        );
+
+        return;
+      }
+
+      alert(
+        "تعذر حفظ عميلة الإهداء. تأكدي من البيانات والاتصال."
+      );
+
       return;
     }
 
     fetchGiftClients();
+
     setGiftFromName("");
     setGiftFromPhone("");
     setGiftToName("");
     setGiftToPhone("");
-    setGiftDate(getCurrentLocalDate());
+
+    setGiftDate(
+      getCurrentLocalDate()
+    );
+
     setGiftService("");
+
     setGiftItems({
       balloon: false,
       flowers: false,
       cake: false,
     });
+
     setShowGiftForm(false);
   };
 
@@ -18505,21 +18709,157 @@ const leavingTime = addMinutesToDisplayTime(
   };
 
   const saveEditedGift = async (id) => {
-    if (!ensureSystemWritable() || !canEditData) return;
-    const { error } = await supabase
+    if (
+      !ensureSystemWritable() ||
+      !canEditData
+    ) {
+      return;
+    }
+
+    const currentGift =
+      giftClients.find(
+        (gift) =>
+          String(gift.id) ===
+          String(id)
+      );
+
+    const currentGiftDate =
+      String(
+        currentGift?.giftDate ||
+          currentGift?.items
+            ?.giftDate ||
+          ""
+      ).slice(0, 10);
+
+    /*
+      نستبعد السجل الجاري تعديله،
+      ثم نتحقق هل البيانات الجديدة
+      ستجعله مطابقًا لسجل آخر في نفس
+      تاريخ الهدية.
+    */
+    const duplicateGift =
+      giftClients.some(
+        (gift) =>
+          String(gift.id) !==
+            String(id) &&
+          isSameNameAndPhone(
+            gift.fromName,
+            gift.fromPhone,
+            editedGiftFromName,
+            editedGiftFromPhone
+          ) &&
+          isSameNameAndPhone(
+            gift.toName,
+            gift.toPhone,
+            editedGiftToName,
+            editedGiftToPhone
+          ) &&
+          String(
+            gift.giftDate ||
+              gift.items?.giftDate ||
+              ""
+          ).slice(0, 10) ===
+            currentGiftDate
+      );
+
+    if (duplicateGift) {
+      alert(
+        "العميلة مسجلة مسبقًا في عملاء الإهداء."
+      );
+
+      return;
+    }
+
+    const {
+      error,
+    } = await supabase
       .from("gift_clients")
       .update({
-        from_name: editedGiftFromName,
-        from_phone: formatSaudiPhoneForStorage(editedGiftFromPhone),
-        to_name: editedGiftToName,
-        to_phone: formatSaudiPhoneForStorage(editedGiftToPhone),
-        service: editedGiftService,
-        items: editedGiftItems,
+        from_name:
+          editedGiftFromName,
+
+        from_phone:
+          formatSaudiPhoneForStorage(
+            editedGiftFromPhone
+          ),
+
+        to_name:
+          editedGiftToName,
+
+        to_phone:
+          formatSaudiPhoneForStorage(
+            editedGiftToPhone
+          ),
+
+        service:
+          editedGiftService,
+
+        /*
+          نحافظ على بيانات الهدية
+          الداخلية مثل تاريخ الهدية
+          وحالة الاستلام، ونعدّل فقط
+          الإضافات الثلاث الظاهرة.
+        */
+        items: {
+          ...(
+            currentGift?.items ||
+            {}
+          ),
+
+          balloon:
+            Boolean(
+              editedGiftItems
+                .balloon
+            ),
+
+          flowers:
+            Boolean(
+              editedGiftItems
+                .flowers
+            ),
+
+          cake:
+            Boolean(
+              editedGiftItems
+                .cake
+            ),
+        },
       })
       .eq("id", id);
 
     if (error) {
-      console.log(error);
+      console.log(
+        "Gift client update error:",
+        error
+      );
+
+      const isDuplicateGift =
+        String(
+          error.code || ""
+        ) === "23505" ||
+        String(
+          error.message || ""
+        ).includes(
+          "gift_clients_unique_parties_date_idx"
+        ) ||
+        String(
+          error.details || ""
+        ).includes(
+          "gift_clients_unique_parties_date_idx"
+        );
+
+      if (isDuplicateGift) {
+        alert(
+          "العميلة مسجلة مسبقًا في عملاء الإهداء."
+        );
+
+        return;
+      }
+
+      alert(
+        "تعذر تعديل عميلة الإهداء. تأكدي من البيانات والاتصال."
+      );
+
       return;
     }
 
