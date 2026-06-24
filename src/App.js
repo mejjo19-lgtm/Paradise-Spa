@@ -1058,6 +1058,57 @@ useEffect(() => {
     );
   };
 
+  /*
+    لا نعيد تحميل بروفايل العميلة
+    المفتوحة بسبب تغيير خدمة تخص
+    عميلة أخرى.
+
+    نفحص NEW وOLD معًا حتى يبقى
+    التعديل صحيحًا لو نُقل سجل خدمة
+    من clientId إلى clientId آخر.
+  */
+  const handleSelectedClientServiceChange =
+    (payload) => {
+      const selectedClientKey =
+        String(
+          selectedClientId || ""
+        );
+
+      const affectedClientIds = [
+        payload?.new?.client_id,
+        payload?.old?.client_id,
+      ]
+        .filter(
+          (clientId) =>
+            clientId !== null &&
+            clientId !== undefined &&
+            String(clientId).trim() !== ""
+        )
+        .map(
+          (clientId) =>
+            String(clientId)
+        );
+
+      /*
+        في بعض أحداث الحذف قد يصل
+        المعرف الأساسي فقط بدون client_id.
+
+        في هذه الحالة نعيد التحميل
+        احتياطيًا حتى لا يبقى السجل
+        المحذوف ظاهرًا في البروفايل.
+      */
+      if (
+        affectedClientIds.length > 0 &&
+        !affectedClientIds.includes(
+          selectedClientKey
+        )
+      ) {
+        return;
+      }
+
+      scheduleRealtimeReload();
+    };
+
   const manualServicesChannel =
     supabase
       .channel(
@@ -1071,8 +1122,13 @@ useEffect(() => {
           table:
             "client_service_history",
         },
-        scheduleRealtimeReload
+        handleSelectedClientServiceChange
       )
+      /*
+        نبقي الفواتير كما هي حاليًا
+        حتى لا نغيّر طريقة ربط الفاتورة
+        بسجل الخدمة.
+      */
       .on(
         "postgres_changes",
         {
@@ -7431,192 +7487,233 @@ return next;
     }
   };
 
-  const loadInactiveServiceHistory =
-    async () => {
-      if (!isLoggedIn) return;
+  /*
+    عند عدم إرسال clientId:
+    نحمل ملخص جميع العميلات مرة واحدة.
 
-      setInactiveServiceHistoryLoading(
-        true
-      );
+    عند إرسال clientId:
+    نحمل ملخص العميلة المتأثرة فقط.
+
+    المصدر يظل client_service_history،
+    لكن التجميع يتم داخل PostgreSQL
+    بدل تنزيل كل الخدمات إلى كل جهاز.
+  */
+  const loadInactiveServiceHistory =
+    async (
+      targetClientId = null
+    ) => {
+      if (!isLoggedIn) {
+        return;
+      }
+
+      const cleanTargetClientId =
+        String(
+          targetClientId || ""
+        ).trim();
+
+      const isFullReload =
+        !cleanTargetClientId;
+
+      const targetClientNumber =
+        Number(
+          cleanTargetClientId
+        );
+
+      if (
+        !isFullReload &&
+        (
+          !Number.isInteger(
+            targetClientNumber
+          ) ||
+          targetClientNumber <= 0
+        )
+      ) {
+        return;
+      }
+
+      /*
+        عند تحديث عميلة واحدة عبر
+        Realtime لا نظهر تحميلًا عامًا،
+        حتى لا يحدث وميض في الصفحة.
+      */
+      if (isFullReload) {
+        setInactiveServiceHistoryLoading(
+          true
+        );
+      }
 
       try {
-        const todayKey =
-          getCurrentLocalDate();
-
-        const pageSize = 1000;
-        let allHistoryRows = [];
-        let from = 0;
-        let hasMore = true;
-
-        /*
-          المصدر الرسمي والموحد للخدمات هو
-          client_service_history.
-
-          يشمل:
-          - خدمات المواعيد.
-          - الخدمات اليدوية القديمة.
-          - العميلة الأساسية.
-          - عميلات نفس المنزل.
-
-          الربط يتم بواسطة client_id فقط.
-        */
-        while (hasMore) {
-          const to =
-            from + pageSize - 1;
-
-          const {
-            data,
-            error,
-          } = await supabase
-            .from(
-              "client_service_history"
-            )
-            .select(
-              [
-                "id",
-                "client_id",
-                "service_date",
-                "service_status",
-              ].join(",")
-            )
-            .not(
-              "client_id",
-              "is",
-              null
-            )
-            .lte(
-              "service_date",
-              todayKey
-            )
-            .order(
-              "service_date",
-              {
-                ascending: true,
-              }
-            )
-            .order(
-              "id",
-              {
-                ascending: true,
-              }
-            )
-            .range(from, to);
-
-          if (error) {
-            throw error;
+        const {
+          data,
+          error,
+        } = await supabase.rpc(
+          "paradise_get_client_service_history_summary",
+          {
+            p_client_id:
+              isFullReload
+                ? null
+                : targetClientNumber,
           }
+        );
 
-          const pageRows =
-            data || [];
-
-          allHistoryRows = [
-            ...allHistoryRows,
-            ...pageRows,
-          ];
-
-          hasMore =
-            pageRows.length ===
-            pageSize;
-
-          from += pageSize;
+        if (error) {
+          throw error;
         }
 
-        const historyByClientId = {};
+        const summaryRows =
+          Array.isArray(data)
+            ? data
+            : [];
 
-        allHistoryRows.forEach(
-          (serviceRow) => {
-            const clientId =
+        /*
+          التحميل الكامل:
+          نبني الخريطة من جميع الملخصات
+          الصغيرة التي أعادتها الدالة.
+        */
+        if (isFullReload) {
+          const historyByClientId =
+            {};
+
+          summaryRows.forEach(
+            (summaryRow) => {
+              const clientId =
+                String(
+                  summaryRow.client_id ||
+                    ""
+                ).trim();
+
+              const lastOrderAt =
+                String(
+                  summaryRow.last_order_at ||
+                    ""
+                )
+                  .trim()
+                  .slice(0, 10);
+
+              const serviceCount =
+                Number(
+                  summaryRow.service_count ||
+                    0
+                );
+
+              if (
+                !clientId ||
+                !lastOrderAt ||
+                !Number.isFinite(
+                  serviceCount
+                ) ||
+                serviceCount <= 0
+              ) {
+                return;
+              }
+
+              historyByClientId[
+                clientId
+              ] = {
+                lastOrderAt,
+                serviceCount,
+              };
+            }
+          );
+
+          setInactiveServiceHistoryByClientId(
+            historyByClientId
+          );
+
+          return;
+        }
+
+        /*
+          تحديث عميلة واحدة فقط:
+          نبقي بقية العميلات كما هي.
+        */
+        const summaryRow =
+          summaryRows[0] || null;
+
+        setInactiveServiceHistoryByClientId(
+          (
+            previousHistoryByClientId
+          ) => {
+            const nextHistoryByClientId =
+              {
+                ...previousHistoryByClientId,
+              };
+
+            /*
+              عدم وجود نتيجة يعني أن
+              العميلة لم يعد لديها سجل
+              خدمة فعلي، مثل حذف آخر
+              خدمة لها.
+            */
+            if (!summaryRow) {
+              delete nextHistoryByClientId[
+                cleanTargetClientId
+              ];
+
+              return nextHistoryByClientId;
+            }
+
+            const returnedClientId =
               String(
-                serviceRow.client_id ||
-                  ""
+                summaryRow.client_id ||
+                  cleanTargetClientId
               ).trim();
 
-            const serviceDate =
+            const lastOrderAt =
               String(
-                serviceRow.service_date ||
+                summaryRow.last_order_at ||
                   ""
               )
                 .trim()
                 .slice(0, 10);
 
-            const serviceStatus =
-              String(
-                serviceRow.service_status ||
-                  ""
-              ).trim();
+            const serviceCount =
+              Number(
+                summaryRow.service_count ||
+                  0
+              );
 
             if (
-              !clientId ||
-              !serviceDate
+              !returnedClientId ||
+              !lastOrderAt ||
+              !Number.isFinite(
+                serviceCount
+              ) ||
+              serviceCount <= 0
             ) {
-              return;
-            }
-
-            /*
-              لا تدخل الحالات المستبعدة
-              في سجل الخدمة الفعلي أو
-              حساب تاريخ آخر طلب.
-            */
-            if (
-              excludedFromProfileHistoryStatuses.includes(
-                serviceStatus
-              )
-            ) {
-              return;
-            }
-
-            const currentHistory =
-              historyByClientId[
-                clientId
+              delete nextHistoryByClientId[
+                cleanTargetClientId
               ];
 
-            if (!currentHistory) {
-              historyByClientId[
-                clientId
-              ] = {
-                lastOrderAt:
-                  serviceDate,
-
-                serviceCount: 1,
-              };
-
-              return;
+              return nextHistoryByClientId;
             }
 
-            historyByClientId[
-              clientId
+            nextHistoryByClientId[
+              returnedClientId
             ] = {
-              lastOrderAt:
-                serviceDate >
-                currentHistory.lastOrderAt
-                  ? serviceDate
-                  : currentHistory.lastOrderAt,
-
-              serviceCount:
-                Number(
-                  currentHistory.serviceCount ||
-                    0
-                ) + 1,
+              lastOrderAt,
+              serviceCount,
             };
-          }
-        );
 
-        setInactiveServiceHistoryByClientId(
-          historyByClientId
+            return nextHistoryByClientId;
+          }
         );
       } catch (error) {
         console.log(
-          "Inactive clients service history load error:",
+          "Inactive clients service history summary load error:",
           error
         );
 
-        setInactiveServiceHistoryByClientId(
-          {}
-        );
+        /*
+          عند خطأ اتصال مؤقت لا نمسح
+          البيانات الصحيحة الظاهرة.
+        */
       } finally {
-        setInactiveServiceHistoryLoading(
-          false
-        );
+        if (isFullReload) {
+          setInactiveServiceHistoryLoading(
+            false
+          );
+        }
       }
     };
 
@@ -7630,6 +7727,20 @@ return next;
 
     let serviceHistoryRefreshTimer =
       null;
+
+    let serviceHistoryNeedsFullReload =
+      false;
+
+    let hasSubscribedOnce =
+      false;
+
+    /*
+      نجمع معرفات العميلات المتأثرات
+      حتى لا نستدعي الدالة عدة مرات
+      لنفس العميلة عند وصول أحداث متقاربة.
+    */
+    const pendingServiceHistoryClientIds =
+      new Set();
 
     const refreshFutureAppointments =
       () => {
@@ -7648,7 +7759,55 @@ return next;
       };
 
     const refreshInactiveServiceHistory =
-      () => {
+      (payload = null) => {
+        /*
+          UPDATE قد يؤثر على عميلتين إذا
+          تغير client_id، لذلك نفحص
+          السجل القديم والجديد معًا.
+        */
+        const affectedClientIds = [
+          payload?.new?.client_id,
+          payload?.old?.client_id,
+        ]
+          .map(
+            (clientId) =>
+              String(
+                clientId || ""
+              ).trim()
+          )
+          .filter(
+            (clientId) =>
+              /^\d+$/.test(
+                clientId
+              ) &&
+              Number(clientId) > 0
+          );
+
+        /*
+          الجدول يستخدم
+          REPLICA IDENTITY FULL،
+          لذلك يفترض وصول client_id
+          عند الحذف أيضًا.
+
+          لو وصل حدث ناقص نستخدم تحميلًا
+          كاملًا احتياطيًا.
+        */
+        if (
+          affectedClientIds.length ===
+          0
+        ) {
+          serviceHistoryNeedsFullReload =
+            true;
+        } else {
+          affectedClientIds.forEach(
+            (clientId) => {
+              pendingServiceHistoryClientIds.add(
+                clientId
+              );
+            }
+          );
+        }
+
         if (
           serviceHistoryRefreshTimer
         ) {
@@ -7658,15 +7817,56 @@ return next;
         }
 
         serviceHistoryRefreshTimer =
-          setTimeout(() => {
-            loadInactiveServiceHistory();
-          }, 350);
+          setTimeout(
+            async () => {
+              /*
+                عند حدث ناقص أو عدد كبير
+                من التغييرات، نحمل الملخص
+                الكامل مرة واحدة فقط.
+              */
+              if (
+                serviceHistoryNeedsFullReload ||
+                pendingServiceHistoryClientIds
+                  .size > 25
+              ) {
+                serviceHistoryNeedsFullReload =
+                  false;
+
+                pendingServiceHistoryClientIds.clear();
+
+                await loadInactiveServiceHistory();
+
+                return;
+              }
+
+              const clientIdsToRefresh =
+                Array.from(
+                  pendingServiceHistoryClientIds
+                );
+
+              pendingServiceHistoryClientIds.clear();
+
+              /*
+                كل استدعاء يعيد ملخصًا
+                صغيرًا للعميلة المتأثرة فقط.
+              */
+              await Promise.all(
+                clientIdsToRefresh.map(
+                  (clientId) =>
+                    loadInactiveServiceHistory(
+                      clientId
+                    )
+                )
+              );
+            },
+            150
+          );
       };
 
     /*
-      تحميل بيانات العملاء المنقطعين
-      مباشرة بعد تسجيل الدخول حتى يعمل
-      الجدول وإشعار المتابعة في جميع الصفحات.
+      التحميل الأول:
+      استدعاء واحد يعيد ملخص العميلات
+      اللاتي لديهن خدمات موثقة.
     */
     loadInactiveFutureAppointments();
     loadInactiveServiceHistory();
@@ -7685,8 +7885,8 @@ return next;
           },
           () => {
             /*
-              schedule_rows مسؤول هنا عن
-              معرفة المواعيد القادمة فقط.
+              لم نغير منطق المواعيد في
+              هذه المرحلة.
             */
             refreshFutureAppointments();
           }
@@ -7699,16 +7899,38 @@ return next;
             table:
               "client_service_history",
           },
-          () => {
+          (payload) => {
             /*
-              أي إضافة أو تعديل أو حذف
-              لخدمة يعيد حساب آخر طلب
-              وعدد الخدمات فورًا.
+              نحدث العميلة أو العميلتين
+              المتأثرتين بالحدث فقط.
             */
-            refreshInactiveServiceHistory();
+            refreshInactiveServiceHistory(
+              payload
+            );
           }
         )
-        .subscribe();
+        .subscribe(
+          (status) => {
+            if (
+              status !==
+              "SUBSCRIBED"
+            ) {
+              return;
+            }
+
+            /*
+              عند عودة Realtime بعد
+              انقطاع الاتصال نعيد مزامنة
+              ملخص الخدمات تلقائيًا،
+              بدون تحديث الصفحة يدويًا.
+            */
+            if (hasSubscribedOnce) {
+              loadInactiveServiceHistory();
+            }
+
+            hasSubscribedOnce = true;
+          }
+        );
 
     return () => {
       if (
@@ -7726,6 +7948,8 @@ return next;
           serviceHistoryRefreshTimer
         );
       }
+
+      pendingServiceHistoryClientIds.clear();
 
       supabase.removeChannel(
         inactiveClientsChannel
@@ -11794,147 +12018,241 @@ const getScheduleClientBadges = (
       };
     };
 
-  const findGiftDoneMatchForScheduleRow = (row) => {
-    const savedGiftClientId = String(
-      row?.giftClientId || ""
-    ).trim();
+  /*
+    Gift Done يعتمد فقط على:
+    - رقم جوال المُهدي داخل giftPhone
+    - رقم جوال المستلمة داخل number
 
-    if (savedGiftClientId) {
-      const directlyLinkedGift = giftClients.find(
-        (gift) =>
-          String(gift.id) === savedGiftClientId
-      );
+    الأسماء لا تدخل في المطابقة؛ لأنها
+    قد تُكتب بشكل مختلف بين الموعد
+    وصفحة عملاء الإهداء.
+  */
+  const getGiftDonePhonePairForScheduleRow =
+    (row) => {
+      const giverPhone =
+        normalizeDigits(
+          formatSaudiPhoneForStorage(
+            row?.giftPhone || ""
+          )
+        );
 
-      if (directlyLinkedGift) {
-        return {
-          status: "matched",
-          gift: directlyLinkedGift,
-          matches: [directlyLinkedGift],
-        };
-      }
-    }
+      const recipientPhone =
+        normalizeDigits(
+          formatSaudiPhoneForStorage(
+            row?.number || ""
+          )
+        );
 
-    const recipientPhone = normalizeDigits(
-      formatSaudiPhoneForStorage(row?.number || "")
-    );
-
-    if (recipientPhone.length < 9) {
       return {
-        status: "missing-phone",
-        gift: null,
-        matches: [],
-      };
-    }
+        giverPhone,
+        recipientPhone,
 
-    const matchingGifts = giftClients.filter((gift) => {
-      const giftRecipientPhone = normalizeDigits(
-        formatSaudiPhoneForStorage(gift.toPhone || "")
-      );
+        complete:
+          giverPhone.length >= 9 &&
+          recipientPhone.length >= 9,
+      };
+    };
+
+  const giftMatchesSchedulePhonePair =
+    (gift, row) => {
+      const phonePair =
+        getGiftDonePhonePairForScheduleRow(
+          row
+        );
+
+      if (!phonePair.complete) {
+        return false;
+      }
+
+      const giftGiverPhone =
+        normalizeDigits(
+          formatSaudiPhoneForStorage(
+            gift?.fromPhone || ""
+          )
+        );
+
+      const giftRecipientPhone =
+        normalizeDigits(
+          formatSaudiPhoneForStorage(
+            gift?.toPhone || ""
+          )
+        );
 
       return (
-        !gift.giftTaken &&
-        giftRecipientPhone === recipientPhone
+        giftGiverPhone ===
+          phonePair.giverPhone &&
+        giftRecipientPhone ===
+          phonePair.recipientPhone
       );
-    });
-
-    if (matchingGifts.length === 1) {
-      return {
-        status: "matched",
-        gift: matchingGifts[0],
-        matches: matchingGifts,
-      };
-    }
-
-    if (matchingGifts.length > 1) {
-      return {
-        status: "multiple",
-        gift: null,
-        matches: matchingGifts,
-      };
-    }
-
-    return {
-      status: "not-found",
-      gift: null,
-      matches: [],
     };
-  };
 
-  const markGiftDoneFromScheduleRow = async (row) => {
-    const matchResult =
-      findGiftDoneMatchForScheduleRow(row);
+  const findGiftDoneMatchForScheduleRow =
+    (row) => {
+      const phonePair =
+        getGiftDonePhonePairForScheduleRow(
+          row
+        );
 
-    if (
-      matchResult.status !== "matched" ||
-      !matchResult.gift
-    ) {
-      return matchResult;
-    }
+      if (!phonePair.complete) {
+        return {
+          status: "missing-phone",
+          gift: null,
+          matches: [],
+        };
+      }
 
-    await updateGiftTaken(
-      matchResult.gift,
-      true
-    );
+      const savedGiftClientId =
+        String(
+          row?.giftClientId || ""
+        ).trim();
 
-    return matchResult;
-  };
+      /*
+        لا نثق في giftClientId وحده.
 
+        يجب أن يكون السجل موجودًا وأن
+        يتطابق رقم المُهدي والمستلمة
+        مع بيانات الموعد الحالية.
+      */
+      if (savedGiftClientId) {
+        const directlyLinkedGift =
+          giftClients.find(
+            (gift) =>
+              String(gift.id) ===
+                savedGiftClientId &&
+              giftMatchesSchedulePhonePair(
+                gift,
+                row
+              )
+          );
 
+        if (directlyLinkedGift) {
+          return {
+            status: "matched",
+            gift: directlyLinkedGift,
+            matches: [
+              directlyLinkedGift,
+            ],
+          };
+        }
+      }
 
-  const findTakenGiftMatchesForScheduleRow = (row) => {
-    const recipientPhone = normalizeDigits(
-      formatSaudiPhoneForStorage(
-        row?.number || ""
-      )
-    );
+      const matchingGifts =
+        giftClients.filter(
+          (gift) =>
+            !gift.giftTaken &&
+            giftMatchesSchedulePhonePair(
+              gift,
+              row
+            )
+        );
 
-    if (recipientPhone.length < 9) {
+      if (
+        matchingGifts.length === 1
+      ) {
+        return {
+          status: "matched",
+          gift: matchingGifts[0],
+          matches: matchingGifts,
+        };
+      }
+
+      if (
+        matchingGifts.length > 1
+      ) {
+        return {
+          status: "multiple",
+          gift: null,
+          matches: matchingGifts,
+        };
+      }
+
       return {
-        status: "missing-phone",
+        status: "not-found",
         gift: null,
         matches: [],
       };
-    }
-
-    const matchingGifts = giftClients.filter(
-      (gift) => {
-        const giftRecipientPhone =
-          normalizeDigits(
-            formatSaudiPhoneForStorage(
-              gift.toPhone || ""
-            )
-          );
-
-        return (
-          gift.giftTaken &&
-          giftRecipientPhone ===
-            recipientPhone
-        );
-      }
-    );
-
-    if (matchingGifts.length === 1) {
-      return {
-        status: "matched",
-        gift: matchingGifts[0],
-        matches: matchingGifts,
-      };
-    }
-
-    if (matchingGifts.length > 1) {
-      return {
-        status: "multiple",
-        gift: null,
-        matches: matchingGifts,
-      };
-    }
-
-    return {
-      status: "not-found",
-      gift: null,
-      matches: [],
     };
-  };
+
+  const markGiftDoneFromScheduleRow =
+    async (row) => {
+      const matchResult =
+        findGiftDoneMatchForScheduleRow(
+          row
+        );
+
+      if (
+        matchResult.status !==
+          "matched" ||
+        !matchResult.gift
+      ) {
+        return matchResult;
+      }
+
+      await updateGiftTaken(
+        matchResult.gift,
+        true
+      );
+
+      return matchResult;
+    };
+
+  /*
+    نفس قاعدة الرقمين تُستخدم عند
+    التراجع عن Gift Done؛ حتى لا نلغي
+    استلام هدية أخرى لها نفس رقم
+    المستلمة فقط.
+  */
+  const findTakenGiftMatchesForScheduleRow =
+    (row) => {
+      const phonePair =
+        getGiftDonePhonePairForScheduleRow(
+          row
+        );
+
+      if (!phonePair.complete) {
+        return {
+          status: "missing-phone",
+          gift: null,
+          matches: [],
+        };
+      }
+
+      const matchingGifts =
+        giftClients.filter(
+          (gift) =>
+            gift.giftTaken &&
+            giftMatchesSchedulePhonePair(
+              gift,
+              row
+            )
+        );
+
+      if (
+        matchingGifts.length === 1
+      ) {
+        return {
+          status: "matched",
+          gift: matchingGifts[0],
+          matches: matchingGifts,
+        };
+      }
+
+      if (
+        matchingGifts.length > 1
+      ) {
+        return {
+          status: "multiple",
+          gift: null,
+          matches: matchingGifts,
+        };
+      }
+
+      return {
+        status: "not-found",
+        gift: null,
+        matches: [],
+      };
+    };
 
   const selectGiftDoneLink = async (gift) => {
     if (!giftDoneLinkModal || !gift) return;
@@ -14234,12 +14552,26 @@ if (field === "frame") {
     );
   }
 }
+    /*
+      نحاول ربط Gift Done عند:
+      - اختيار الحالة.
+      - تعديل رقم المستلمة.
+      - تعديل رقم المُهدي.
+
+      بهذا يمكن إدخال الرقمين بأي ترتيب،
+      وعند اكتمالهما تُنفذ المطابقة.
+    */
     const shouldTryGiftDoneLink =
       (field === "status" &&
         value === "Gift Done") ||
-      (field === "number" &&
+      (
+        (
+          field === "number" ||
+          field === "giftPhone"
+        ) &&
         updatedRowSnapshot.status ===
-          "Gift Done");
+          "Gift Done"
+      );
 
     if (shouldTryGiftDoneLink) {
       const giftMatchResult =
@@ -14248,11 +14580,13 @@ if (field === "frame") {
         );
 
       if (
-        giftMatchResult?.status === "matched" &&
+        giftMatchResult?.status ===
+          "matched" &&
         giftMatchResult.gift
       ) {
         const linkedGiftRowSnapshot = {
           ...updatedRowSnapshot,
+
           giftClientId: String(
             giftMatchResult.gift.id
           ),
@@ -14268,15 +14602,17 @@ if (field === "frame") {
               createEmptyAppointmentRow
             );
 
-          const rows = rowsForDate.map(
-            (row, index) =>
-              index === rowIndex
-                ? linkedGiftRowSnapshot
-                : row
-          );
+          const rows =
+            rowsForDate.map(
+              (row, index) =>
+                index === rowIndex
+                  ? linkedGiftRowSnapshot
+                  : row
+            );
 
           return {
             ...prev,
+
             [selectedScheduleDate]: {
               ...dayData,
               rows,
@@ -14292,17 +14628,31 @@ if (field === "frame") {
         );
       }
 
+      /*
+        عند وجود أكثر من هدية غير
+        مستلمة بنفس رقم المُهدي ورقم
+        المستلمة، تفتح لوحة الاختيار
+        الحالية لاختيار الخدمة الصحيحة.
+      */
       if (
-        giftMatchResult?.status === "multiple" &&
-        giftMatchResult.matches?.length > 1
+        giftMatchResult?.status ===
+          "multiple" &&
+        giftMatchResult.matches?.length >
+          1
       ) {
         setGiftDoneLinkSearch("");
 
         setGiftDoneLinkModal({
           rowIndex,
-          rowSnapshot: updatedRowSnapshot,
-          cellStyles: nextCellStyles,
-          matches: giftMatchResult.matches,
+
+          rowSnapshot:
+            updatedRowSnapshot,
+
+          cellStyles:
+            nextCellStyles,
+
+          matches:
+            giftMatchResult.matches,
         });
       }
 
@@ -14310,34 +14660,54 @@ if (field === "frame") {
         field === "status" &&
         value === "Gift Done" &&
         giftMatchResult?.status ===
-          "not-found" &&
-        normalizeDigits(
-          formatSaudiPhoneForStorage(
-            updatedRowSnapshot.number || ""
-          )
-        ).length >= 9
+          "missing-phone"
       ) {
         alert(
-          "لا توجد هدية غير مأخوذة بهذا الرقم في عملاء الإهداء."
+          "أكملي رقم جوال المُهدي ورقم جوال المستلمة أولًا."
+        );
+      }
+
+      if (
+        field === "status" &&
+        value === "Gift Done" &&
+        giftMatchResult?.status ===
+          "not-found"
+      ) {
+        alert(
+          "لا توجد هدية غير مأخوذة مطابقة لرقم المُهدي ورقم المستلمة في عملاء الإهداء."
         );
       }
     }
 
     if (
       field === "status" &&
-      subtractVisitStatuses.includes(value) &&
-      originalRow.status === "Gift Done"
+      subtractVisitStatuses.includes(
+        value
+      ) &&
+      originalRow.status ===
+        "Gift Done"
     ) {
-      const savedGiftClientId = String(
-        originalRow.giftClientId || ""
-      ).trim();
+      const savedGiftClientId =
+        String(
+          originalRow.giftClientId || ""
+        ).trim();
 
+      /*
+        عند التراجع عن Gift Done لا
+        نستخدم الرابط القديم إلا إذا
+        تطابق أيضًا مع رقمي المُهدي
+        والمستلمة في الموعد.
+      */
       const directlyLinkedGift =
         savedGiftClientId
           ? giftClients.find(
               (gift) =>
                 String(gift.id) ===
-                savedGiftClientId
+                  savedGiftClientId &&
+                giftMatchesSchedulePhonePair(
+                  gift,
+                  originalRow
+                )
             )
           : null;
 
@@ -18896,20 +19266,224 @@ const leavingTime = addMinutesToDisplayTime(
     fetchGiftClients();
   };
 
-  const deleteGiftClient = async (id) => {
-    if (!ensureDeleteAllowed()) return;
-    const confirmDelete = window.confirm("هل أنت متأكد من حذف عميلة الإهداء؟");
-    if (!confirmDelete) return;
+  const deleteGiftClient =
+    async (id) => {
+      if (!ensureDeleteAllowed()) {
+        return;
+      }
 
-    const { error } = await supabase.from("gift_clients").delete().eq("id", id);
+      const giftClientId =
+        Number(id);
 
-    if (error) {
-      console.log(error);
-      return;
-    }
+      if (
+        !Number.isInteger(
+          giftClientId
+        ) ||
+        giftClientId <= 0
+      ) {
+        alert(
+          "تعذر تحديد سجل الهدية."
+        );
 
-    fetchGiftClients();
-  };
+        return;
+      }
+
+      const confirmDelete =
+        window.confirm(
+          "هل أنت متأكد من حذف عميلة الإهداء؟"
+        );
+
+      if (!confirmDelete) {
+        return;
+      }
+
+      const {
+        data,
+        error,
+      } = await supabase.rpc(
+        "paradise_delete_gift_client_safely",
+        {
+          p_gift_client_id:
+            giftClientId,
+        }
+      );
+
+      if (error) {
+        console.error(
+          "Safe gift client delete error:",
+          error
+        );
+
+        if (
+          String(
+            error.message || ""
+          ).includes(
+            "PARADISE_DELETE_LOCKED"
+          )
+        ) {
+          alert(
+            "الحذف مقفل حاليًا من إعدادات الأمان."
+          );
+
+          return;
+        }
+
+        if (
+          String(
+            error.message || ""
+          ).includes(
+            "PARADISE_SYSTEM_FROZEN"
+          )
+        ) {
+          alert(
+            "النظام تحت الصيانة حاليًا ولا يمكن حذف الهدية."
+          );
+
+          return;
+        }
+
+        alert(
+          error.details ||
+          error.message ||
+          "تعذر حذف عميلة الإهداء."
+        );
+
+        return;
+      }
+
+      if (!data?.success) {
+        alert(
+          data?.message ||
+          "تعذر حذف عميلة الإهداء."
+        );
+
+        return;
+      }
+
+      /*
+        تنظيف الذاكرة المؤقتة في الجهاز
+        الحالي فورًا.
+
+        بقية الأجهزة تتحدث تلقائيًا
+        بواسطة Realtime.
+      */
+      Object.entries(
+        scheduleGiftLinkedIdsRef
+          .current || {}
+      ).forEach(
+        ([
+          giftSyncKey,
+          linkedGiftClientId,
+        ]) => {
+          if (
+            String(
+              linkedGiftClientId || ""
+            ) ===
+              String(giftClientId)
+          ) {
+            delete scheduleGiftLinkedIdsRef
+              .current[
+                giftSyncKey
+              ];
+          }
+        }
+      );
+
+      /*
+        تحديث فوري للصفوف المحملة على
+        الجهاز الحالي، مع إبقاء جميع
+        بيانات الموعد الأخرى كما هي.
+      */
+      setScheduleData(
+        (previousScheduleData) => {
+          const nextScheduleData = {};
+
+          Object.entries(
+            previousScheduleData || {}
+          ).forEach(
+            ([
+              scheduleDate,
+              dayData,
+            ]) => {
+              const nextRows =
+                Array.isArray(
+                  dayData?.rows
+                )
+                  ? dayData.rows.map(
+                      (row) => ({
+                        ...row,
+
+                        giftClientId:
+                          String(
+                            row?.giftClientId ||
+                            ""
+                          ) ===
+                          String(
+                            giftClientId
+                          )
+                            ? ""
+                            : row?.giftClientId ||
+                              "",
+
+                        additionalClients:
+                          Array.isArray(
+                            row?.additionalClients
+                          )
+                            ? row.additionalClients.map(
+                                (
+                                  extraClient
+                                ) => ({
+                                  ...extraClient,
+
+                                  giftClientId:
+                                    String(
+                                      extraClient
+                                        ?.giftClientId ||
+                                        ""
+                                    ) ===
+                                    String(
+                                      giftClientId
+                                    )
+                                      ? ""
+                                      : extraClient
+                                          ?.giftClientId ||
+                                        "",
+                                })
+                              )
+                            : row
+                                ?.additionalClients ||
+                              [],
+                      })
+                    )
+                  : dayData?.rows;
+
+              nextScheduleData[
+                scheduleDate
+              ] = {
+                ...dayData,
+                rows: nextRows,
+              };
+            }
+          );
+
+          return nextScheduleData;
+        }
+      );
+
+      await fetchGiftClients();
+
+      const cleanedRows =
+        Number(
+          data.cleaned_schedule_rows ||
+          0
+        );
+
+      alert(
+        cleanedRows > 0
+          ? `تم حذف الهدية وتنظيف ارتباطها من ${cleanedRows} موعد.`
+          : "تم حذف الهدية بنجاح."
+      );
+    };
 
   const startEditPotentialClient = (client) => {
     if (!canEditData || !ensureSystemWritable()) return;
