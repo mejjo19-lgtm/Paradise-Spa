@@ -7331,9 +7331,34 @@ return next;
             scheduleRow.row_data || {};
 
           const primaryStatus =
-            row.status || "";
+            String(
+              row.status || ""
+            ).trim();
+
+          /*
+            clientId وحده لا يثبت وجود
+            موعد قادم.
+
+            يجب أن توجد معه بيانات موعد
+            فعلية ظاهرة، حتى لا يمنع رابط
+            قديم عالق ظهور العميلة في
+            العملاء المنقطعين.
+          */
+          const hasPrimaryAppointmentData =
+            [
+              row.client,
+              row.number,
+              row.services,
+              row.order,
+            ].some(
+              (fieldValue) =>
+                String(
+                  fieldValue || ""
+                ).trim() !== ""
+            );
 
           if (
+            hasPrimaryAppointmentData &&
             !excludedStatuses.includes(
               primaryStatus
             )
@@ -7353,10 +7378,27 @@ return next;
           additionalClients.forEach(
             (extraClient) => {
               const extraStatus =
-                extraClient.status ||
-                primaryStatus;
+                String(
+                  extraClient.status ||
+                  primaryStatus ||
+                  ""
+                ).trim();
+
+              const hasAdditionalAppointmentData =
+                [
+                  extraClient.name,
+                  extraClient.phone,
+                  extraClient.service,
+                  extraClient.order,
+                ].some(
+                  (fieldValue) =>
+                    String(
+                      fieldValue || ""
+                    ).trim() !== ""
+                );
 
               if (
+                !hasAdditionalAppointmentData ||
                 excludedStatuses.includes(
                   extraStatus
                 )
@@ -8471,6 +8513,94 @@ const getScheduleClientBadges = (
               }
             );
 
+            /*
+              مسح اسم العميلة أو رقمها يعني
+              أن الربط القديم لم يعد صالحًا.
+
+              هذا يطابق نفس حماية
+              updateScheduleRow ويمنع بقاء
+              clientId مخفي داخل صف ظاهر
+              كأنه فارغ.
+            */
+            const identityWasCleared =
+              selectedFields.includes(
+                "client"
+              ) ||
+              selectedFields.includes(
+                "number"
+              );
+
+            if (identityWasCleared) {
+              updatedRow.clientId = "";
+              updatedRow.sendTo = "";
+            }
+
+            const hasIssuedInvoiceLinks =
+              Boolean(
+                updatedRow.invoiceLinks &&
+                typeof
+                  updatedRow.invoiceLinks ===
+                  "object" &&
+                Object.keys(
+                  updatedRow.invoiceLinks
+                ).length > 0
+              );
+
+            const hasAdditionalClients =
+              Array.isArray(
+                updatedRow.additionalClients
+              ) &&
+              updatedRow.additionalClients
+                .length > 0;
+
+            /*
+              serviceTime لا يُحسب بيانات موعد،
+              لأنه يمثل وقت الصف الثابت.
+
+              إذا أصبحت جميع بيانات الموعد
+              فارغة، نعيد إنشاء الصف من الصفر
+              حتى تُمسح أيضًا جميع الروابط
+              المخفية التابعة للموعد.
+            */
+            const hasRemainingAppointmentData =
+              hasIssuedInvoiceLinks ||
+              hasAdditionalClients ||
+              Boolean(updatedRow.frame) ||
+              [
+                updatedRow.status,
+                updatedRow.clientBy,
+                updatedRow.driver,
+                updatedRow.therapist,
+                updatedRow.district,
+                updatedRow.client,
+                updatedRow.order,
+                updatedRow.services,
+                updatedRow.number,
+                updatedRow.transportation,
+                updatedRow.serviceAmount,
+                updatedRow.paymentMethod,
+                updatedRow.cashReceivedBy,
+                updatedRow.sendTo,
+                updatedRow.note,
+                updatedRow.giftFrom,
+                updatedRow.giftPhone,
+              ].some(
+                (fieldValue) =>
+                  String(
+                    fieldValue || ""
+                  ).trim() !== ""
+              );
+
+            if (
+              !hasRemainingAppointmentData
+            ) {
+              return createEmptyAppointmentRow(
+                timeSlots[rowIndex] ||
+                  updatedRow.serviceTime ||
+                  ""
+              );
+            }
+
             return updatedRow;
           }
         );
@@ -8934,9 +9064,31 @@ const getScheduleClientBadges = (
           "Gift Giver linked gift fetch error:",
           linkedGiftError
         );
-      } else if (linkedGiftRow) {
+
+        /*
+          عند تعذر الاتصال لا ننشئ هدية
+          جديدة حتى لا يحدث تكرار بالخطأ.
+        */
+        return null;
+      }
+
+      if (linkedGiftRow) {
         existingGiftRecord =
           linkedGiftRow;
+      } else {
+        /*
+          الرقم ما زال محفوظًا في الموعد،
+          لكن سجل الهدية نفسه تم حذفه.
+
+          نعتبر الرابط قديمًا ونسمح
+          بإنشاء وربط هدية جديدة.
+        */
+        linkedGiftClientId = "";
+
+        delete scheduleGiftLinkedIdsRef
+          .current[
+            giftSyncKey
+          ];
       }
     }
 
@@ -12928,27 +13080,6 @@ if (
       const normalizedRowIndex =
         Number(rowIndex);
 
-      const giftSyncKey =
-        `${selectedScheduleDate}-${normalizedRowIndex}`;
-
-      const linkedGiftClientId =
-        String(
-          row.giftClientId ||
-            scheduleGiftLinkedIdsRef
-              .current[
-                giftSyncKey
-              ] ||
-            ""
-        ).trim();
-
-      if (linkedGiftClientId) {
-        alert(
-          "هذه الهدية مسجلة تلقائيًا بالفعل في صفحة عملاء الإهداء."
-        );
-
-        return;
-      }
-
       if (
         !Number.isInteger(
           normalizedRowIndex
@@ -12962,6 +13093,73 @@ if (
         return;
       }
 
+      const giftSyncKey =
+        `${selectedScheduleDate}-${normalizedRowIndex}`;
+
+      let linkedGiftClientId =
+        String(
+          row.giftClientId ||
+            scheduleGiftLinkedIdsRef
+              .current[
+                giftSyncKey
+              ] ||
+            ""
+        ).trim();
+
+      /*
+        وجود giftClientId وحده لا يعني
+        أن الهدية ما زالت موجودة.
+
+        نتأكد من قاعدة البيانات قبل
+        عرض إشعار أنها مسجلة.
+      */
+      if (linkedGiftClientId) {
+        const {
+          data: linkedGiftRow,
+          error: linkedGiftError,
+        } = await supabase
+          .from("gift_clients")
+          .select("id")
+          .eq(
+            "id",
+            linkedGiftClientId
+          )
+          .maybeSingle();
+
+        if (linkedGiftError) {
+          console.log(
+            "Send To gift verification error:",
+            linkedGiftError
+          );
+
+          alert(
+            "تعذر التحقق من سجل الهدية. حاولي مرة أخرى."
+          );
+
+          return;
+        }
+
+        if (linkedGiftRow?.id) {
+          alert(
+            "هذه الهدية مسجلة تلقائيًا بالفعل في صفحة عملاء الإهداء."
+          );
+
+          return;
+        }
+
+        /*
+          الهدية حُذفت بالفعل، لذلك نفك
+          الرقم القديم ونرسل البيانات
+          لإنشاء سجل جديد.
+        */
+        linkedGiftClientId = "";
+
+        delete scheduleGiftLinkedIdsRef
+          .current[
+            giftSyncKey
+          ];
+      }
+
       const syncedGiftClientId =
         await syncScheduleGiftGiverToGiftClients(
           {
@@ -12969,7 +13167,11 @@ if (
               selectedScheduleDate,
             rowIndex:
               normalizedRowIndex,
-            rowSnapshot: row,
+            rowSnapshot: {
+              ...row,
+              giftClientId:
+                linkedGiftClientId,
+            },
             cellStyles:
               cellStyles || {},
           }
