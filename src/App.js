@@ -429,6 +429,143 @@ const deleteManualClientServiceHistory =
     );
   };
 
+const normalizeManualServiceDateDigits =
+  (value) =>
+    String(value || "")
+      .replace(
+        /[٠-٩]/g,
+        (digit) =>
+          String(
+            "٠١٢٣٤٥٦٧٨٩".indexOf(
+              digit
+            )
+          )
+      )
+      .replace(
+        /[۰-۹]/g,
+        (digit) =>
+          String(
+            "۰۱۲۳۴۵۶۷۸۹".indexOf(
+              digit
+            )
+          )
+      );
+
+const parseManualServiceDateInput =
+  (value) => {
+    const cleanValue =
+      normalizeManualServiceDateDigits(
+        value
+      )
+        .trim()
+        .split(/\s+/)[0]
+        .replace(
+          /[./\\]+/g,
+          "-"
+        )
+        .replace(
+          /-+/g,
+          "-"
+        );
+
+    if (!cleanValue) {
+      return "";
+    }
+
+    let year;
+    let month;
+    let day;
+
+    const isoDateMatch =
+      cleanValue.match(
+        /^(\d{4})-(\d{1,2})-(\d{1,2})$/
+      );
+
+    const dayFirstDateMatch =
+      cleanValue.match(
+        /^(\d{1,2})-(\d{1,2})-(\d{2}|\d{4})$/
+      );
+
+    if (isoDateMatch) {
+      year = Number(
+        isoDateMatch[1]
+      );
+
+      month = Number(
+        isoDateMatch[2]
+      );
+
+      day = Number(
+        isoDateMatch[3]
+      );
+    } else if (
+      dayFirstDateMatch
+    ) {
+      day = Number(
+        dayFirstDateMatch[1]
+      );
+
+      month = Number(
+        dayFirstDateMatch[2]
+      );
+
+      year = Number(
+        dayFirstDateMatch[3]
+      );
+
+      if (year < 100) {
+        year += 2000;
+      }
+    } else {
+      return "";
+    }
+
+    if (
+      year < 1900 ||
+      year > 2099 ||
+      month < 1 ||
+      month > 12 ||
+      day < 1 ||
+      day > 31
+    ) {
+      return "";
+    }
+
+    const checkedDate =
+      new Date(
+        Date.UTC(
+          year,
+          month - 1,
+          day
+        )
+      );
+
+    if (
+      checkedDate.getUTCFullYear() !==
+        year ||
+      checkedDate.getUTCMonth() !==
+        month - 1 ||
+      checkedDate.getUTCDate() !==
+        day
+    ) {
+      return "";
+    }
+
+    const paddedMonth =
+      String(month).padStart(
+        2,
+        "0"
+      );
+
+    const paddedDay =
+      String(day).padStart(
+        2,
+        "0"
+      );
+
+    return `${year}-${paddedMonth}-${paddedDay}`;
+  };
+
 const saveManualClientServiceHistory =
   async () => {
     const isEditingService =
@@ -462,11 +599,16 @@ const saveManualClientServiceHistory =
       return;
     }
 
-    const serviceDate =
+    const serviceDateText =
       String(
         manualClientServiceDraft
           .serviceDate || ""
       ).trim();
+
+    const serviceDate =
+      parseManualServiceDateInput(
+        serviceDateText
+      );
 
     const serviceTime =
       String(
@@ -500,9 +642,17 @@ const saveManualClientServiceHistory =
         )
       );
 
+    if (!serviceDateText) {
+      setManualClientServiceSaveError(
+        "اكتبي تاريخ الخدمة."
+      );
+
+      return;
+    }
+
     if (!serviceDate) {
       setManualClientServiceSaveError(
-        "اختاري تاريخ الخدمة."
+        "تاريخ الخدمة غير صحيح. اكتبيه مثل 2025-06-12."
       );
 
       return;
@@ -19095,7 +19245,10 @@ const leavingTime = addMinutesToDisplayTime(
     return true;
   };
 
-  const openDirectWhatsApp = (phoneNumber) => {
+  const openDirectWhatsApp = (
+    phoneNumber,
+    clientName = ""
+  ) => {
     const cleanPhone = cleanSaudiPhone(
       phoneNumber || ""
     );
@@ -19105,8 +19258,48 @@ const leavingTime = addMinutesToDisplayTime(
       return;
     }
 
+    const cleanClientName =
+      String(clientName || "").trim();
+
+    /*
+      نستخدم كلمات مؤقتة بدل كتابة
+      الإيموجي داخل ملف App.js.
+
+      بعد ترميز النص نستبدل الكلمات
+      بترميز UTF-8 الصحيح للإيموجي،
+      وبذلك لا يتحول إلى علامة �.
+    */
+    const messageTemplate = [
+      `أهلًا أستاذة ${cleanClientName} __BROWN_HEART__`,
+      "",
+      "اشتقنا لك في باردايس سبا وحبينا نطمئن عليك __TULIP__",
+      "عندنا حاليًا عروض جديدة ومميزة، ويسعدنا نخدمك من جديد في الوقت المناسب لك __BROWN_HEART__",
+    ].join("\n");
+
+    const encodedMessage =
+      encodeURIComponent(
+        messageTemplate
+      )
+        .replace(
+          /__BROWN_HEART__/g,
+          "%F0%9F%A4%8E"
+        )
+        .replace(
+          /__TULIP__/g,
+          "%F0%9F%8C%B7"
+        );
+
+    /*
+      رابط التطبيق المباشر:
+      الجوال يفتح تطبيق واتساب،
+      والكمبيوتر يفتح WhatsApp Desktop
+      مباشرة إذا كان مثبتًا.
+    */
+    const whatsappUrl =
+      `whatsapp://send?phone=${cleanPhone}&text=${encodedMessage}`;
+
     window.location.href =
-      `whatsapp://send?phone=${cleanPhone}`;
+      whatsappUrl;
   };
 
   const formatInactiveClientDate = (
@@ -43108,7 +43301,10 @@ marginRight: "auto",
                                 type="button"
                                 onClick={() =>
                                   openDirectWhatsApp(
-                                    client.phone
+                                    client.phone,
+                                    client.name ||
+                                      client.arabic_name ||
+                                      ""
                                   )
                                 }
                                 style={{
@@ -47897,8 +48093,10 @@ if (screen === "potentialClients") {
                     تاريخ الخدمة *
 
                     <input
-                      type="date"
-                      max={currentDate}
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      placeholder="مثال: 2025-06-12"
                       value={
                         manualClientServiceDraft
                           .serviceDate
@@ -47913,6 +48111,52 @@ if (screen === "potentialClients") {
                           })
                         )
                       }
+                      onBlur={(event) => {
+                        const normalizedDate =
+                          parseManualServiceDateInput(
+                            event.target.value
+                          );
+
+                        if (!normalizedDate) {
+                          return;
+                        }
+
+                        setManualClientServiceDraft(
+                          (previousDraft) => ({
+                            ...previousDraft,
+
+                            serviceDate:
+                              normalizedDate,
+                          })
+                        );
+                      }}
+                      onPaste={(event) => {
+                        const pastedValue =
+                          event.clipboardData
+                            .getData("text")
+                            .trim();
+
+                        const normalizedDate =
+                          parseManualServiceDateInput(
+                            pastedValue
+                          );
+
+                        if (!normalizedDate) {
+                          return;
+                        }
+
+                        event.preventDefault();
+
+                        setManualClientServiceDraft(
+                          (previousDraft) => ({
+                            ...previousDraft,
+
+                            serviceDate:
+                              normalizedDate,
+                          })
+                        );
+                      }}
+                      dir="ltr"
                       style={{
                         width: "100%",
                         minHeight: "39px",
@@ -47925,6 +48169,7 @@ if (screen === "potentialClients") {
                         color: "#432f24",
                         fontSize: "12px",
                         fontWeight: "800",
+                        textAlign: "center",
                         outline: "none",
                       }}
                     />
@@ -48032,7 +48277,9 @@ if (screen === "potentialClients") {
 
                     <input
                       type="text"
-                      placeholder="مثال: Massage Relaxing 60 Mins"
+                      list="manualClientServiceList"
+                      autoComplete="off"
+                      placeholder="اختاري أو اكتبي أو الصقي اسم الخدمة"
                       value={
                         manualClientServiceDraft
                           .serviceName
@@ -48062,6 +48309,17 @@ if (screen === "potentialClients") {
                         outline: "none",
                       }}
                     />
+
+                    <datalist id="manualClientServiceList">
+                      {serviceOptions
+                        .filter(Boolean)
+                        .map((serviceOption) => (
+                          <option
+                            key={serviceOption}
+                            value={serviceOption}
+                          />
+                        ))}
+                    </datalist>
                   </label>
 
                   <label

@@ -11027,3 +11027,114 @@ button {
     box-sizing: border-box !important;
   }
 }
+
+/* =========================================================
+   PARADISE UI TYPOGRAPHY — LATIN ONLY
+   تحسين الإنجليزي بدون تغيير العربي
+   ========================================================= */
+
+/*
+  هذا الخط مخصص للأحرف الإنجليزية
+  والأرقام اللاتينية فقط.
+
+  Windows يستخدم Segoe UI،
+  iPhone يستخدم SF Pro،
+  Android يستخدم Roboto.
+
+  الأحرف العربية غير موجودة في
+  unicode-range ولذلك تستمر باستخدام
+  Arial وبنفس الوزن والتصميم السابق.
+*/
+@font-face {
+  font-family: "ParadiseLatinUI";
+
+  src:
+    local("Segoe UI"),
+    local("SF Pro Text"),
+    local("Roboto"),
+    local("Arial");
+
+  font-style: normal;
+  font-weight: 100 699;
+  font-display: swap;
+
+  unicode-range:
+    U+0000-024F,
+    U+1E00-1EFF;
+}
+
+/*
+  عند طلب وزن إنجليزي ثقيل مثل
+  700 أو 800 أو 900 أو 950،
+  نعرضه بخط Semibold أو Medium
+  بدل الشكل الأسود الثقيل.
+
+  وزن الخط العربي لا يتغير؛
+  لأنه يرجع إلى Arial بالوزن
+  الأصلي الموجود داخل App.js.
+*/
+@font-face {
+  font-family: "ParadiseLatinUI";
+
+  src:
+    local("Segoe UI Semibold"),
+    local("SF Pro Text Semibold"),
+    local("Roboto Medium"),
+    local("Arial");
+
+  font-style: normal;
+  font-weight: 700 1000;
+  font-display: swap;
+
+  unicode-range:
+    U+0000-024F,
+    U+1E00-1EFF;
+}
+
+/*
+  الخط المركب يعمل على الكمبيوتر
+  والتابلت والجوال.
+
+  الإنجليزي يأخذ ParadiseLatinUI،
+  والعربي يرجع تلقائيًا إلى Arial.
+*/
+html,
+body,
+#root {
+  font-family:
+    "ParadiseLatinUI",
+    Arial,
+    sans-serif !important;
+}
+
+/*
+  توحيد خط الأزرار والحقول مع
+  نفس الخط المركب، بدون تغيير
+  أوزان النصوص أو أحجامها.
+*/
+html body button,
+html body input,
+html body select,
+html body textarea {
+  font-family: inherit !important;
+}
+
+/*
+  بعض صفحات App.js تضع Arial
+  مباشرة داخل style.
+
+  نستبدل اسم العائلة فقط بالخط
+  المركب، بدون تغيير font-weight.
+
+  الإنجليزي يصبح أخف وأنظف،
+  والعربي يبقى Arial كما كان.
+*/
+html body [style*="font-family: Arial"],
+html body [style*="font-family:Arial"],
+html body [style*='font-family: "Arial"'],
+html body [style*="font-family:'Arial'"] {
+  font-family:
+    "ParadiseLatinUI",
+    Arial,
+    sans-serif !important;
+}
