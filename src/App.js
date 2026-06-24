@@ -1560,6 +1560,64 @@ useEffect(() => {
   };
 }, [authReady, isLoggedIn]);
 
+/*
+  فتح التقويم من كامل خانة التاريخ
+  ومنع تحديد جزء اليوم أو الشهر
+  باللون الأزرق عند الضغط.
+*/
+useEffect(() => {
+  const openDatePickerFromWholeInput =
+    (event) => {
+      const dateInput =
+        event.target?.closest?.(
+          'input[type="date"]'
+        );
+
+      if (
+        !dateInput ||
+        dateInput.disabled ||
+        dateInput.readOnly ||
+        typeof dateInput.showPicker !==
+          "function"
+      ) {
+        return;
+      }
+
+      /*
+        نمنع التحديد الافتراضي داخل
+        التاريخ ثم نفتحه بأنفسنا.
+      */
+      event.preventDefault();
+
+      try {
+        dateInput.focus({
+          preventScroll: true,
+        });
+
+        dateInput.showPicker();
+      } catch (error) {
+        console.log(
+          "Date picker open error:",
+          error
+        );
+      }
+    };
+
+  document.addEventListener(
+    "pointerdown",
+    openDatePickerFromWholeInput,
+    true
+  );
+
+  return () => {
+    document.removeEventListener(
+      "pointerdown",
+      openDatePickerFromWholeInput,
+      true
+    );
+  };
+}, []);
+
 useEffect(() => {
   window.scrollTo({
     top: 0,
@@ -2084,12 +2142,111 @@ function fetchSharedClientLists() {
   const [editedPotentialStatus, setEditedPotentialStatus] = useState("");
 
   const todayDate = currentDate;
-  const [selectedScheduleDate, setSelectedScheduleDate] = useState(todayDate);
+
+  const [
+    selectedScheduleDate,
+    setSelectedScheduleDate,
+  ] = useState(todayDate);
 
   // بداية نافذة الأيام الثلاثة في صفحة المواعيد الرئيسية
   // 0 = اليوم، 1 = غدًا، -1 = أمس
-  const [dashboardDateOffset, setDashboardDateOffset] = useState(0);
-  const availablePosterRef = useRef(null);
+  const [
+    dashboardDateOffset,
+    setDashboardDateOffset,
+  ] = useState(0);
+
+  const changeDashboardStartDate = (
+    dateValue
+  ) => {
+    const targetDate =
+      String(dateValue || "")
+        .slice(0, 10);
+
+    if (!targetDate) {
+      return;
+    }
+
+    const todayTimestamp =
+      new Date(
+        `${todayDate}T12:00:00`
+      ).getTime();
+
+    const targetTimestamp =
+      new Date(
+        `${targetDate}T12:00:00`
+      ).getTime();
+
+    if (
+      !Number.isFinite(todayTimestamp) ||
+      !Number.isFinite(targetTimestamp)
+    ) {
+      return;
+    }
+
+    const dayOffset =
+      Math.round(
+        (
+          targetTimestamp -
+          todayTimestamp
+        ) /
+        (
+          24 *
+          60 *
+          60 *
+          1000
+        )
+      );
+
+    setDashboardDateOffset(
+      dayOffset
+    );
+  };
+
+  /*
+    فتح منتقي التاريخ عند الضغط
+    على أي مكان داخل خانة التاريخ،
+    وليس على أيقونة التقويم فقط.
+  */
+  useEffect(() => {
+    const openDatePickerFromWholeField =
+      (event) => {
+        const dateInput =
+          event.target?.closest?.(
+            'input[type="date"]'
+          );
+
+        if (
+          !dateInput ||
+          dateInput.disabled ||
+          dateInput.readOnly ||
+          typeof dateInput.showPicker !==
+            "function"
+        ) {
+          return;
+        }
+
+        try {
+          dateInput.showPicker();
+        } catch {
+          return;
+        }
+      };
+
+    document.addEventListener(
+      "click",
+      openDatePickerFromWholeField
+    );
+
+    return () => {
+      document.removeEventListener(
+        "click",
+        openDatePickerFromWholeField
+      );
+    };
+  }, []);
+
+  const availablePosterRef =
+    useRef(null);
   const availableAppointmentTimes = ["3:00", "4:00", "5:00", "6:00", "7:00", "8:00", "9:00", "10:00", "11:00"];
   const [availableAppointmentDate, setAvailableAppointmentDate] = useState(todayDate);
   const [availableAppointmentStatus, setAvailableAppointmentStatus] = useState(() =>
@@ -2356,8 +2513,41 @@ function fetchSharedClientLists() {
   const [sharedDataLoaded, setSharedDataLoaded] = useState(false);
 
 
-  const [settingsActiveTab, setSettingsActiveTab] = useState("accounts");
-  const [employeeAccounts, setEmployeeAccounts] = useState([]);
+  const [
+    settingsActiveTab,
+    setSettingsActiveTab,
+  ] = useState("accounts");
+
+  const [
+    employeeAccounts,
+    setEmployeeAccounts,
+  ] = useState([]);
+
+  const [
+    permissionsReady,
+    setPermissionsReady,
+  ] = useState(false);
+
+  /*
+    عند تسجيل الخروج أو انتهاء الجلسة
+    نمسح صلاحيات الحساب السابق حتى
+    لا تظهر لحساب آخر ولو للحظة.
+  */
+  useEffect(() => {
+    if (
+      isLoggedIn &&
+      loggedInAuthUserId
+    ) {
+      return;
+    }
+
+    setPermissionsReady(false);
+    setEmployeeAccounts([]);
+  }, [
+    isLoggedIn,
+    loggedInAuthUserId,
+  ]);
+
   const [accountDraft, setAccountDraft] = useState({
     username: "",
     displayName: "",
@@ -8166,38 +8356,225 @@ const getScheduleClientBadges = (
     focusScheduleCell(safeRow, safeField);
   };
 
-  const handleScheduleCellKeyDown = (event, rowIndex, field) => {
-    const fieldIndex = getScheduleFieldIndex(field);
-    if (fieldIndex === -1) return;
+  const handleScheduleCellKeyDown = (
+    event,
+    rowIndex,
+    field
+  ) => {
+    const navigationKeys = [
+      "ArrowDown",
+      "ArrowUp",
+      "ArrowRight",
+      "ArrowLeft",
+      "Enter",
+    ];
 
-    let nextRow = rowIndex;
-    let nextFieldIndex = fieldIndex;
-    let shouldMove = false;
-
-    if (event.key === "ArrowDown" || event.key === "Enter") {
-      nextRow += 1;
-      shouldMove = true;
-    } else if (event.key === "ArrowUp") {
-      nextRow -= 1;
-      shouldMove = true;
-    } else if (event.key === "ArrowRight") {
-      nextFieldIndex += 1;
-      shouldMove = true;
-    } else if (event.key === "ArrowLeft") {
-      nextFieldIndex -= 1;
-      shouldMove = true;
+    if (
+      !navigationKeys.includes(
+        event.key
+      )
+    ) {
+      return;
     }
 
-    if (!shouldMove) return;
+    const targetTag =
+      event.target?.tagName || "";
+
+    if (
+      ![
+        "INPUT",
+        "SELECT",
+        "TEXTAREA",
+      ].includes(targetTag)
+    ) {
+      return;
+    }
+
+    if (event.defaultPrevented) {
+      return;
+    }
+
+    const currentTableRow =
+      event.target.closest("tr");
+
+    const currentTableCell =
+      event.target.closest("td");
+
+    if (
+      !currentTableRow ||
+      !currentTableCell
+    ) {
+      return;
+    }
+
+    const currentCellIndex =
+      Array.from(
+        currentTableRow.children
+      ).indexOf(currentTableCell);
+
+    if (currentCellIndex < 0) {
+      return;
+    }
+
+    const focusableSelector =
+      'input:not([disabled]), select:not([disabled]), textarea:not([disabled])';
+
+    let nextControl = null;
+
+    if (
+      event.key === "ArrowDown" ||
+      event.key === "ArrowUp" ||
+      event.key === "Enter"
+    ) {
+      const moveUp =
+        event.key === "ArrowUp";
+
+      let nextTableRow = moveUp
+        ? currentTableRow.previousElementSibling
+        : currentTableRow.nextElementSibling;
+
+      while (
+        nextTableRow &&
+        !nextControl
+      ) {
+        const nextTableCell =
+          nextTableRow.children?.[
+            currentCellIndex
+          ];
+
+        nextControl =
+          nextTableCell?.querySelector(
+            focusableSelector
+          ) || null;
+
+        if (!nextControl) {
+          nextTableRow = moveUp
+            ? nextTableRow.previousElementSibling
+            : nextTableRow.nextElementSibling;
+        }
+      }
+    } else {
+      const currentField =
+        field ||
+        scheduleColumns[
+          currentCellIndex - 1
+        ]?.field;
+
+      const currentFieldIndex =
+        getScheduleFieldIndex(
+          currentField
+        );
+
+      if (currentFieldIndex === -1) {
+        return;
+      }
+
+      const fieldStep =
+        event.key === "ArrowRight"
+          ? 1
+          : -1;
+
+      let nextFieldIndex =
+        currentFieldIndex + fieldStep;
+
+      while (
+        nextFieldIndex >= 0 &&
+        nextFieldIndex <
+          scheduleSelectableFields.length &&
+        !nextControl
+      ) {
+        const nextField =
+          scheduleSelectableFields[
+            nextFieldIndex
+          ];
+
+        const nextColumnIndex =
+          scheduleColumns.findIndex(
+            (column) =>
+              column.field ===
+              nextField
+          );
+
+        const nextTableCell =
+          nextColumnIndex >= 0
+            ? currentTableRow.children?.[
+                nextColumnIndex + 1
+              ]
+            : null;
+
+        nextControl =
+          nextTableCell?.querySelector(
+            focusableSelector
+          ) || null;
+
+        nextFieldIndex +=
+          fieldStep;
+      }
+    }
 
     event.preventDefault();
 
-    const nextField =
-      scheduleSelectableFields[
-        Math.max(0, Math.min(scheduleSelectableFields.length - 1, nextFieldIndex))
-      ];
+    if (!nextControl) {
+      return;
+    }
 
-    moveScheduleActiveCell(nextRow, nextField, event.shiftKey);
+    const nextCellKey =
+      nextControl.getAttribute(
+        "data-schedule-cell"
+      ) || "";
+
+    const separatorIndex =
+      nextCellKey.indexOf("-");
+
+    if (
+      event.shiftKey &&
+      separatorIndex > 0
+    ) {
+      const nextRowIndex = Number(
+        nextCellKey.slice(
+          0,
+          separatorIndex
+        )
+      );
+
+      const nextField =
+        nextCellKey.slice(
+          separatorIndex + 1
+        );
+
+      if (
+        Number.isInteger(
+          nextRowIndex
+        ) &&
+        scheduleSelectableFields.includes(
+          nextField
+        )
+      ) {
+        moveScheduleActiveCell(
+          nextRowIndex,
+          nextField,
+          true
+        );
+
+        return;
+      }
+    }
+
+    setScheduleSelection(null);
+
+    nextControl.focus();
+
+    if (
+      nextControl.tagName === "INPUT" &&
+      nextControl.type !== "checkbox" &&
+      typeof nextControl.select ===
+        "function"
+    ) {
+      setTimeout(
+        () => nextControl.select(),
+        0
+      );
+    }
   };
 
   const startScheduleSelection = (rowIndex, field) => {
@@ -17579,8 +17956,32 @@ const appointmentWeekday = formatEnglishDigits(
 const appointmentFullDate = formatEnglishDigits(
   new Date(`${date}T12:00:00`).toLocaleDateString("en-GB")
 );
-    const totalPrice = getAppointmentTotalPrice(appointment);
-    const servicePriceText = totalPrice > 0 ? `${formatEnglishDigits(totalPrice)} ريال` : "-";
+    const additionalClientsTotal =
+      (
+        appointment.additionalClients ||
+        []
+      ).reduce(
+        (
+          total,
+          additionalClient
+        ) =>
+          total +
+          parseAmount(
+            additionalClient.serviceAmount
+          ),
+        0
+      );
+
+    const totalPrice =
+      getAppointmentTotalPrice(
+        appointment
+      ) +
+      additionalClientsTotal;
+
+    const servicePriceText =
+      totalPrice > 0
+        ? `${formatEnglishDigits(totalPrice)} ريال`
+        : "-";
     const appointmentServiceTime = formatEnglishDigits(appointment.serviceTime || "-");
     const appointmentServiceTimeText = appointmentServiceTime
   .replace(" - ", " إلى ")
@@ -18173,7 +18574,12 @@ const leavingTime = addMinutesToDisplayTime(
       }),
     ];
 
-  const currentAccount =
+  /*
+    الحساب المرتبط فعليًا بمعرف
+    مستخدم Supabase بعد وصول بيانات
+    السيرفر.
+  */
+  const serverCurrentAccount =
     employeeAccounts.find(
       (account) =>
         Boolean(
@@ -18186,6 +18592,56 @@ const leavingTime = addMinutesToDisplayTime(
             loggedInAuthUserId
           )
     ) || null;
+
+  /*
+    أثناء اللحظة القصيرة السابقة
+    لوصول حسابات السيرفر نستخدم
+    الحسابات الافتراضية المعتمدة
+    الموجودة أصلًا داخل النظام.
+
+    بمجرد وصول حسابات السيرفر
+    تُستخدم تلقائيًا بدل هذا الحساب.
+  */
+  const hasServerLinkedAccounts =
+    employeeAccounts.some(
+      (account) =>
+        Boolean(
+          account.authUserId
+        )
+    );
+
+  const fallbackCurrentAccount =
+    !hasServerLinkedAccounts
+      ? getDefaultEmployeeAccounts()
+          .find(
+            (account) =>
+              String(
+                account.displayName ||
+                  ""
+              ) ===
+              String(
+                loggedInUser || ""
+              )
+          ) || null
+      : null;
+
+  const currentAccount =
+    serverCurrentAccount ||
+    (
+      fallbackCurrentAccount
+        ? {
+            ...fallbackCurrentAccount,
+
+            isSuperAdmin:
+              Boolean(
+                fallbackCurrentAccount
+                  .isSuperAdmin
+              ) ||
+              fallbackCurrentAccount
+                .role === "owner",
+          }
+        : null
+    );
 
   const isOwnerUser =
     Boolean(
@@ -19551,6 +20007,35 @@ const leavingTime = addMinutesToDisplayTime(
       (gift.service || "").toLowerCase().includes(textSearch) ||
       phoneMatchesSearch(gift.fromPhone, giftSearch) ||
       phoneMatchesSearch(gift.toPhone, giftSearch)
+    );
+  }).sort((giftA, giftB) => {
+    const giftDateA = String(
+      giftA.giftDate ||
+        giftA.items?.giftDate ||
+        ""
+    ).slice(0, 10);
+
+    const giftDateB = String(
+      giftB.giftDate ||
+        giftB.items?.giftDate ||
+        ""
+    ).slice(0, 10);
+
+    const dateComparison =
+      giftDateB.localeCompare(
+        giftDateA
+      );
+
+    if (dateComparison !== 0) {
+      return dateComparison;
+    }
+
+    return String(
+      giftB.createdAt || ""
+    ).localeCompare(
+      String(
+        giftA.createdAt || ""
+      )
     );
   });
 
@@ -22039,106 +22524,130 @@ const welcomeBoardNameStyle = {
       "transform 0.2s ease, box-shadow 0.2s ease",
   };
 
-  const loadSettingsModuleData = async () => {
-    try {
-      const {
-        data: securityRow,
-        error: securityError,
-      } = await supabase
-        .from("app_data")
-        .select("data")
-        .eq(
-          "data_key",
-          "settingsSecurity"
-        )
-        .maybeSingle();
-
-      if (securityError) {
-        throw securityError;
-      }
-
-      if (securityRow?.data) {
-        const nextSecurity =
-          securityRow.data;
-
-        setSecuritySettings(
-          (prev) => ({
-            ...prev,
-            ...nextSecurity,
-          })
-        );
-
-        const localLogoutVersion =
-          Number(
-            localStorage.getItem(
-              "paradise-settings-logout-version"
-            ) || 0
-          );
-
-        const remoteLogoutVersion =
-          Number(
-            nextSecurity.logoutVersion ||
-              0
-          );
-
-        if (
-          remoteLogoutVersion >
-          localLogoutVersion
-        ) {
-          localStorage.setItem(
-            "paradise-settings-logout-version",
-            String(
-              remoteLogoutVersion
+  const loadSettingsModuleData =
+    async () => {
+      try {
+        /*
+          تحميل الأمان والحسابات معًا
+          بدل انتظار كل طلب بعد الآخر.
+        */
+        const [
+          securityResult,
+          accountsResult,
+        ] = await Promise.all([
+          supabase
+            .from("app_data")
+            .select("data")
+            .eq(
+              "data_key",
+              "settingsSecurity"
             )
+            .maybeSingle(),
+
+          supabase
+            .from(
+              "employee_accounts"
+            )
+            .select("*")
+            .order(
+              "created_at",
+              {
+                ascending: true,
+              }
+            ),
+        ]);
+
+        const {
+          data: securityRow,
+          error: securityError,
+        } = securityResult;
+
+        if (securityError) {
+          console.log(
+            "Settings module data load error:",
+            securityError
+          );
+        } else if (
+          securityRow?.data
+        ) {
+          const nextSecurity =
+            securityRow.data;
+
+          setSecuritySettings(
+            (prev) => ({
+              ...prev,
+              ...nextSecurity,
+            })
           );
 
-          await globalLogout();
+          const localLogoutVersion =
+            Number(
+              localStorage.getItem(
+                "paradise-settings-logout-version"
+              ) || 0
+            );
 
-          return;
+          const remoteLogoutVersion =
+            Number(
+              nextSecurity
+                .logoutVersion || 0
+            );
+
+          if (
+            remoteLogoutVersion >
+            localLogoutVersion
+          ) {
+            localStorage.setItem(
+              "paradise-settings-logout-version",
+              String(
+                remoteLogoutVersion
+              )
+            );
+
+            await globalLogout();
+
+            return;
+          }
         }
-      }
-    } catch (error) {
-      console.log(
-        "Settings module data load error:",
-        error
-      );
-    }
 
-    try {
-      const { data, error } =
-        await supabase
-          .from("employee_accounts")
-          .select("*")
-          .order(
-            "created_at",
-            { ascending: true }
+        const {
+          data: accountRows,
+          error: accountsError,
+        } = accountsResult;
+
+        if (accountsError) {
+          throw accountsError;
+        }
+
+        const normalizedAccounts =
+          (accountRows || []).map(
+            normalizeEmployeeAccount
           );
 
-      if (error) {
-        throw error;
-      }
-
-      const normalized =
-        (data || []).map(
-          normalizeEmployeeAccount
+        setEmployeeAccounts(
+          normalizedAccounts.length
+            ? normalizedAccounts
+            : getDefaultEmployeeAccounts()
         );
 
-      setEmployeeAccounts(
-        normalized.length
-          ? normalized
-          : getDefaultEmployeeAccounts()
-      );
-    } catch (error) {
-      console.log(
-        "Employee accounts load error:",
-        error
-      );
+        /*
+          لا نسمح بعرض النظام قبل
+          اكتمال الحسابات والصلاحيات.
+        */
+        setPermissionsReady(true);
+      } catch (error) {
+        console.log(
+          "Employee accounts load error:",
+          error
+        );
 
-      setEmployeeAccounts(
-        getDefaultEmployeeAccounts()
-      );
-    }
-  };
+        setEmployeeAccounts(
+          getDefaultEmployeeAccounts()
+        );
+
+        setPermissionsReady(true);
+      }
+    };
 
   useEffect(() => {
     if (
@@ -28305,10 +28814,14 @@ const welcomeBoardNameStyle = {
   );
 
   const withGreeting = (page) => {
-    const showGlobalLayout =
+    const isSystemScreen =
       isLoggedIn &&
       screen !== "welcome" &&
       screen !== "menu";
+
+
+    const showGlobalLayout =
+      isSystemScreen;
 
     return (
       <>
@@ -29603,7 +30116,7 @@ if (screen === "menu") {
         <div
           style={{
             textAlign: "center",
-            marginBottom: "20px",
+            marginBottom: "18px",
           }}
         >
           <img
@@ -29617,26 +30130,77 @@ if (screen === "menu") {
 
           <h2
             style={{
-              margin: 25,
+              margin:
+                "25px 25px 14px",
               fontSize: "28px",
               color: "#4b2e1f",
             }}
           >
             المواعيد
           </h2>
+
+          <div
+            aria-hidden="true"
+            style={{
+              color: "#8a7a68",
+              fontSize: "13px",
+              fontWeight: "bold",
+              marginBottom: "7px",
+              visibility: "hidden",
+            }}
+          >
+            اختيار التاريخ
+          </div>
+
+          <input
+            type="date"
+            aria-label="اختيار تاريخ المواعيد"
+            value={dashboardFirstDate}
+            max={`${
+              new Date().getFullYear() +
+              5
+            }-12-31`}
+            onChange={(event) =>
+              changeDashboardStartDate(
+                event.target.value
+              )
+            }
+            style={{
+              width: "210px",
+              maxWidth: "82vw",
+              padding: "11px 16px",
+              borderRadius: "16px",
+              border:
+                "1px solid #d6c7b8",
+              backgroundColor:
+                "#faf7f2",
+              color: "#4b2e1f",
+              outline: "none",
+              fontWeight: "bold",
+              fontSize: "14px",
+              textAlign: "center",
+              boxSizing: "border-box",
+              cursor: "pointer",
+              boxShadow:
+                "0 10px 24px rgba(75,46,31,0.08)",
+            }}
+          />
         </div>
 
         <div
           style={{
             width: "100%",
             display: "grid",
-            gridTemplateColumns: "1fr 1fr",
+            gridTemplateColumns:
+              "1fr 1fr",
             alignItems: "center",
             direction: "ltr",
             marginTop: 0,
             marginBottom: "14px",
-            transform: "translateY(-26px)",
+            transform:
+              "translateY(-40px)",
             boxSizing: "border-box",
+            pointerEvents: "none",
           }}
         >
           <button
@@ -29660,6 +30224,7 @@ if (screen === "menu") {
               fontSize: "14px",
               fontWeight: "800",
               whiteSpace: "nowrap",
+              pointerEvents: "auto",
             }}
           >
             ← اليوم السابق
@@ -29686,6 +30251,7 @@ if (screen === "menu") {
               fontSize: "14px",
               fontWeight: "800",
               whiteSpace: "nowrap",
+              pointerEvents: "auto",
             }}
           >
             اليوم التالي →
@@ -31123,7 +31689,20 @@ margin: "0 auto",
                     </td>
 
                     <td
-  style={getScheduleCellStyle(index, "order", { padding: "0px" })}
+  style={getScheduleCellStyle(index, "order", {
+  padding: "0px",
+
+  ...(
+    ["Free", "2 Free"].includes(
+      String(row.order || "").trim()
+    )
+      ? {
+          backgroundColor:
+            "#b7e4f2",
+        }
+      : {}
+  ),
+})}
   {...getScheduleCellHandlers(index, "order")}
 >
   <div
@@ -31417,67 +31996,74 @@ margin: "0 auto",
                             extraClient.id || extraIndex
                           }`}
                           style={getScheduleRowStyle(row, index)}
-                          onKeyDown={(event) => {
-                            if (event.key !== "Enter") return;
+                          onFocusCapture={(event) => {
+                            const currentTableCell =
+                              event.target.closest("td");
 
-                            const targetTag =
-                              event.target?.tagName || "";
+                            if (!currentTableCell) {
+                              return;
+                            }
+
+                            const currentCellIndex =
+                              Array.from(
+                                event.currentTarget.children
+                              ).indexOf(
+                                currentTableCell
+                              );
+
+                            const activeField =
+                              scheduleColumns[
+                                currentCellIndex - 1
+                              ]?.field;
+
+                            if (!activeField) {
+                              return;
+                            }
+
+                            scheduleLastEditRef.current =
+                              Date.now();
+
+                            setScheduleSelection(null);
+
+                            setScheduleActiveCell({
+                              row: `household-${index}-${extraIndex}`,
+                              field: activeField,
+                            });
+
+                            currentTableCell.style.outline =
+                              "1px solid rgba(75,46,31,0.45)";
+
+                            currentTableCell.style.outlineOffset =
+                              "-1px";
+                          }}
+                          onBlurCapture={(event) => {
+                            const currentTableCell =
+                              event.target.closest("td");
+
+                            const nextTableCell =
+                              event.relatedTarget?.closest?.(
+                                "td"
+                              );
 
                             if (
-                              !["INPUT", "SELECT", "TEXTAREA"].includes(
-                                targetTag
-                              )
+                              !currentTableCell ||
+                              currentTableCell ===
+                                nextTableCell
                             ) {
                               return;
                             }
 
-                            if (event.defaultPrevented) return;
+                            currentTableCell.style.outline =
+                              "";
 
-                            event.preventDefault();
-
-                            const currentTableRow =
-                              event.currentTarget;
-
-                            const currentTableCell =
-                              event.target.closest("td");
-
-                            const currentCellIndex =
-                              Array.from(
-                                currentTableRow.children
-                              ).indexOf(currentTableCell);
-
-                            if (currentCellIndex < 0) return;
-
-                            const nextTableRow =
-                              currentTableRow.nextElementSibling;
-
-                            const nextTableCell =
-                              nextTableRow?.children?.[
-                                currentCellIndex
-                              ];
-
-                            const nextControl =
-                              nextTableCell?.querySelector(
-                                'input:not([disabled]), select:not([disabled]), textarea:not([disabled])'
-                              );
-
-                            event.target.blur();
-
-                            setTimeout(() => {
-                              if (!nextControl) return;
-
-                              nextControl.focus();
-
-                              if (
-                                nextControl.tagName === "INPUT" &&
-                                nextControl.type !== "checkbox" &&
-                                typeof nextControl.select ===
-                                  "function"
-                              ) {
-                                nextControl.select();
-                              }
-                            }, 0);
+                            currentTableCell.style.outlineOffset =
+                              "";
                           }}
+                          onKeyDown={(event) =>
+                            handleScheduleCellKeyDown(
+                              event
+                            )
+                          }
                         >
                           <td
                             style={getScheduleRowNumberCellStyle(
@@ -31939,6 +32525,23 @@ margin: "0 auto",
                                     extraClients.length,
                                     {
                                       padding: "0px",
+
+                                      ...(
+                                        [
+                                          "Free",
+                                          "2 Free",
+                                        ].includes(
+                                          String(
+                                            extraClient.order ||
+                                              ""
+                                          ).trim()
+                                        )
+                                          ? {
+                                              backgroundColor:
+                                                "#b7e4f2",
+                                            }
+                                          : {}
+                                      ),
                                     }
                                   )}
                                 >
