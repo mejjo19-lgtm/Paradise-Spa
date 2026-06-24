@@ -59,6 +59,59 @@ const normalizePermissions = (
   ];
 };
 
+const createPermissionMetadata = ({
+  accountId = "",
+  authUserId = "",
+  username = "",
+  displayName = "",
+  role = "employee",
+  menuPermissions = [],
+  actionPermissions = [],
+  active = true,
+  isSuperAdmin = false,
+  permissionsVersion = 1,
+}) => ({
+  account_id:
+    String(accountId || ""),
+
+  auth_user_id:
+    String(authUserId || ""),
+
+  username:
+    String(username || ""),
+
+  display_name:
+    String(displayName || ""),
+
+  role:
+    allowedRoles.has(role)
+      ? role
+      : "employee",
+
+  menu_permissions:
+    normalizePermissions(
+      menuPermissions,
+      allowedMenuPermissions
+    ),
+
+  action_permissions:
+    normalizePermissions(
+      actionPermissions,
+      allowedActionPermissions
+    ),
+
+  active:
+    active !== false,
+
+  is_super_admin:
+    Boolean(isSuperAdmin),
+
+  permissions_version:
+    Number(
+      permissionsVersion || 1
+    ) || 1,
+});
+
 module.exports =
   async function handler(
     request,
@@ -215,7 +268,7 @@ module.exports =
           .status(403)
           .json({
             error:
-              "لا تملك صلاحية إنشاء الحسابات.",
+              "لا تملك صلاحية إدارة الحسابات.",
           });
       }
 
@@ -241,6 +294,14 @@ module.exports =
         }
       }
 
+      const action =
+        String(
+          requestBody.action ||
+            "create"
+        )
+          .trim()
+          .toLowerCase();
+
       const username =
         String(
           requestBody.username ||
@@ -254,12 +315,6 @@ module.exports =
           requestBody
             .displayName || ""
         ).trim();
-
-      const password =
-        String(
-          requestBody.password ||
-            ""
-        );
 
       const requestedRole =
         String(
@@ -313,6 +368,304 @@ module.exports =
               "اسم الموظف مطلوب.",
           });
       }
+
+      if (action === "update") {
+        const accountId =
+          String(
+            requestBody.accountId ||
+              ""
+          ).trim();
+
+        if (!accountId) {
+          return response
+            .status(400)
+            .json({
+              error:
+                "معرف الحساب المطلوب تعديله غير موجود.",
+            });
+        }
+
+        const {
+          data: existingAccount,
+          error:
+            existingAccountError,
+        } =
+          await adminSupabase
+            .from(
+              "employee_accounts"
+            )
+            .select("*")
+            .eq(
+              "id",
+              accountId
+            )
+            .maybeSingle();
+
+        if (existingAccountError) {
+          throw existingAccountError;
+        }
+
+        if (
+          !existingAccount ||
+          !existingAccount.auth_user_id
+        ) {
+          return response
+            .status(404)
+            .json({
+              error:
+                "تعذر العثور على الحساب المطلوب.",
+            });
+        }
+
+        if (
+          username !==
+          String(
+            existingAccount.username ||
+              ""
+          )
+            .trim()
+            .toLowerCase()
+        ) {
+          return response
+            .status(400)
+            .json({
+              error:
+                "لا يمكن تغيير معرف تسجيل الدخول.",
+            });
+        }
+
+        const nextPermissionsVersion =
+          Number(
+            existingAccount
+              .permissions_version || 1
+          ) + 1;
+
+        const updatedAt =
+          new Date().toISOString();
+
+        const {
+          data: updatedAccount,
+          error: updateAccountError,
+        } =
+          await adminSupabase
+            .from(
+              "employee_accounts"
+            )
+            .update({
+              display_name:
+                displayName,
+
+              role,
+
+              menu_permissions:
+                menuPermissions,
+
+              action_permissions:
+                actionPermissions,
+
+              active,
+
+              permissions_version:
+                nextPermissionsVersion,
+
+              updated_at:
+                updatedAt,
+            })
+            .eq(
+              "id",
+              accountId
+            )
+            .select(
+              [
+                "id",
+                "auth_user_id",
+                "username",
+                "display_name",
+                "role",
+                "menu_permissions",
+                "action_permissions",
+                "active",
+                "is_super_admin",
+                "permissions_version",
+              ].join(",")
+            )
+            .single();
+
+        if (updateAccountError) {
+          throw updateAccountError;
+        }
+
+        const authUserId =
+          String(
+            existingAccount
+              .auth_user_id
+          );
+
+        const {
+          data: currentAuthData,
+          error: currentAuthError,
+        } =
+          await adminSupabase
+            .auth.admin
+            .getUserById(
+              authUserId
+            );
+
+        if (currentAuthError) {
+          throw currentAuthError;
+        }
+
+        const currentAuthUser =
+          currentAuthData?.user;
+
+        const permissionMetadata =
+          createPermissionMetadata({
+            accountId:
+              updatedAccount.id,
+
+            authUserId,
+
+            username:
+              updatedAccount.username,
+
+            displayName:
+              updatedAccount.display_name,
+
+            role:
+              updatedAccount.role,
+
+            menuPermissions:
+              updatedAccount.menu_permissions,
+
+            actionPermissions:
+              updatedAccount.action_permissions,
+
+            active:
+              updatedAccount.active,
+
+            isSuperAdmin:
+              updatedAccount.is_super_admin,
+
+            permissionsVersion:
+              updatedAccount.permissions_version,
+          });
+
+        const {
+          error: updateAuthError,
+        } =
+          await adminSupabase
+            .auth.admin
+            .updateUserById(
+              authUserId,
+              {
+                user_metadata: {
+                  ...(
+                    currentAuthUser
+                      ?.user_metadata || {}
+                  ),
+
+                  username,
+
+                  display_name:
+                    displayName,
+                },
+
+                app_metadata: {
+                  ...(
+                    currentAuthUser
+                      ?.app_metadata || {}
+                  ),
+
+                  paradise_permissions:
+                    permissionMetadata,
+                },
+              }
+            );
+
+        if (updateAuthError) {
+          const {
+            error: rollbackError,
+          } =
+            await adminSupabase
+              .from(
+                "employee_accounts"
+              )
+              .update({
+                display_name:
+                  existingAccount
+                    .display_name,
+
+                role:
+                  existingAccount.role,
+
+                menu_permissions:
+                  existingAccount
+                    .menu_permissions,
+
+                action_permissions:
+                  existingAccount
+                    .action_permissions,
+
+                active:
+                  existingAccount.active,
+
+                permissions_version:
+                  existingAccount
+                    .permissions_version,
+
+                updated_at:
+                  existingAccount
+                    .updated_at,
+              })
+              .eq(
+                "id",
+                accountId
+              );
+
+          if (rollbackError) {
+            console.error(
+              "Employee account rollback error:",
+              rollbackError
+            );
+          }
+
+          console.error(
+            "Supabase Auth metadata update error:",
+            updateAuthError
+          );
+
+          return response
+            .status(500)
+            .json({
+              error:
+                "تعذر تحديث صلاحيات تسجيل الدخول، وتمت إعادة بيانات الحساب السابقة.",
+            });
+        }
+
+        return response
+          .status(200)
+          .json({
+            success: true,
+
+            account:
+              updatedAccount,
+          });
+      }
+
+      if (action !== "create") {
+        return response
+          .status(400)
+          .json({
+            error:
+              "نوع العملية غير مدعوم.",
+          });
+      }
+
+      const password =
+        String(
+          requestBody.password ||
+            ""
+        );
 
       if (
         password.length < 8
@@ -379,6 +732,7 @@ module.exports =
 
               user_metadata: {
                 username,
+
                 display_name:
                   displayName,
               },
@@ -517,6 +871,97 @@ module.exports =
           });
       }
 
+      const finalPermissionMetadata =
+        createPermissionMetadata({
+          accountId:
+            createdEmployeeAccount.id,
+
+          authUserId:
+            createdAuthUser.id,
+
+          username:
+            createdEmployeeAccount.username,
+
+          displayName:
+            createdEmployeeAccount.display_name,
+
+          role:
+            createdEmployeeAccount.role,
+
+          menuPermissions:
+            createdEmployeeAccount.menu_permissions,
+
+          actionPermissions:
+            createdEmployeeAccount.action_permissions,
+
+          active:
+            createdEmployeeAccount.active,
+
+          isSuperAdmin:
+            createdEmployeeAccount.is_super_admin,
+
+          permissionsVersion:
+            createdEmployeeAccount.permissions_version,
+        });
+
+      const {
+        error: finalizeAuthError,
+      } =
+        await adminSupabase
+          .auth.admin
+          .updateUserById(
+            createdAuthUser.id,
+            {
+              app_metadata: {
+                ...(
+                  createdAuthUser
+                    .app_metadata || {}
+                ),
+
+                paradise_permissions:
+                  finalPermissionMetadata,
+              },
+            }
+          );
+
+      if (finalizeAuthError) {
+        console.error(
+          "Supabase Auth metadata finalization error:",
+          finalizeAuthError
+        );
+
+        try {
+          await adminSupabase
+            .from(
+              "employee_accounts"
+            )
+            .delete()
+            .eq(
+              "id",
+              createdEmployeeAccount.id
+            );
+
+          await adminSupabase
+            .auth.admin.deleteUser(
+              createdAuthUser.id
+            );
+        } catch (
+          rollbackError
+        ) {
+          console.error(
+            "New account rollback error:",
+            rollbackError
+          );
+        }
+
+        return response
+          .status(500)
+          .json({
+            error:
+              "تعذر تجهيز صلاحيات الدخول الفورية، وتم إلغاء الحساب الجديد.",
+          });
+      }
+
       return response
         .status(201)
         .json({
@@ -535,8 +980,7 @@ module.exports =
         .status(500)
         .json({
           error:
-            "حدث خطأ داخلي أثناء إنشاء الحساب.",
+            "حدث خطأ داخلي أثناء إدارة الحساب.",
         });
     }
   };
-  

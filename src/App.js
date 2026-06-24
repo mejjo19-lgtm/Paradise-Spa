@@ -1392,54 +1392,165 @@ const [savedWelcomeBoards, setSavedWelcomeBoards] = useState([]);
 useEffect(() => {
   let isMounted = true;
 
-  const syncAuthSession = async () => {
-    const { data } = await supabase.auth.getSession();
-    const authUser = data?.session?.user;
-    const email = authUser?.email;
+  /*
+    نقرأ صلاحيات الموظف المحفوظة
+    داخل جلسة Supabase Auth فورًا.
 
-    if (!isMounted) return;
+    هذا يعمل لأي موظف حالي أو جديد
+    بدون الاعتماد على اسمه.
+  */
+  const applyAuthenticatedUser = (
+    authUser
+  ) => {
+    const email =
+      authUser?.email;
 
     if (email && authUser?.id) {
+      const authUserId =
+        String(authUser.id);
+
+      const permissionData =
+        authUser.app_metadata
+          ?.paradise_permissions;
+
       setIsLoggedIn(true);
+
       setLoggedInUser(
-        getDisplayNameFromEmail(email) ||
+        authUser.user_metadata
+          ?.display_name ||
+          permissionData
+            ?.display_name ||
+          getDisplayNameFromEmail(
+            email
+          ) ||
+          String(email).split("@")[0] ||
           "مستخدم"
       );
+
       setLoggedInAuthUserId(
-        String(authUser.id)
+        authUserId
       );
-    } else {
-      setIsLoggedIn(false);
-      setLoggedInUser("");
-      setLoggedInAuthUserId("");
+
+      /*
+        نضع حساب الموظف مباشرة داخل
+        employeeAccounts حتى تظهر
+        قائمته كاملة قبل وصول الجدول.
+      */
+      if (
+        permissionData &&
+        typeof permissionData ===
+          "object"
+      ) {
+        const metadataAccount =
+          normalizeEmployeeAccount({
+            id:
+              permissionData
+                .account_id ||
+              `auth-${authUserId}`,
+
+            auth_user_id:
+              authUserId,
+
+            username:
+              permissionData.username ||
+              String(email).split("@")[0],
+
+            display_name:
+              permissionData
+                .display_name ||
+              authUser.user_metadata
+                ?.display_name ||
+              getDisplayNameFromEmail(
+                email
+              ) ||
+              "مستخدم",
+
+            role:
+              permissionData.role ||
+              "employee",
+
+            menu_permissions:
+              permissionData
+                .menu_permissions ||
+              [],
+
+            action_permissions:
+              permissionData
+                .action_permissions ||
+              [],
+
+            active:
+              permissionData.active !==
+              false,
+
+            is_super_admin:
+              Boolean(
+                permissionData
+                  .is_super_admin
+              ),
+
+            permissions_version:
+              Number(
+                permissionData
+                  .permissions_version ||
+                  1
+              ),
+          });
+
+        setEmployeeAccounts(
+          (previousAccounts) => [
+            metadataAccount,
+
+            ...previousAccounts.filter(
+              (account) =>
+                String(
+                  account.authUserId ||
+                    ""
+                ) !== authUserId
+            ),
+          ]
+        );
+      }
+
+      return;
     }
 
-    setAuthReady(true);
+    setIsLoggedIn(false);
+    setLoggedInUser("");
+    setLoggedInAuthUserId("");
   };
+
+  const syncAuthSession =
+    async () => {
+      const {
+        data,
+      } =
+        await supabase.auth
+          .getSession();
+
+      if (!isMounted) {
+        return;
+      }
+
+      applyAuthenticatedUser(
+        data?.session?.user
+      );
+
+      setAuthReady(true);
+    };
 
   syncAuthSession();
 
-  const { data: authListener } =
+  const {
+    data: authListener,
+  } =
     supabase.auth.onAuthStateChange(
       (_event, session) => {
-        const authUser = session?.user;
-        const email = authUser?.email;
+        applyAuthenticatedUser(
+          session?.user
+        );
 
-        if (email && authUser?.id) {
-          setIsLoggedIn(true);
-          setLoggedInUser(
-            getDisplayNameFromEmail(email) ||
-              "مستخدم"
-          );
-          setLoggedInAuthUserId(
-            String(authUser.id)
-          );
-
-          // التحميل يتم من useEffect مرة واحدة بعد تسجيل الدخول لتجنب سحب البيانات مرتين.
-        } else {
-          setIsLoggedIn(false);
-          setLoggedInUser("");
-          setLoggedInAuthUserId("");
+        if (!session?.user) {
           setClientsSafely([]);
         }
 
@@ -1449,7 +1560,10 @@ useEffect(() => {
 
   return () => {
     isMounted = false;
-    authListener?.subscription?.unsubscribe();
+
+    authListener
+      ?.subscription
+      ?.unsubscribe();
   };
 }, []);
 
@@ -2517,6 +2631,206 @@ function fetchSharedClientLists() {
     settingsActiveTab,
     setSettingsActiveTab,
   ] = useState("accounts");
+
+  /*
+    حماية صفحة الإعدادات برقم سري
+    محفوظ ومشفّر داخل Supabase.
+
+    الرقم الحقيقي لا يوجد داخل
+    App.js ولا يُحفظ في المتصفح.
+  */
+  const [
+    settingsPagePin,
+    setSettingsPagePin,
+  ] = useState("");
+
+  const [
+    settingsPageUnlocked,
+    setSettingsPageUnlocked,
+  ] = useState(false);
+
+  const [
+    settingsPagePinError,
+    setSettingsPagePinError,
+  ] = useState("");
+
+  const [
+    settingsPagePinChecking,
+    setSettingsPagePinChecking,
+  ] = useState(false);
+
+  const verifySettingsPagePin =
+    async (event) => {
+      event?.preventDefault?.();
+
+      if (
+        settingsPagePinChecking
+      ) {
+        return;
+      }
+
+      const normalizedPin =
+        String(
+          settingsPagePin || ""
+        ).replace(
+          /\D/g,
+          ""
+        );
+
+      if (
+        !/^\d{6}$/.test(
+          normalizedPin
+        )
+      ) {
+        setSettingsPagePinError(
+          "الرقم السري يجب أن يتكون من 6 أرقام."
+        );
+
+        return;
+      }
+
+      setSettingsPagePinChecking(
+        true
+      );
+
+      setSettingsPagePinError(
+        ""
+      );
+
+      try {
+        const {
+          data,
+          error,
+        } = await supabase.rpc(
+          "paradise_verify_settings_pin",
+          {
+            p_pin:
+              normalizedPin,
+          }
+        );
+
+        if (error) {
+          throw error;
+        }
+
+        const verificationResult =
+          Array.isArray(data)
+            ? data[0]
+            : data;
+
+        if (
+          !verificationResult
+            ?.success
+        ) {
+          const attemptsRemaining =
+            Number(
+              verificationResult
+                ?.attempts_remaining
+            );
+
+          const attemptsMessage =
+            Number.isFinite(
+              attemptsRemaining
+            ) &&
+            attemptsRemaining > 0
+              ? ` المحاولات المتبقية: ${attemptsRemaining}.`
+              : "";
+
+          setSettingsPagePinError(
+            `${
+              verificationResult
+                ?.message ||
+              "الرقم السري غير صحيح."
+            }${attemptsMessage}`
+          );
+
+          return;
+        }
+
+        setSettingsPageUnlocked(
+          true
+        );
+
+        setSettingsPagePin(
+          ""
+        );
+
+        setSettingsPagePinError(
+          ""
+        );
+      } catch (error) {
+        console.error(
+          "Settings PIN verification error:",
+          error
+        );
+
+        setSettingsPagePinError(
+          "تعذر التحقق من الرقم السري. تأكد من الاتصال وجرب مرة أخرى."
+        );
+      } finally {
+        setSettingsPagePinChecking(
+          false
+        );
+      }
+    };
+
+  /*
+    عند مغادرة صفحة الإعدادات
+    يتم قفلها تلقائيًا.
+
+    بعد تحديث الصفحة تكون مقفلة
+    أيضًا لأن حالة الفتح غير محفوظة.
+  */
+  useEffect(() => {
+    if (
+      screen === "settings"
+    ) {
+      return;
+    }
+
+    setSettingsPageUnlocked(
+      false
+    );
+
+    setSettingsPagePin(
+      ""
+    );
+
+    setSettingsPagePinError(
+      ""
+    );
+
+    setSettingsPagePinChecking(
+      false
+    );
+  }, [
+    screen,
+  ]);
+
+  /*
+    عند تسجيل الخروج أو تبديل الحساب
+    يتم إلغاء فتح الإعدادات فورًا.
+  */
+  useEffect(() => {
+    setSettingsPageUnlocked(
+      false
+    );
+
+    setSettingsPagePin(
+      ""
+    );
+
+    setSettingsPagePinError(
+      ""
+    );
+
+    setSettingsPagePinChecking(
+      false
+    );
+  }, [
+    isLoggedIn,
+    loggedInAuthUserId,
+  ]);
 
   const [
     employeeAccounts,
@@ -23044,73 +23358,113 @@ const welcomeBoardNameStyle = {
           accountDraft.password
         ) {
           alert(
-            "تغيير كلمة مرور حساب موجود سيتم ربطه بالخادم في الخطوة التالية. اترك خانة كلمة المرور فارغة لتعديل الصلاحيات فقط."
+            "اترك خانة كلمة المرور فارغة عند تعديل الصلاحيات."
           );
 
           return;
         }
 
-        const {
-          error:
-            updateAccountError,
-        } =
-          await supabase
-            .from(
-              "employee_accounts"
-            )
-            .update({
-              display_name:
-                normalizedDisplayName,
+        try {
+          const {
+            data: sessionData,
+            error: sessionError,
+          } =
+            await supabase.auth
+              .getSession();
 
-              role,
+          const accessToken =
+            sessionData?.session
+              ?.access_token;
 
-              menu_permissions:
-                menuPermissions,
-
-              action_permissions:
-                actionPermissions,
-
-              active:
-                accountDraft.active !==
-                false,
-
-              permissions_version:
-                Number(
-                  existingAccount
-                    .permissionsVersion ||
-                    1
-                ) + 1,
-
-              updated_at:
-                new Date()
-                  .toISOString(),
-            })
-            .eq(
-              "id",
-              editingAccountId
+          if (
+            sessionError ||
+            !accessToken
+          ) {
+            alert(
+              "انتهت جلسة الدخول. سجل الدخول مرة أخرى."
             );
 
-        if (
-          updateAccountError
-        ) {
+            return;
+          }
+
+          const accountResponse =
+            await fetch(
+              "/api/admin-users",
+              {
+                method: "POST",
+
+                headers: {
+                  "Content-Type":
+                    "application/json",
+
+                  Authorization:
+                    `Bearer ${accessToken}`,
+                },
+
+                body:
+                  JSON.stringify({
+                    action:
+                      "update",
+
+                    accountId:
+                      String(
+                        editingAccountId
+                      ),
+
+                    username:
+                      normalizedUsername,
+
+                    displayName:
+                      normalizedDisplayName,
+
+                    role,
+
+                    menuPermissions,
+
+                    actionPermissions,
+
+                    active:
+                      accountDraft.active !==
+                      false,
+                  }),
+              }
+            );
+
+          let responseData = {};
+
+          try {
+            responseData =
+              await accountResponse.json();
+          } catch {
+            responseData = {};
+          }
+
+          if (
+            !accountResponse.ok
+          ) {
+            throw new Error(
+              responseData.error ||
+                "تعذر تعديل الحساب."
+            );
+          }
+
+          resetAccountDraft();
+          loadSettingsModuleData();
+
+          alert(
+            "تم تحديث بيانات الحساب والصلاحيات."
+          );
+        } catch (error) {
           console.log(
-            "Employee account update error:",
-            updateAccountError
+            "Secure employee account update error:",
+            error
           );
 
           alert(
-            "لم يتم تعديل الحساب."
+            error?.message ||
+              "تعذر تعديل الحساب."
           );
-
-          return;
         }
-
-        resetAccountDraft();
-        loadSettingsModuleData();
-
-        alert(
-          "تم تحديث بيانات الحساب والصلاحيات."
-        );
 
         return;
       }
@@ -28659,6 +29013,141 @@ const welcomeBoardNameStyle = {
               الدخول إلى هذه الصفحة متاح فقط لحساب الإدارة العليا المرتبط بهوية Supabase.
             </p>
           </div>
+        ) : !settingsPageUnlocked ? (
+          <form
+            onSubmit={
+              verifySettingsPagePin
+            }
+            className="paradise-settings-lock-card"
+            style={{
+              ...settingsRowStyle,
+              maxWidth: "430px",
+              margin:
+                "38px auto 10px",
+              padding: "28px",
+              textAlign: "center",
+              display: "grid",
+              gap: "16px",
+            }}
+          >
+            <h3
+              style={{
+                ...settingsSectionTitleStyle,
+                margin: 0,
+              }}
+            >
+              الرقم السري
+            </h3>
+
+            <p
+              style={{
+                ...settingsHelpTextStyle,
+                margin: 0,
+              }}
+            >
+              أدخل الرقم السري لفتح الإعدادات.
+            </p>
+
+            <input
+              type="password"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={6}
+              autoComplete="off"
+              autoFocus
+              value={
+                settingsPagePin
+              }
+              onChange={(event) => {
+                const nextPin =
+                  String(
+                    event.target
+                      .value || ""
+                  )
+                    .replace(
+                      /\D/g,
+                      ""
+                    )
+                    .slice(
+                      0,
+                      6
+                    );
+
+                setSettingsPagePin(
+                  nextPin
+                );
+
+                setSettingsPagePinError(
+                  ""
+                );
+              }}
+              placeholder="••••••"
+              disabled={
+                settingsPagePinChecking
+              }
+              style={{
+                width: "100%",
+                height: "54px",
+                boxSizing:
+                  "border-box",
+                border:
+                  "1px solid rgba(177, 145, 118, 0.55)",
+                borderRadius: "16px",
+                background:
+                  "rgba(255, 255, 255, 0.9)",
+                padding: "0 16px",
+                textAlign: "center",
+                fontSize: "24px",
+                fontWeight: 900,
+                letterSpacing: "7px",
+                color: "#4b2e1f",
+                outline: "none",
+                opacity:
+                  settingsPagePinChecking
+                    ? 0.7
+                    : 1,
+              }}
+            />
+
+            {settingsPagePinError ? (
+              <div
+                style={{
+                  color: "#b3261e",
+                  fontSize: "13px",
+                  fontWeight: 900,
+                  lineHeight: 1.7,
+                }}
+              >
+                {
+                  settingsPagePinError
+                }
+              </div>
+            ) : null}
+
+            <button
+              type="submit"
+              disabled={
+                settingsPagePinChecking
+              }
+              style={{
+                ...settingsPrimaryButtonStyle,
+                width: "100%",
+                minHeight: "50px",
+                opacity:
+                  settingsPagePinChecking
+                    ? 0.65
+                    : 1,
+                cursor:
+                  settingsPagePinChecking
+                    ? "wait"
+                    : "pointer",
+              }}
+            >
+              {settingsPagePinChecking
+                ? "جاري التحقق..."
+                : "فتح الإعدادات"}
+            </button>
+          </form>
         ) : (
           <>
             <div
