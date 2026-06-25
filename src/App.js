@@ -48959,31 +48959,23 @@ if (screen === "potentialClients") {
                               display: "flex",
                               alignItems: "center",
                               justifyContent: "center",
-                              color: "#5b4031",
-                              fontWeight: "900",
-                              fontSize: "11px",
+                              color: "#3f2a20",
+                              fontWeight: "950",
+                              fontSize: "13px",
+                              fontFamily:
+                                "Arial, sans-serif",
+                              letterSpacing: "0.2px",
                               whiteSpace: "nowrap",
+                              direction: "ltr",
                             }}
                           >
-                            {
-                              {
-                                cash: "نقدي",
-                                bank_transfer:
-                                  "تحويل بنكي",
-                                mada: "مدى",
-                                credit_card:
-                                  "بطاقة ائتمانية",
-                                tabby: "تابي",
-                                tamara: "تمارا",
-                                unknown:
-                                  "غير معروف",
-                                other: "أخرى",
-                              }[
-                                service.paymentMethod
-                              ] ||
-                              service.paymentMethod ||
-                              "-"
-                            }
+                            {service.paymentMethod ===
+                            "bank_transfer"
+                              ? "Bank Transfer"
+                              : service.paymentMethod ===
+                                "cash"
+                              ? "Cash"
+                              : "-"}
                           </div>
                         </div>
                       )
