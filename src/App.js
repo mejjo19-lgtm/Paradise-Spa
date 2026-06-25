@@ -185,10 +185,10 @@ const [
   setManualClientServiceDraft,
 ] = useState({
   serviceDate: "",
-  serviceTime: "",
   therapistName: "",
   serviceName: "",
   totalPrice: "",
+  paymentMethod: "",
 });
 
 const [
@@ -219,10 +219,10 @@ const resetManualClientServiceDraft =
 
     setManualClientServiceDraft({
       serviceDate: "",
-      serviceTime: "",
       therapistName: "",
       serviceName: "",
       totalPrice: "",
+      paymentMethod: "",
     });
 
     setManualClientServiceSaveError(
@@ -266,11 +266,6 @@ const startEditingManualClientService =
           service.date || ""
         ).slice(0, 10),
 
-      serviceTime:
-        String(
-          service.serviceTime || ""
-        ),
-
       therapistName:
         service.therapist === "-"
           ? ""
@@ -290,6 +285,11 @@ const startEditingManualClientService =
           Number(
             service.totalPrice || 0
           )
+        ),
+
+      paymentMethod:
+        String(
+          service.paymentMethod || ""
         ),
     });
 
@@ -610,12 +610,6 @@ const saveManualClientServiceHistory =
         serviceDateText
       );
 
-    const serviceTime =
-      String(
-        manualClientServiceDraft
-          .serviceTime || ""
-      ).trim();
-
     const therapistName =
       String(
         manualClientServiceDraft
@@ -632,6 +626,12 @@ const saveManualClientServiceHistory =
       String(
         manualClientServiceDraft
           .totalPrice || ""
+      ).trim();
+
+    const paymentMethod =
+      String(
+        manualClientServiceDraft
+          .paymentMethod || ""
       ).trim();
 
     const totalPrice =
@@ -689,6 +689,14 @@ const saveManualClientServiceHistory =
       return;
     }
 
+    if (!paymentMethod) {
+      setManualClientServiceSaveError(
+        "اختاري طريقة الدفع."
+      );
+
+      return;
+    }
+
     setManualClientServiceSaving(
       true
     );
@@ -699,8 +707,8 @@ const saveManualClientServiceHistory =
 
     const rpcName =
       isEditingService
-        ? "paradise_update_manual_client_service"
-        : "add_manual_legacy_client_service";
+        ? "paradise_update_manual_client_service_v2"
+        : "add_manual_legacy_client_service_v2";
 
     const rpcParameters =
       isEditingService
@@ -724,9 +732,6 @@ const saveManualClientServiceHistory =
             p_service_date:
               serviceDate,
 
-            p_service_time:
-              serviceTime,
-
             p_therapist_name:
               therapistName,
 
@@ -735,6 +740,9 @@ const saveManualClientServiceHistory =
 
             p_total_price:
               totalPrice,
+
+            p_payment_method:
+              paymentMethod,
           }
         : {
             p_client_id:
@@ -746,9 +754,6 @@ const saveManualClientServiceHistory =
             p_service_date:
               serviceDate,
 
-            p_service_time:
-              serviceTime,
-
             p_therapist_name:
               therapistName,
 
@@ -757,6 +762,9 @@ const saveManualClientServiceHistory =
 
             p_total_price:
               totalPrice,
+
+            p_payment_method:
+              paymentMethod,
           };
 
     const {
@@ -778,9 +786,12 @@ const saveManualClientServiceHistory =
       );
 
       setManualClientServiceSaveError(
-        isEditingService
-          ? "تعذر تعديل الخدمة. تأكد من الاتصال."
-          : "تعذر حفظ الخدمة. تأكد من البيانات والاتصال."
+        error.message ||
+        (
+          isEditingService
+            ? "تعذر تعديل الخدمة. تأكد من الاتصال."
+            : "تعذر حفظ الخدمة. تأكد من البيانات والاتصال."
+        )
       );
 
       return;
@@ -869,6 +880,9 @@ useEffect(() => {
         Number(
           service.total_price || 0
         ),
+
+      paymentMethod:
+        service.payment_method || "",
 
       serviceAmount:
         Number(
@@ -1043,6 +1057,7 @@ useEffect(() => {
             "therapist_name",
             "service_name",
             "total_price",
+            "payment_method",
             "service_status",
             "source",
             "source_key",
@@ -48175,49 +48190,6 @@ if (screen === "potentialClients") {
                     />
                   </label>
 
-                  <label
-                    style={{
-                      display: "grid",
-                      gap: "6px",
-                      color: "#684a39",
-                      fontSize: "10px",
-                      fontWeight: "900",
-                    }}
-                  >
-                    وقت الخدمة
-
-                    <input
-                      type="time"
-                      value={
-                        manualClientServiceDraft
-                          .serviceTime
-                      }
-                      onChange={(event) =>
-                        setManualClientServiceDraft(
-                          (previousDraft) => ({
-                            ...previousDraft,
-
-                            serviceTime:
-                              event.target.value,
-                          })
-                        )
-                      }
-                      style={{
-                        width: "100%",
-                        minHeight: "39px",
-                        padding: "8px 10px",
-                        boxSizing: "border-box",
-                        border:
-                          "1px solid rgba(157,117,87,0.34)",
-                        borderRadius: "11px",
-                        background: "#fffdf9",
-                        color: "#432f24",
-                        fontSize: "12px",
-                        fontWeight: "800",
-                        outline: "none",
-                      }}
-                    />
-                  </label>
 
                   <label
                     style={{
@@ -48369,6 +48341,86 @@ if (screen === "potentialClients") {
                       }}
                     />
                   </label>
+
+                  <label
+                    style={{
+                      display: "grid",
+                      gap: "6px",
+                      color: "#684a39",
+                      fontSize: "10px",
+                      fontWeight: "900",
+                    }}
+                  >
+                    طريقة الدفع *
+
+                    <select
+                      value={
+                        manualClientServiceDraft
+                          .paymentMethod
+                      }
+                      onChange={(event) =>
+                        setManualClientServiceDraft(
+                          (previousDraft) => ({
+                            ...previousDraft,
+
+                            paymentMethod:
+                              event.target.value,
+                          })
+                        )
+                      }
+                      style={{
+                        width: "100%",
+                        minHeight: "39px",
+                        padding: "8px 10px",
+                        boxSizing: "border-box",
+                        border:
+                          "1px solid rgba(157,117,87,0.34)",
+                        borderRadius: "11px",
+                        background: "#fffdf9",
+                        color: "#432f24",
+                        fontSize: "12px",
+                        fontWeight: "800",
+                        outline: "none",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <option value="">
+                        اختاري طريقة الدفع
+                      </option>
+
+                      <option value="cash">
+                        نقدي
+                      </option>
+
+                      <option value="bank_transfer">
+                        تحويل بنكي
+                      </option>
+
+                      <option value="mada">
+                        مدى
+                      </option>
+
+                      <option value="credit_card">
+                        بطاقة ائتمانية
+                      </option>
+
+                      <option value="tabby">
+                        تابي
+                      </option>
+
+                      <option value="tamara">
+                        تمارا
+                      </option>
+
+                      <option value="unknown">
+                        غير معروف
+                      </option>
+
+                      <option value="other">
+                        أخرى
+                      </option>
+                    </select>
+                  </label>
                 </div>
 
                 <div
@@ -48382,7 +48434,8 @@ if (screen === "potentialClients") {
                 >
                   هذه الخدمة تُضاف إلى سجل العميلة
                   فقط، ولا تؤثر على المواعيد أو
-                  الولاء أو التقارير أو الفواتير.
+                  الولاء أو التقارير. وتُستخدم
+                  لاحقًا لإصدار الفواتير التاريخية.
                 </div>
 
                 {manualClientServiceSaveError && (
@@ -48573,7 +48626,7 @@ if (screen === "potentialClients") {
                 <div
                   className="paradise-client-history-content"
                   style={{
-                    minWidth: "680px",
+                    minWidth: "820px",
                   }}
                 >
                   <div
@@ -48581,7 +48634,7 @@ if (screen === "potentialClients") {
                     style={{
                       display: "grid",
                       gridTemplateColumns:
-                        "0.9fr 0.9fr 1fr 1.8fr 0.9fr",
+                        "0.9fr 0.9fr 1fr 1.8fr 0.9fr 1.1fr",
                       alignItems: "center",
                       background:
                         "linear-gradient(135deg, #4a3226, #76513b)",
@@ -48599,13 +48652,14 @@ if (screen === "potentialClients") {
                       "Therapist",
                       "Services",
                       "Price",
+                      "Payment Method",
                     ].map((header) => (
                       <div
                         key={header}
                         style={{
                           padding: "12px 10px",
                           borderRight:
-                            header !== "Price"
+                            header !== "Payment Method"
                               ? "1px solid rgba(255,255,255,0.12)"
                               : "none",
                         }}
@@ -48618,8 +48672,8 @@ if (screen === "potentialClients") {
                   <div
                     className="paradise-client-history-body"
                     style={{
-                      maxHeight: "300px",
-                      overflowY: "auto",
+                      maxHeight: "none",
+                      overflowY: "visible",
                     }}
                   >
                     {selectedClientServiceSummary.serviceHistory.map(
@@ -48630,7 +48684,7 @@ if (screen === "potentialClients") {
                           style={{
                             display: "grid",
                             gridTemplateColumns:
-                              "0.9fr 0.9fr 1fr 1.8fr 0.9fr",
+                              "0.9fr 0.9fr 1fr 1.8fr 0.9fr 1.1fr",
                             alignItems: "stretch",
                             background:
                               index % 2 === 0
@@ -48884,6 +48938,8 @@ if (screen === "potentialClients") {
                               fontWeight: "900",
                               fontSize: "12px",
                               whiteSpace: "nowrap",
+                              borderRight:
+                                "1px solid rgba(190,157,130,0.24)",
                             }}
                           >
                             {Number(
@@ -48895,6 +48951,39 @@ if (screen === "potentialClients") {
                               }
                             )}{" "}
                             SAR
+                          </div>
+
+                          <div
+                            style={{
+                              padding: "13px 10px",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              color: "#5b4031",
+                              fontWeight: "900",
+                              fontSize: "11px",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {
+                              {
+                                cash: "نقدي",
+                                bank_transfer:
+                                  "تحويل بنكي",
+                                mada: "مدى",
+                                credit_card:
+                                  "بطاقة ائتمانية",
+                                tabby: "تابي",
+                                tamara: "تمارا",
+                                unknown:
+                                  "غير معروف",
+                                other: "أخرى",
+                              }[
+                                service.paymentMethod
+                              ] ||
+                              service.paymentMethod ||
+                              "-"
+                            }
                           </div>
                         </div>
                       )
