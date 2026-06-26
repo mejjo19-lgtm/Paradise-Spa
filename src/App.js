@@ -894,6 +894,13 @@ useEffect(() => {
       status:
         service.service_status || "",
 
+      order:
+        String(
+          service.service_status || ""
+        ).trim() === "Gift Giver"
+          ? "Gift"
+          : "",
+
       source:
         serviceSource,
 
@@ -9844,31 +9851,45 @@ const getScheduleClientBadges = (
               )
             : [];
 
-        const matchedClient =
-          previouslyLinkedClient ||
-          (
+        /*
+          إذا كان الصف مرتبطًا مسبقًا
+          بـ clientId صحيح، نحافظ عليه.
+
+          أما إذا كان الرقم مرتبطًا بأكثر
+          من بروفايل، فلا نختار بالاسم
+          تلقائيًا، بل نظهر نافذة الاختيار.
+        */
+        let matchedClient =
+          previouslyLinkedClient;
+
+        if (
+          !matchedClient &&
+          matchedClients.length === 1
+        ) {
+          if (
             exactIdentityMatches.length ===
-              1
-              ? exactIdentityMatches[0]
-              : (
-                  !requestedName &&
-                  matchedClients.length ===
-                    1
-                )
-                ? matchedClients[0]
-                : null
-          );
+            1
+          ) {
+            matchedClient =
+              exactIdentityMatches[0];
+          } else if (!requestedName) {
+            matchedClient =
+              matchedClients[0];
+          }
+        }
 
         selectableMatches =
           matchedClients;
 
         /*
-          نظهر قائمة الاختيار حتى لو كان
-          الرقم موجودًا لدى عميلة واحدة فقط،
-          عندما يكون الاسم المكتوب مختلفًا.
+          تظهر نافذة الاختيار في حالتين:
 
-          بهذا لا يتم ربط أخت جديدة بصاحبة
-          الرقم الحالية تلقائيًا.
+          1) الرقم مرتبط بأكثر من بروفايل،
+             ويجب اختيار المستلمة الصحيحة.
+
+          2) الرقم مرتبط ببروفايل واحد لكن
+             الاسم المكتوب مختلف، لمنع ربط
+             عميلة جديدة ببروفايل غير صحيح.
         */
         shouldOpenClientModal =
           matchedClients.length > 0 &&
@@ -48204,7 +48225,9 @@ if (screen === "potentialClients") {
 
                     <input
                       type="text"
-                      placeholder="اسم الأخصائية"
+                      list="manualClientTherapistList"
+                      autoComplete="off"
+                      placeholder="اختاري الأخصائية"
                       value={
                         manualClientServiceDraft
                           .therapistName
@@ -48234,6 +48257,25 @@ if (screen === "potentialClients") {
                         outline: "none",
                       }}
                     />
+
+                    <datalist id="manualClientTherapistList">
+                      {therapistOptions
+                        .filter(Boolean)
+                        .map(
+                          (
+                            therapistOption
+                          ) => (
+                            <option
+                              key={
+                                therapistOption
+                              }
+                              value={
+                                therapistOption
+                              }
+                            />
+                          )
+                        )}
+                    </datalist>
                   </label>
 
                   <label
@@ -48389,35 +48431,11 @@ if (screen === "potentialClients") {
                       </option>
 
                       <option value="cash">
-                        نقدي
+                        Cash
                       </option>
 
                       <option value="bank_transfer">
-                        تحويل بنكي
-                      </option>
-
-                      <option value="mada">
-                        مدى
-                      </option>
-
-                      <option value="credit_card">
-                        بطاقة ائتمانية
-                      </option>
-
-                      <option value="tabby">
-                        تابي
-                      </option>
-
-                      <option value="tamara">
-                        تمارا
-                      </option>
-
-                      <option value="unknown">
-                        غير معروف
-                      </option>
-
-                      <option value="other">
-                        أخرى
+                        Bank Transfer
                       </option>
                     </select>
                   </label>
@@ -48729,10 +48747,11 @@ if (screen === "potentialClients") {
                                 "1px solid rgba(190,157,130,0.24)",
                             }}
                           >
-                            {formatServiceOrderNumber(
-                              service.serviceNumber,
-                              index
-                            )}
+                            {service.order ||
+                              formatServiceOrderNumber(
+                                service.serviceNumber,
+                                index
+                              )}
                           </div>
 
                           <div
@@ -48969,13 +48988,43 @@ if (screen === "potentialClients") {
                               direction: "ltr",
                             }}
                           >
-                            {service.paymentMethod ===
-                            "bank_transfer"
-                              ? "Bank Transfer"
-                              : service.paymentMethod ===
-                                "cash"
-                              ? "Cash"
-                              : "-"}
+                            {(() => {
+                              const paymentMethod =
+                                String(
+                                  service.paymentMethod ||
+                                    ""
+                                ).trim();
+
+                              const paymentMethodLabels = {
+                                cash: "Cash",
+                                Cash: "Cash",
+
+                                bank_transfer:
+                                  "Bank Transfer",
+                                "Bank Transfer":
+                                  "Bank Transfer",
+
+                                debit: "Debit",
+                                Debit: "Debit",
+
+                                credit: "Credit",
+                                Credit: "Credit",
+
+                                tabby: "Tabby",
+                                Tabby: "Tabby",
+
+                                tamara: "Tamara",
+                                Tamara: "Tamara",
+                              };
+
+                              return (
+                                paymentMethodLabels[
+                                  paymentMethod
+                                ] ||
+                                paymentMethod ||
+                                "-"
+                              );
+                            })()}
                           </div>
                         </div>
                       )
