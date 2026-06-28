@@ -35718,19 +35718,63 @@ if (screen === "invoices") {
             >
               <div
                 style="
-                  display: flex;
+                  width: 100%;
+                  display: grid;
+                  grid-template-columns:
+                    1fr auto 1fr;
                   align-items: center;
-                  gap: 13px;
-                  min-width: 0;
-                  direction: rtl;
-                  text-align: right;
+                  gap: 18px;
+                  direction: ltr;
                 "
               >
                 <div
                   style="
+                    grid-column: 1;
+                    justify-self: start;
+                    text-align: left;
+                    direction: rtl;
+                  "
+                >
+                  <div
+                    style="
+                      color: #74695f;
+                      font-size: 22px;
+                      font-weight: 900;
+                      line-height: 1.5;
+                    "
+                  >
+                    ${escapeInvoiceHtml(
+                      documentTitle
+                    )}
+                  </div>
+
+                  <div
+                    style="
+                      display: inline-block;
+                      margin-top: 11px;
+                      padding: 9px 15px;
+                      border:
+                        1px solid #e4d9cf;
+                      border-radius: 999px;
+                      background: #f7f1eb;
+                      color: #786d63;
+                      font-size: 14px;
+                      font-weight: 900;
+                      direction: ltr;
+                    "
+                  >
+                    ${escapeInvoiceHtml(
+                      invoiceCode
+                    )}
+                  </div>
+                </div>
+
+                <div
+                  style="
+                    grid-column: 2;
+                    justify-self: center;
                     width: 64px;
                     height: 64px;
-                    flex: 0 0 64px;
                     display: flex;
                     align-items: center;
                     justify-content: center;
@@ -35745,7 +35789,7 @@ if (screen === "invoices") {
                     src="${escapeInvoiceHtml(
                       logo
                     )}"
-                    alt="صالون عبدالله أسامة الدوبي للتزين النسائي"
+                    alt="Paradise"
                     crossorigin="anonymous"
                     style="
                       display: block;
@@ -35764,57 +35808,9 @@ if (screen === "invoices") {
 
                 <div
                   style="
-                    min-width: 0;
-                    color: #625950;
-                    font-size: 20px;
-                    font-weight: 900;
-                    line-height: 1.65;
+                    grid-column: 3;
                   "
-                >
-                  ${escapeInvoiceHtml(
-                    sellerLegalName
-                  )}
-                </div>
-              </div>
-
-              <div
-                style="
-                  text-align: left;
-                  direction: rtl;
-                "
-              >
-                <div
-                  style="
-                    color: #74695f;
-                    font-size: 22px;
-                    font-weight: 900;
-                    line-height: 1.5;
-                  "
-                >
-                  ${escapeInvoiceHtml(
-                    documentTitle
-                  )}
-                </div>
-
-                <div
-                  style="
-                    display: inline-block;
-                    margin-top: 11px;
-                    padding: 9px 15px;
-                    border:
-                      1px solid #e4d9cf;
-                    border-radius: 999px;
-                    background: #f7f1eb;
-                    color: #786d63;
-                    font-size: 14px;
-                    font-weight: 900;
-                    direction: ltr;
-                  "
-                >
-                  ${escapeInvoiceHtml(
-                    invoiceCode
-                  )}
-                </div>
+                ></div>
               </div>
             </div>
 
@@ -36407,45 +36403,7 @@ if (screen === "invoices") {
               </div>
             </div>
 
-            <div
-              style="
-                margin-top: auto;
-                padding-top: 24px;
-              "
-            >
-              <div
-                style="
-                  padding-top: 16px;
-                  border-top:
-                    1px solid #ece4dc;
-                  text-align: center;
-                "
-              >
-                <div
-                  style="
-                    margin-bottom: 5px;
-                    color: #8f8378;
-                    font-size: 12px;
-                    font-weight: 900;
-                  "
-                >
-                  شكرًا لاختياركم
-                  Paradise Home Spa
-                </div>
-
-                <div
-                  style="
-                    color: #aaa097;
-                    font-size: 9px;
-                    font-weight: 800;
-                    line-height: 1.6;
-                  "
-                >
-                  مستند إلكتروني صادر من
-                  نظام Paradise Spa
-                </div>
-              </div>
-            </div>
+            <!-- Invoice footer intentionally removed -->
           </div>
         </div>
       `;
