@@ -35705,113 +35705,107 @@ if (screen === "invoices") {
           >
             <div
               style="
+                width: 100%;
                 display: grid;
                 grid-template-columns:
-                  1.2fr 0.8fr;
-                gap: 26px;
+                  1fr 88px 1fr;
                 align-items: center;
+                gap: 24px;
                 padding-bottom: 25px;
                 margin-bottom: 22px;
                 border-bottom:
                   1px solid #ece4dc;
+                box-sizing: border-box;
+                direction: ltr;
               "
             >
               <div
                 style="
-                  width: 100%;
-                  display: grid;
-                  grid-template-columns:
-                    1fr auto 1fr;
-                  align-items: center;
-                  gap: 18px;
-                  direction: ltr;
+                  grid-column: 1;
+                  justify-self: start;
+                  min-width: 0;
+                  text-align: left;
+                  direction: rtl;
                 "
               >
                 <div
                   style="
-                    grid-column: 1;
-                    justify-self: start;
-                    text-align: left;
-                    direction: rtl;
+                    color: #74695f;
+                    font-size: 24px;
+                    font-weight: 900;
+                    line-height: 1.4;
+                    white-space: nowrap;
                   "
                 >
-                  <div
-                    style="
-                      color: #74695f;
-                      font-size: 22px;
-                      font-weight: 900;
-                      line-height: 1.5;
-                    "
-                  >
-                    ${escapeInvoiceHtml(
-                      documentTitle
-                    )}
-                  </div>
-
-                  <div
-                    style="
-                      display: inline-block;
-                      margin-top: 11px;
-                      padding: 9px 15px;
-                      border:
-                        1px solid #e4d9cf;
-                      border-radius: 999px;
-                      background: #f7f1eb;
-                      color: #786d63;
-                      font-size: 14px;
-                      font-weight: 900;
-                      direction: ltr;
-                    "
-                  >
-                    ${escapeInvoiceHtml(
-                      invoiceCode
-                    )}
-                  </div>
+                  ${escapeInvoiceHtml(
+                    documentTitle
+                  )}
                 </div>
 
                 <div
                   style="
-                    grid-column: 2;
-                    justify-self: center;
-                    width: 64px;
-                    height: 64px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    overflow: hidden;
+                    display: inline-block;
+                    margin-top: 11px;
+                    padding: 9px 15px;
                     border:
-                      1px solid #e8ded5;
-                    border-radius: 19px;
-                    background: #fbf7f3;
+                      1px solid #e4d9cf;
+                    border-radius: 999px;
+                    background: #f7f1eb;
+                    color: #786d63;
+                    font-size: 14px;
+                    font-weight: 900;
+                    direction: ltr;
+                    white-space: nowrap;
                   "
                 >
-                  <img
-                    src="${escapeInvoiceHtml(
-                      logo
-                    )}"
-                    alt="Paradise"
-                    crossorigin="anonymous"
-                    style="
-                      display: block;
-                      width: 52px;
-                      height: 52px;
-                      object-fit: contain;
-                      filter:
-                        grayscale(1)
-                        sepia(0.25)
-                        saturate(0.4)
-                        brightness(1.08);
-                      opacity: 0.9;
-                    "
-                  />
+                  ${escapeInvoiceHtml(
+                    invoiceCode
+                  )}
                 </div>
-
-                <div
-                  style="
-                    grid-column: 3;
-                  "
-                ></div>
               </div>
+
+              <div
+                style="
+                  grid-column: 2;
+                  justify-self: center;
+                  width: 64px;
+                  height: 64px;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  overflow: hidden;
+                  border:
+                    1px solid #e8ded5;
+                  border-radius: 19px;
+                  background: #fbf7f3;
+                "
+              >
+                <img
+                  src="${escapeInvoiceHtml(
+                    logo
+                  )}"
+                  alt="Paradise"
+                  crossorigin="anonymous"
+                  style="
+                    display: block;
+                    width: 52px;
+                    height: 52px;
+                    object-fit: contain;
+                    filter:
+                      grayscale(1)
+                      sepia(0.25)
+                      saturate(0.4)
+                      brightness(1.08);
+                    opacity: 0.9;
+                  "
+                />
+              </div>
+
+              <div
+                style="
+                  grid-column: 3;
+                "
+              ></div>
             </div>
 
             <div
@@ -35849,7 +35843,7 @@ if (screen === "invoices") {
                   <div
                     style="
                       color: #665d55;
-                      font-size: 18px;
+                      font-size: 15px;
                       font-weight: 900;
                       line-height: 1.6;
                     "
