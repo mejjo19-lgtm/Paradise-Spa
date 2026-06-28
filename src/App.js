@@ -26270,6 +26270,25 @@ const welcomeBoardNameStyle = {
   ]);
 
 
+  /*
+    تحميل بيانات المنشأة تلقائيًا
+    عند فتح صفحة الفواتير.
+  */
+  useEffect(() => {
+    if (
+      !isLoggedIn ||
+      screen !== "invoices"
+    ) {
+      return;
+    }
+
+    loadInvoiceSellerProfile();
+  }, [
+    isLoggedIn,
+    screen,
+  ]);
+
+
   const settingsTabButton = (key, label) => {
     const isActive =
       settingsActiveTab === key;
@@ -35608,7 +35627,7 @@ if (screen === "invoices") {
         String(
           invoiceSellerProfile
             ?.legalName ||
-            "Paradise Home Spa"
+            "صالون عبدالله أسامة الدوبي للتزين النسائي"
         ).trim();
 
       const sellerVatNumber =
@@ -35701,22 +35720,24 @@ if (screen === "invoices") {
                 style="
                   display: flex;
                   align-items: center;
-                  gap: 17px;
+                  gap: 13px;
                   min-width: 0;
+                  direction: rtl;
+                  text-align: right;
                 "
               >
                 <div
                   style="
-                    width: 88px;
-                    height: 88px;
-                    flex: 0 0 88px;
+                    width: 64px;
+                    height: 64px;
+                    flex: 0 0 64px;
                     display: flex;
                     align-items: center;
                     justify-content: center;
                     overflow: hidden;
                     border:
                       1px solid #e8ded5;
-                    border-radius: 25px;
+                    border-radius: 19px;
                     background: #fbf7f3;
                   "
                 >
@@ -35724,12 +35745,12 @@ if (screen === "invoices") {
                     src="${escapeInvoiceHtml(
                       logo
                     )}"
-                    alt="Paradise Home Spa"
+                    alt="صالون عبدالله أسامة الدوبي للتزين النسائي"
                     crossorigin="anonymous"
                     style="
                       display: block;
-                      width: 72px;
-                      height: 72px;
+                      width: 52px;
+                      height: 52px;
                       object-fit: contain;
                       filter:
                         grayscale(1)
@@ -35744,30 +35765,15 @@ if (screen === "invoices") {
                 <div
                   style="
                     min-width: 0;
+                    color: #625950;
+                    font-size: 20px;
+                    font-weight: 900;
+                    line-height: 1.65;
                   "
                 >
-                  <div
-                    style="
-                      margin-bottom: 6px;
-                      color: #625950;
-                      font-size: 29px;
-                      font-weight: 900;
-                      letter-spacing: 0.2px;
-                    "
-                  >
-                    Paradise Home Spa
-                  </div>
-
-                  <div
-                    style="
-                      color: #9b8f84;
-                      font-size: 13px;
-                      font-weight: 800;
-                      line-height: 1.8;
-                    "
-                  >
-                    عناية منزلية بلمسة فاخرة
-                  </div>
+                  ${escapeInvoiceHtml(
+                    sellerLegalName
+                  )}
                 </div>
               </div>
 
