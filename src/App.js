@@ -35466,13 +35466,13 @@ if (screen === "invoices") {
       invoiceElement.style.minHeight =
         "1123px";
       invoiceElement.style.padding =
-        "58px";
+        "38px";
       invoiceElement.style.boxSizing =
         "border-box";
       invoiceElement.style.background =
         "#ffffff";
       invoiceElement.style.color =
-        "#4b2e1f";
+        "#625950";
       invoiceElement.style.direction =
         "rtl";
       invoiceElement.style.fontFamily =
@@ -35502,357 +35502,943 @@ if (screen === "invoices") {
             0
         );
 
+      const documentTitle =
+        invoice.documentType ===
+          "credit_note"
+          ? "إشعار دائن ضريبي مبسط"
+          : invoice.documentType ===
+              "debit_note"
+            ? "إشعار مدين ضريبي مبسط"
+            : "فاتورة ضريبية مبسطة";
+
+      const documentDateLabel =
+        invoice.documentType ===
+        "invoice"
+          ? "تاريخ الفاتورة"
+          : "تاريخ الإشعار";
+
+      const invoiceDate =
+        formatInvoiceDate(
+          getInvoiceDateInRiyadh(
+            invoice
+          )
+        );
+
+      const invoiceTime = (() => {
+        const issuedAt =
+          String(
+            invoice.issuedAt || ""
+          ).trim();
+
+        if (!issuedAt) {
+          return (
+            invoice.serviceTime ||
+            "-"
+          );
+        }
+
+        const issuedDate =
+          new Date(issuedAt);
+
+        if (
+          Number.isNaN(
+            issuedDate.getTime()
+          )
+        ) {
+          return (
+            invoice.serviceTime ||
+            "-"
+          );
+        }
+
+        return new Intl.DateTimeFormat(
+          "en-GB",
+          {
+            timeZone:
+              "Asia/Riyadh",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: false,
+          }
+        ).format(issuedDate);
+      })();
+
+      const paymentMethodLabel =
+        (() => {
+          const paymentMethod =
+            String(
+              invoice.paymentMethod ||
+                ""
+            ).trim();
+
+          const normalizedMethod =
+            paymentMethod
+              .toLowerCase()
+              .replace(
+                /[\s-]+/g,
+                "_"
+              );
+
+          const paymentLabels = {
+            cash: "نقدًا",
+            bank: "تحويل بنكي",
+            bank_transfer:
+              "تحويل بنكي",
+            transfer: "تحويل بنكي",
+            split: "دفع مختلط",
+            split_payment:
+              "دفع مختلط",
+            debit: "بطاقة خصم",
+            credit:
+              "بطاقة ائتمانية",
+            paid: "مدفوع",
+          };
+
+          return (
+            paymentLabels[
+              normalizedMethod
+            ] ||
+            paymentMethod ||
+            "-"
+          );
+        })();
+
+      const sellerLegalName =
+        String(
+          invoiceSellerProfile
+            ?.legalName ||
+            "Paradise Home Spa"
+        ).trim();
+
+      const sellerVatNumber =
+        String(
+          invoiceSellerProfile
+            ?.vatRegistrationNumber ||
+            ""
+        ).trim();
+
+      const sellerRegistrationId =
+        String(
+          invoiceSellerProfile
+            ?.legalRegistrationId ||
+            ""
+        ).trim();
+
+      const sellerAddress = [
+        invoiceSellerProfile
+          ?.buildingNumber,
+        invoiceSellerProfile
+          ?.streetName,
+        invoiceSellerProfile
+          ?.additionalStreetName,
+        invoiceSellerProfile
+          ?.citySubdivisionName,
+        invoiceSellerProfile
+          ?.cityName,
+        invoiceSellerProfile
+          ?.postalZone,
+        invoiceSellerProfile
+          ?.countryCode,
+      ]
+        .map(
+          (addressPart) =>
+            String(
+              addressPart || ""
+            ).trim()
+        )
+        .filter(Boolean)
+        .join("، ");
+
       invoiceElement.innerHTML = `
         <div
           style="
             width: 100%;
-            min-height: 1000px;
-            border: 2px solid #d9c4af;
-            border-radius: 22px;
-            padding: 38px;
+            min-height: 1047px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border: 1px solid #e8dfd6;
+            border-radius: 30px;
             box-sizing: border-box;
-            background: #fffdf9;
+            background: #ffffff;
+            box-shadow:
+              0 18px 50px
+              rgba(125, 108, 92, 0.08);
           "
         >
           <div
             style="
-              text-align: center;
-              border-bottom: 2px solid #ead9c7;
-              padding-bottom: 24px;
-              margin-bottom: 28px;
+              height: 14px;
+              flex: 0 0 14px;
+              background: #eee5dc;
             "
-          >
-            <div
-              style="
-                font-size: 34px;
-                font-weight: 900;
-                color: #4b2e1f;
-              "
-            >
-              Paradise Home Spa
-            </div>
-
-            <div
-              style="
-                margin-top: 12px;
-                font-size: 25px;
-                font-weight: 900;
-              "
-            >
-              ${escapeInvoiceHtml(
-                invoice.documentType ===
-                  "credit_note"
-                  ? "إشعار دائن ضريبي مبسط"
-                  : invoice.documentType ===
-                    "debit_note"
-                  ? "إشعار مدين ضريبي مبسط"
-                  : "فاتورة ضريبية مبسطة"
-              )}
-            </div>
-
-            <div
-              style="
-                margin-top: 10px;
-                font-size: 18px;
-                font-weight: 900;
-                color: #9b6b3f;
-                direction: ltr;
-              "
-            >
-              ${escapeInvoiceHtml(
-                invoiceCode
-              )}
-            </div>
-          </div>
+          ></div>
 
           <div
             style="
-              display: grid;
-              grid-template-columns: 1fr 1fr;
-              gap: 14px;
-              margin-bottom: 28px;
+              flex: 1;
+              display: flex;
+              flex-direction: column;
+              padding: 32px 34px 28px;
+              box-sizing: border-box;
             "
           >
-            <div style="background:#f7efe6;border:1px solid #ead9c7;border-radius:14px;padding:16px;">
-              <div style="font-size:14px;color:#92745d;font-weight:900;margin-bottom:7px;">
-                تاريخ الفاتورة
-              </div>
-              <div style="font-size:18px;font-weight:900;">
-                ${escapeInvoiceHtml(
-                  formatInvoiceDate(
-                    getInvoiceDateInRiyadh(
-                      invoice
-                    )
-                  )
-                )}
-              </div>
-            </div>
-
-            <div style="background:#f7efe6;border:1px solid #ead9c7;border-radius:14px;padding:16px;">
-              <div style="font-size:14px;color:#92745d;font-weight:900;margin-bottom:7px;">
-                اسم العميلة
-              </div>
-              <div style="font-size:18px;font-weight:900;">
-                ${escapeInvoiceHtml(
-                  invoice.clientName || "-"
-                )}
-              </div>
-            </div>
-
-            <div style="background:#f7efe6;border:1px solid #ead9c7;border-radius:14px;padding:16px;">
-              <div style="font-size:14px;color:#92745d;font-weight:900;margin-bottom:7px;">
-                رقم الجوال
-              </div>
-              <div style="font-size:18px;font-weight:900;direction:ltr;text-align:right;">
-                ${escapeInvoiceHtml(
-                  invoice.clientPhone || "-"
-                )}
-              </div>
-            </div>
-
-            <div style="background:#f7efe6;border:1px solid #ead9c7;border-radius:14px;padding:16px;">
-              <div style="font-size:14px;color:#92745d;font-weight:900;margin-bottom:7px;">
-                طريقة الدفع
-              </div>
-              <div style="font-size:18px;font-weight:900;">
-                ${escapeInvoiceHtml(
-                  invoice.paymentMethod || "-"
-                )}
-              </div>
-            </div>
-          </div>
-
-          ${
-            invoice.documentType !== "invoice"
-              ? `
+            <div
+              style="
+                display: grid;
+                grid-template-columns:
+                  1.2fr 0.8fr;
+                gap: 26px;
+                align-items: center;
+                padding-bottom: 25px;
+                margin-bottom: 22px;
+                border-bottom:
+                  1px solid #ece4dc;
+              "
+            >
+              <div
+                style="
+                  display: flex;
+                  align-items: center;
+                  gap: 17px;
+                  min-width: 0;
+                "
+              >
                 <div
                   style="
-                    border: 1px solid #d8b7a4;
-                    border-radius: 16px;
-                    background: #fbf3ec;
-                    padding: 18px;
-                    margin-bottom: 28px;
+                    width: 88px;
+                    height: 88px;
+                    flex: 0 0 88px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    overflow: hidden;
+                    border:
+                      1px solid #e8ded5;
+                    border-radius: 25px;
+                    background: #fbf7f3;
+                  "
+                >
+                  <img
+                    src="${escapeInvoiceHtml(
+                      logo
+                    )}"
+                    alt="Paradise Home Spa"
+                    crossorigin="anonymous"
+                    style="
+                      display: block;
+                      width: 72px;
+                      height: 72px;
+                      object-fit: contain;
+                      filter:
+                        grayscale(1)
+                        sepia(0.25)
+                        saturate(0.4)
+                        brightness(1.08);
+                      opacity: 0.9;
+                    "
+                  />
+                </div>
+
+                <div
+                  style="
+                    min-width: 0;
                   "
                 >
                   <div
                     style="
-                      display: grid;
-                      grid-template-columns: 160px 1fr;
-                      gap: 12px;
-                      align-items: start;
+                      margin-bottom: 6px;
+                      color: #625950;
+                      font-size: 29px;
+                      font-weight: 900;
+                      letter-spacing: 0.2px;
                     "
                   >
-                    <div
-                      style="
-                        color: #92745d;
-                        font-size: 14px;
-                        font-weight: 900;
-                      "
-                    >
-                      الفاتورة الأصلية
-                    </div>
+                    Paradise Home Spa
+                  </div>
 
-                    <div
-                      style="
-                        font-size: 16px;
-                        font-weight: 900;
-                        direction: ltr;
-                        text-align: right;
-                        word-break: break-word;
-                      "
-                    >
-                      ${escapeInvoiceHtml(
-                        originalInvoiceCode
-                      )}
-                    </div>
-
-                    <div
-                      style="
-                        color: #92745d;
-                        font-size: 14px;
-                        font-weight: 900;
-                      "
-                    >
-                      سبب التصحيح
-                    </div>
-
-                    <div
-                      style="
-                        font-size: 16px;
-                        font-weight: 900;
-                        line-height: 1.7;
-                        white-space: pre-wrap;
-                        word-break: break-word;
-                      "
-                    >
-                      ${escapeInvoiceHtml(
-                        invoice.correctionReason || "-"
-                      )}
-                    </div>
+                  <div
+                    style="
+                      color: #9b8f84;
+                      font-size: 13px;
+                      font-weight: 800;
+                      line-height: 1.8;
+                    "
+                  >
+                    عناية منزلية بلمسة فاخرة
                   </div>
                 </div>
-              `
-              : ""
-          }
+              </div>
 
-          <div
-            style="
-              border: 1px solid #e4d4c4;
-              border-radius: 16px;
-              overflow: hidden;
-              margin-bottom: 28px;
-            "
-          >
+              <div
+                style="
+                  text-align: left;
+                  direction: rtl;
+                "
+              >
+                <div
+                  style="
+                    color: #74695f;
+                    font-size: 22px;
+                    font-weight: 900;
+                    line-height: 1.5;
+                  "
+                >
+                  ${escapeInvoiceHtml(
+                    documentTitle
+                  )}
+                </div>
+
+                <div
+                  style="
+                    display: inline-block;
+                    margin-top: 11px;
+                    padding: 9px 15px;
+                    border:
+                      1px solid #e4d9cf;
+                    border-radius: 999px;
+                    background: #f7f1eb;
+                    color: #786d63;
+                    font-size: 14px;
+                    font-weight: 900;
+                    direction: ltr;
+                  "
+                >
+                  ${escapeInvoiceHtml(
+                    invoiceCode
+                  )}
+                </div>
+              </div>
+            </div>
+
             <div
               style="
-                display: grid;
-                grid-template-columns: 1fr 170px;
-                background: #4b2e1f;
-                color: white;
-                padding: 16px 18px;
-                font-size: 17px;
-                font-weight: 900;
+                margin-bottom: 18px;
+                padding: 19px 21px;
+                border:
+                  1px solid #e9e0d7;
+                border-radius: 21px;
+                background: #fbf7f3;
               "
             >
-              <div>الخدمة</div>
-              <div style="text-align:center;">
-                المبلغ
+              <div
+                style="
+                  display: flex;
+                  justify-content:
+                    space-between;
+                  align-items: flex-start;
+                  gap: 18px;
+                  margin-bottom: 15px;
+                "
+              >
+                <div>
+                  <div
+                    style="
+                      margin-bottom: 5px;
+                      color: #a0958b;
+                      font-size: 11px;
+                      font-weight: 900;
+                    "
+                  >
+                    بيانات المنشأة
+                  </div>
+
+                  <div
+                    style="
+                      color: #665d55;
+                      font-size: 18px;
+                      font-weight: 900;
+                      line-height: 1.6;
+                    "
+                  >
+                    ${escapeInvoiceHtml(
+                      sellerLegalName || "-"
+                    )}
+                  </div>
+                </div>
+
+                <div
+                  style="
+                    padding: 7px 12px;
+                    border:
+                      1px solid #e7ddd4;
+                    border-radius: 999px;
+                    background: #ffffff;
+                    color: #91857a;
+                    font-size: 11px;
+                    font-weight: 900;
+                    white-space: nowrap;
+                  "
+                >
+                  المملكة العربية السعودية
+                </div>
+              </div>
+
+              <div
+                style="
+                  display: grid;
+                  grid-template-columns:
+                    1fr 1fr;
+                  gap: 12px 20px;
+                "
+              >
+                <div>
+                  <div
+                    style="
+                      margin-bottom: 4px;
+                      color: #a0958b;
+                      font-size: 10px;
+                      font-weight: 900;
+                    "
+                  >
+                    الرقم الضريبي
+                  </div>
+
+                  <div
+                    style="
+                      color: #72685f;
+                      font-size: 13px;
+                      font-weight: 900;
+                      direction: ltr;
+                      text-align: right;
+                    "
+                  >
+                    ${escapeInvoiceHtml(
+                      sellerVatNumber || "-"
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <div
+                    style="
+                      margin-bottom: 4px;
+                      color: #a0958b;
+                      font-size: 10px;
+                      font-weight: 900;
+                    "
+                  >
+                    السجل التجاري
+                  </div>
+
+                  <div
+                    style="
+                      color: #72685f;
+                      font-size: 13px;
+                      font-weight: 900;
+                      direction: ltr;
+                      text-align: right;
+                    "
+                  >
+                    ${escapeInvoiceHtml(
+                      sellerRegistrationId ||
+                        "-"
+                    )}
+                  </div>
+                </div>
+
+                <div
+                  style="
+                    grid-column: 1 / -1;
+                  "
+                >
+                  <div
+                    style="
+                      margin-bottom: 4px;
+                      color: #a0958b;
+                      font-size: 10px;
+                      font-weight: 900;
+                    "
+                  >
+                    العنوان
+                  </div>
+
+                  <div
+                    style="
+                      color: #72685f;
+                      font-size: 13px;
+                      font-weight: 850;
+                      line-height: 1.7;
+                    "
+                  >
+                    ${escapeInvoiceHtml(
+                      sellerAddress || "-"
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 
             <div
               style="
                 display: grid;
-                grid-template-columns: 1fr 170px;
-                padding: 19px 18px;
-                border-bottom: 1px solid #eadfd5;
-                font-size: 17px;
-                font-weight: 900;
+                grid-template-columns:
+                  1fr 1fr 1fr;
+                gap: 11px;
+                margin-bottom: 20px;
               "
             >
-              <div>
-                ${escapeInvoiceHtml(
-                  invoice.serviceName || "-"
-                )}
+              <div
+                style="
+                  padding: 14px 15px;
+                  border:
+                    1px solid #ebe2da;
+                  border-radius: 17px;
+                  background: #ffffff;
+                "
+              >
+                <div
+                  style="
+                    margin-bottom: 7px;
+                    color: #9f9388;
+                    font-size: 10px;
+                    font-weight: 900;
+                  "
+                >
+                  ${escapeInvoiceHtml(
+                    documentDateLabel
+                  )}
+                </div>
+
+                <div
+                  style="
+                    color: #6d635a;
+                    font-size: 15px;
+                    font-weight: 900;
+                    direction: ltr;
+                    text-align: right;
+                  "
+                >
+                  ${escapeInvoiceHtml(
+                    invoiceDate
+                  )}
+                </div>
               </div>
 
-              <div style="text-align:center;">
-                ${escapeInvoiceHtml(
-                  formatInvoiceAmount(
-                    invoice.serviceAmountIncludingVat
-                  )
-                )} ر.س
+              <div
+                style="
+                  padding: 14px 15px;
+                  border:
+                    1px solid #ebe2da;
+                  border-radius: 17px;
+                  background: #fbf7f3;
+                "
+              >
+                <div
+                  style="
+                    margin-bottom: 7px;
+                    color: #9f9388;
+                    font-size: 10px;
+                    font-weight: 900;
+                  "
+                >
+                  وقت الإصدار
+                </div>
+
+                <div
+                  style="
+                    color: #6d635a;
+                    font-size: 15px;
+                    font-weight: 900;
+                    direction: ltr;
+                    text-align: right;
+                  "
+                >
+                  ${escapeInvoiceHtml(
+                    invoiceTime
+                  )}
+                </div>
+              </div>
+
+              <div
+                style="
+                  padding: 14px 15px;
+                  border:
+                    1px solid #ebe2da;
+                  border-radius: 17px;
+                  background: #ffffff;
+                "
+              >
+                <div
+                  style="
+                    margin-bottom: 7px;
+                    color: #9f9388;
+                    font-size: 10px;
+                    font-weight: 900;
+                  "
+                >
+                  طريقة الدفع
+                </div>
+
+                <div
+                  style="
+                    color: #6d635a;
+                    font-size: 15px;
+                    font-weight: 900;
+                  "
+                >
+                  ${escapeInvoiceHtml(
+                    paymentMethodLabel
+                  )}
+                </div>
               </div>
             </div>
 
             ${
-              transportationAmount > 0
+              invoice.documentType !==
+              "invoice"
                 ? `
                   <div
                     style="
-                      display: grid;
-                      grid-template-columns: 1fr 170px;
-                      padding: 19px 18px;
-                      border-bottom: 1px solid #eadfd5;
-                      font-size: 17px;
-                      font-weight: 900;
+                      margin-bottom: 20px;
+                      padding: 17px 19px;
+                      border:
+                        1px solid #e7ddd4;
+                      border-radius: 18px;
+                      background: #f8f2ec;
                     "
                   >
-                    <div>المواصلات</div>
+                    <div
+                      style="
+                        display: grid;
+                        grid-template-columns:
+                          145px 1fr;
+                        gap: 10px 14px;
+                        align-items: start;
+                      "
+                    >
+                      <div
+                        style="
+                          color: #9c9085;
+                          font-size: 11px;
+                          font-weight: 900;
+                        "
+                      >
+                        الفاتورة الأصلية
+                      </div>
 
-                    <div style="text-align:center;">
-                      ${escapeInvoiceHtml(
-                        formatInvoiceAmount(
-                          transportationAmount
-                        )
-                      )} ر.س
+                      <div
+                        style="
+                          color: #6f655c;
+                          font-size: 13px;
+                          font-weight: 900;
+                          direction: ltr;
+                          text-align: right;
+                          word-break:
+                            break-word;
+                        "
+                      >
+                        ${escapeInvoiceHtml(
+                          originalInvoiceCode
+                        )}
+                      </div>
+
+                      <div
+                        style="
+                          color: #9c9085;
+                          font-size: 11px;
+                          font-weight: 900;
+                        "
+                      >
+                        سبب التصحيح
+                      </div>
+
+                      <div
+                        style="
+                          color: #6f655c;
+                          font-size: 13px;
+                          font-weight: 850;
+                          line-height: 1.8;
+                          white-space: pre-wrap;
+                          word-break:
+                            break-word;
+                        "
+                      >
+                        ${escapeInvoiceHtml(
+                          invoice.correctionReason ||
+                            "-"
+                        )}
+                      </div>
                     </div>
                   </div>
                 `
                 : ""
             }
-          </div>
 
-          <div
-            style="
-              width: 440px;
-              max-width: 100%;
-              margin-right: auto;
-              display: grid;
-              gap: 12px;
-            "
-          >
             <div
               style="
-                display: flex;
-                justify-content: space-between;
-                padding: 14px 16px;
-                background: #f7efe6;
-                border-radius: 12px;
-                font-size: 16px;
-                font-weight: 900;
+                margin-bottom: 22px;
+                overflow: hidden;
+                border:
+                  1px solid #e7ddd5;
+                border-radius: 21px;
+                background: #ffffff;
               "
             >
-              <span>الإجمالي قبل الضريبة</span>
-              <span>
-                ${escapeInvoiceHtml(
-                  formatInvoiceAmount(
-                    invoice.subtotalExcludingVat
-                  )
-                )} ر.س
-              </span>
+              <div
+                style="
+                  display: grid;
+                  grid-template-columns:
+                    1fr 170px;
+                  padding: 14px 18px;
+                  border-bottom:
+                    1px solid #dfd4ca;
+                  background: #eee5dc;
+                  color: #6b6158;
+                  font-size: 14px;
+                  font-weight: 900;
+                "
+              >
+                <div>
+                  تفاصيل الخدمة
+                </div>
+
+                <div
+                  style="
+                    text-align: center;
+                  "
+                >
+                  المبلغ شامل الضريبة
+                </div>
+              </div>
+
+              <div
+                style="
+                  display: grid;
+                  grid-template-columns:
+                    1fr 170px;
+                  min-height: 66px;
+                  padding: 18px;
+                  align-items: center;
+                  border-bottom:
+                    1px solid #eee7e0;
+                  background: #ffffff;
+                  color: #6d635a;
+                  font-size: 15px;
+                  font-weight: 900;
+                "
+              >
+                <div
+                  style="
+                    padding-left: 15px;
+                    line-height: 1.7;
+                    word-break:
+                      break-word;
+                  "
+                >
+                  ${escapeInvoiceHtml(
+                    invoice.serviceName ||
+                      "-"
+                  )}
+                </div>
+
+                <div
+                  style="
+                    text-align: center;
+                    direction: ltr;
+                    white-space: nowrap;
+                  "
+                >
+                  ${escapeInvoiceHtml(
+                    formatInvoiceAmount(
+                      invoice.serviceAmountIncludingVat
+                    )
+                  )} ر.س
+                </div>
+              </div>
+
+              ${
+                transportationAmount > 0
+                  ? `
+                    <div
+                      style="
+                        display: grid;
+                        grid-template-columns:
+                          1fr 170px;
+                        min-height: 58px;
+                        padding: 17px 18px;
+                        align-items: center;
+                        background: #fbf7f3;
+                        color: #6d635a;
+                        font-size: 15px;
+                        font-weight: 900;
+                      "
+                    >
+                      <div>
+                        رسوم التوصيل
+                      </div>
+
+                      <div
+                        style="
+                          text-align: center;
+                          direction: ltr;
+                          white-space:
+                            nowrap;
+                        "
+                      >
+                        ${escapeInvoiceHtml(
+                          formatInvoiceAmount(
+                            transportationAmount
+                          )
+                        )} ر.س
+                      </div>
+                    </div>
+                  `
+                  : ""
+              }
             </div>
 
             <div
               style="
-                display: flex;
-                justify-content: space-between;
-                padding: 14px 16px;
-                background: #f7efe6;
-                border-radius: 12px;
-                font-size: 16px;
-                font-weight: 900;
+                width: 455px;
+                max-width: 100%;
+                margin-right: auto;
+                overflow: hidden;
+                border:
+                  1px solid #e5dbd1;
+                border-radius: 21px;
+                background: #ffffff;
               "
             >
-              <span>
-                ضريبة القيمة المضافة
-                ${escapeInvoiceHtml(
-                  invoice.vatRate || 15
-                )}%
-              </span>
+              <div
+                style="
+                  display: flex;
+                  justify-content:
+                    space-between;
+                  gap: 18px;
+                  padding: 13px 17px;
+                  border-bottom:
+                    1px solid #eee6df;
+                  color: #776d64;
+                  font-size: 13px;
+                  font-weight: 900;
+                "
+              >
+                <span>
+                  الإجمالي قبل الضريبة
+                </span>
 
-              <span>
-                ${escapeInvoiceHtml(
-                  formatInvoiceAmount(
-                    invoice.vatAmount
-                  )
-                )} ر.س
-              </span>
+                <span
+                  style="
+                    direction: ltr;
+                    white-space: nowrap;
+                  "
+                >
+                  ${escapeInvoiceHtml(
+                    formatInvoiceAmount(
+                      invoice.subtotalExcludingVat
+                    )
+                  )} ر.س
+                </span>
+              </div>
+
+              <div
+                style="
+                  display: flex;
+                  justify-content:
+                    space-between;
+                  gap: 18px;
+                  padding: 13px 17px;
+                  border-bottom:
+                    1px solid #e9dfd6;
+                  background: #fbf7f3;
+                  color: #776d64;
+                  font-size: 13px;
+                  font-weight: 900;
+                "
+              >
+                <span>
+                  ضريبة القيمة المضافة
+                  ${escapeInvoiceHtml(
+                    invoice.vatRate || 15
+                  )}%
+                </span>
+
+                <span
+                  style="
+                    direction: ltr;
+                    white-space: nowrap;
+                  "
+                >
+                  ${escapeInvoiceHtml(
+                    formatInvoiceAmount(
+                      invoice.vatAmount
+                    )
+                  )} ر.س
+                </span>
+              </div>
+
+              <div
+                style="
+                  display: flex;
+                  justify-content:
+                    space-between;
+                  gap: 18px;
+                  padding: 18px;
+                  background: #eadfd5;
+                  color: #625950;
+                  font-size: 18px;
+                  font-weight: 900;
+                "
+              >
+                <span>
+                  الإجمالي شامل الضريبة
+                </span>
+
+                <span
+                  style="
+                    direction: ltr;
+                    white-space: nowrap;
+                  "
+                >
+                  ${escapeInvoiceHtml(
+                    formatInvoiceAmount(
+                      invoice.totalIncludingVat
+                    )
+                  )} ر.س
+                </span>
+              </div>
             </div>
 
             <div
               style="
-                display: flex;
-                justify-content: space-between;
-                padding: 18px;
-                background: #287746;
-                color: white;
-                border-radius: 14px;
-                font-size: 19px;
-                font-weight: 900;
+                margin-top: auto;
+                padding-top: 24px;
               "
             >
-              <span>
-                الإجمالي شامل الضريبة
-              </span>
+              <div
+                style="
+                  padding-top: 16px;
+                  border-top:
+                    1px solid #ece4dc;
+                  text-align: center;
+                "
+              >
+                <div
+                  style="
+                    margin-bottom: 5px;
+                    color: #8f8378;
+                    font-size: 12px;
+                    font-weight: 900;
+                  "
+                >
+                  شكرًا لاختياركم
+                  Paradise Home Spa
+                </div>
 
-              <span>
-                ${escapeInvoiceHtml(
-                  formatInvoiceAmount(
-                    invoice.totalIncludingVat
-                  )
-                )} ر.س
-              </span>
+                <div
+                  style="
+                    color: #aaa097;
+                    font-size: 9px;
+                    font-weight: 800;
+                    line-height: 1.6;
+                  "
+                >
+                  مستند إلكتروني صادر من
+                  نظام Paradise Spa
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -37601,16 +38187,6 @@ if (screen === "invoices") {
                             ? `${day}-${month}-${year}`
                             : invoiceDate;
                         })(),
-                      ],
-                      [
-                        "اسم العميلة",
-                        selectedInvoice.clientName ||
-                          "-",
-                      ],
-                      [
-                        "رقم الجوال",
-                        selectedInvoice.clientPhone ||
-                          "-",
                       ],
                       [
                         "طريقة الدفع",
@@ -49899,74 +50475,6 @@ if (screen === "potentialClients") {
                     </div>
                   </div>
 
-                  <div
-                    style={{
-                      minWidth: 0,
-                      background: "#f7efe6",
-                      border:
-                        "1px solid #ead9c7",
-                      borderRadius: "15px",
-                      padding: "14px",
-                      boxSizing: "border-box",
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: "12px",
-                        color: "#92745d",
-                        fontWeight: 900,
-                        marginBottom: "6px",
-                      }}
-                    >
-                      اسم العميلة
-                    </div>
-
-                    <div
-                      style={{
-                        fontSize: "15px",
-                        fontWeight: 950,
-                        overflowWrap: "anywhere",
-                      }}
-                    >
-                      {selectedInvoice.clientName ||
-                        "-"}
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      minWidth: 0,
-                      background: "#f7efe6",
-                      border:
-                        "1px solid #ead9c7",
-                      borderRadius: "15px",
-                      padding: "14px",
-                      boxSizing: "border-box",
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: "12px",
-                        color: "#92745d",
-                        fontWeight: 900,
-                        marginBottom: "6px",
-                      }}
-                    >
-                      رقم الجوال
-                    </div>
-
-                    <div
-                      style={{
-                        fontSize: "15px",
-                        fontWeight: 950,
-                        direction: "ltr",
-                        overflowWrap: "anywhere",
-                      }}
-                    >
-                      {selectedInvoice.clientPhone ||
-                        "-"}
-                    </div>
-                  </div>
 
                   <div
                     style={{
