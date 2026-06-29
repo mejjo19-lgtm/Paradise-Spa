@@ -2690,6 +2690,30 @@ function fetchSharedClientLists() {
 
   const [incomeExpensesEditMode, setIncomeExpensesEditMode] = useState(false);
 
+  /*
+    المصدر الرسمي للدخل:
+
+    من 2024-11-01 إلى 2026-05-29
+    نعتمد client_service_history
+    بسجلات manual_legacy فقط.
+
+    من 2026-05-30 وما بعده
+    نعتمد schedule_rows.
+  */
+  const HISTORICAL_INCOME_FROM_DATE =
+    "2024-11-01";
+
+  const HISTORICAL_INCOME_TO_DATE =
+    "2026-05-29";
+
+  const LIVE_SCHEDULE_INCOME_FROM_DATE =
+    "2026-05-30";
+
+  const [
+    historicalIncomeByMonth,
+    setHistoricalIncomeByMonth,
+  ] = useState({});
+
   const [financeMonthlySettings, setFinanceMonthlySettings] = useState(() => {
     const savedSettings = localStorage.getItem(
       "paradise-finance-monthly-settings"
@@ -6843,109 +6867,591 @@ const getMonthEndDate = (monthKey) => {
   return `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
 };
 
-const loadIncomeExpenseReportDataRange = async (fromMonth, toMonth) => {
-  if (!fromMonth || !toMonth) return;
-
-  const rangeKey = `${fromMonth}_${toMonth}`;
-
-  if (incomeExpenseLoadedRangesRef.current[rangeKey]) return;
-
-  const fromDate = getMonthStartDate(fromMonth);
-  const toDate = getMonthEndDate(toMonth);
-
-  const pageSize = 1000;
-let scheduleRows = [];
-let fromIndex = 0;
-let hasMoreScheduleRows = true;
-
-while (hasMoreScheduleRows) {
-  const toIndex = fromIndex + pageSize - 1;
-
-  const { data: schedulePage, error: scheduleError } = await supabase
-    .from("schedule_rows")
-    .select("id, schedule_date, row_index, row_data, cell_styles, updated_at, updated_by")
-    .gte("schedule_date", fromDate)
-    .lte("schedule_date", toDate)
-    .order("schedule_date", { ascending: true })
-    .order("row_index", { ascending: true })
-    .range(fromIndex, toIndex);
-
-  if (scheduleError) {
-    console.log("Income expense schedule rows load error:", scheduleError);
-    return;
-  }
-
-  scheduleRows = [...scheduleRows, ...(schedulePage || [])];
-  hasMoreScheduleRows = Array.isArray(schedulePage) && schedulePage.length === pageSize;
-  fromIndex += pageSize;
-}
-
-  const rowsByDate = {};
-
-  (scheduleRows || []).forEach((dbRow) => {
-    const date = dbRow.schedule_date;
-    const rowIndex = Number(dbRow.row_index);
-
-    if (!date || !Number.isInteger(rowIndex)) return;
-
-    if (!rowsByDate[date]) {
-      rowsByDate[date] = {
-        rows: timeSlots.map(createEmptyAppointmentRow),
-        cellStyles: {},
-      };
+const loadIncomeExpenseReportDataRange =
+  async (
+    fromMonth,
+    toMonth
+  ) => {
+    if (
+      !fromMonth ||
+      !toMonth
+    ) {
+      return;
     }
 
-    rowsByDate[date].rows[rowIndex] = {
-      ...rowsByDate[date].rows[rowIndex],
-      ...(dbRow.row_data || {}),
-    };
+    /*
+      نستخدم مفتاح نسخة جديد حتى لا
+      يعتمد المتصفح على نطاق قديم
+      تم تحميله قبل إضافة سجل الخدمات.
+    */
+    const rangeKey =
+      `income-expenses-v2-${fromMonth}_${toMonth}`;
 
-    Object.assign(rowsByDate[date].cellStyles, dbRow.cell_styles || {});
-  });
+    if (
+      incomeExpenseLoadedRangesRef
+        .current[rangeKey]
+    ) {
+      return;
+    }
 
-  setScheduleData((prev) => {
-    const next = { ...prev };
+    const fromDate =
+      getMonthStartDate(
+        fromMonth
+      );
 
-    Object.entries(rowsByDate).forEach(([date, dayData]) => {
-  next[date] = {
-    ...(next[date] || {}),
-    rows: dayData.rows,
-    cellStyles: {
-      ...((next[date] || {}).cellStyles || {}),
-      ...dayData.cellStyles,
-    },
-  };
-});
+    const toDate =
+      getMonthEndDate(
+        toMonth
+      );
 
+    const pageSize = 1000;
 
-return next;
-  });
+    /*
+      جدول المواعيد لا يُستخدم كمصدر
+      دخل قبل 2026-05-30.
 
-  const { data: dailyReports, error: reportsError } = await supabase
-    .from("daily_reports")
-    .select("report_date, report_data, updated_at, updated_by")
-    .gte("report_date", fromDate)
-    .lte("report_date", toDate);
+      هذا يمنع تكرار دخل شهر مايو
+      بين schedule_rows وسجل الخدمات.
+    */
+    const scheduleFromDate =
+      fromDate >
+      LIVE_SCHEDULE_INCOME_FROM_DATE
+        ? fromDate
+        : LIVE_SCHEDULE_INCOME_FROM_DATE;
 
-  if (reportsError) {
-    console.log("Income expense daily reports load error:", reportsError);
-    return;
-  }
+    let scheduleRows = [];
 
-  setDailyManualData((prev) => {
-    const next = { ...prev };
+    if (
+      scheduleFromDate <= toDate
+    ) {
+      let fromIndex = 0;
+      let hasMoreScheduleRows =
+        true;
 
-    (dailyReports || []).forEach((report) => {
-      if (report.report_date) {
-        next[report.report_date] = report.report_data || {};
+      while (
+        hasMoreScheduleRows
+      ) {
+        const toIndex =
+          fromIndex +
+          pageSize -
+          1;
+
+        const {
+          data: schedulePage,
+          error: scheduleError,
+        } = await supabase
+          .from("schedule_rows")
+          .select(
+            [
+              "id",
+              "schedule_date",
+              "row_index",
+              "row_data",
+              "cell_styles",
+              "updated_at",
+              "updated_by",
+            ].join(",")
+          )
+          .gte(
+            "schedule_date",
+            scheduleFromDate
+          )
+          .lte(
+            "schedule_date",
+            toDate
+          )
+          .order(
+            "schedule_date",
+            {
+              ascending: true,
+            }
+          )
+          .order(
+            "row_index",
+            {
+              ascending: true,
+            }
+          )
+          .range(
+            fromIndex,
+            toIndex
+          );
+
+        if (scheduleError) {
+          console.log(
+            "Income expense schedule rows load error:",
+            scheduleError
+          );
+
+          return;
+        }
+
+        scheduleRows = [
+          ...scheduleRows,
+          ...(schedulePage || []),
+        ];
+
+        hasMoreScheduleRows =
+          Array.isArray(
+            schedulePage
+          ) &&
+          schedulePage.length ===
+            pageSize;
+
+        fromIndex +=
+          pageSize;
       }
-    });
+    }
 
-    return next;
-  });
+    const rowsByDate = {};
 
-  incomeExpenseLoadedRangesRef.current[rangeKey] = true;
-};
+    scheduleRows.forEach(
+      (dbRow) => {
+        const date =
+          dbRow.schedule_date;
+
+        const rowIndex =
+          Number(
+            dbRow.row_index
+          );
+
+        if (
+          !date ||
+          !Number.isInteger(
+            rowIndex
+          )
+        ) {
+          return;
+        }
+
+        if (
+          !rowsByDate[date]
+        ) {
+          rowsByDate[date] = {
+            rows:
+              timeSlots.map(
+                createEmptyAppointmentRow
+              ),
+
+            cellStyles: {},
+          };
+        }
+
+        rowsByDate[date].rows[
+          rowIndex
+        ] = {
+          ...rowsByDate[
+            date
+          ].rows[rowIndex],
+
+          ...(dbRow.row_data ||
+            {}),
+        };
+
+        Object.assign(
+          rowsByDate[
+            date
+          ].cellStyles,
+
+          dbRow.cell_styles ||
+            {}
+        );
+      }
+    );
+
+    setScheduleData(
+      (previousScheduleData) => {
+        const nextScheduleData = {
+          ...previousScheduleData,
+        };
+
+        Object.entries(
+          rowsByDate
+        ).forEach(
+          ([
+            date,
+            dayData,
+          ]) => {
+            nextScheduleData[
+              date
+            ] = {
+              ...(
+                nextScheduleData[
+                  date
+                ] || {}
+              ),
+
+              rows:
+                dayData.rows,
+
+              cellStyles: {
+                ...(
+                  nextScheduleData[
+                    date
+                  ]
+                    ?.cellStyles ||
+                  {}
+                ),
+
+                ...dayData.cellStyles,
+              },
+            };
+          }
+        );
+
+        return nextScheduleData;
+      }
+    );
+
+    /*
+      تحميل دخل سجل الخدمات التاريخي.
+
+      لا نحمّل إلا manual_legacy
+      ولا نتجاوز 2026-05-29.
+    */
+    const historyFromDate =
+      fromDate >
+      HISTORICAL_INCOME_FROM_DATE
+        ? fromDate
+        : HISTORICAL_INCOME_FROM_DATE;
+
+    const historyToDate =
+      toDate <
+      HISTORICAL_INCOME_TO_DATE
+        ? toDate
+        : HISTORICAL_INCOME_TO_DATE;
+
+    if (
+      historyFromDate <=
+      historyToDate
+    ) {
+      let historicalRows =
+        [];
+
+      let historyFromIndex =
+        0;
+
+      let hasMoreHistoryRows =
+        true;
+
+      while (
+        hasMoreHistoryRows
+      ) {
+        const historyToIndex =
+          historyFromIndex +
+          pageSize -
+          1;
+
+        const {
+          data: historyPage,
+          error: historyError,
+        } = await supabase
+          .from(
+            "client_service_history"
+          )
+          .select(
+            [
+              "id",
+              "service_date",
+              "total_price",
+              "payment_method",
+            ].join(",")
+          )
+          .eq(
+            "source",
+            "manual_legacy"
+          )
+          .gte(
+            "service_date",
+            historyFromDate
+          )
+          .lte(
+            "service_date",
+            historyToDate
+          )
+          .order(
+            "service_date",
+            {
+              ascending: true,
+            }
+          )
+          .order(
+            "id",
+            {
+              ascending: true,
+            }
+          )
+          .range(
+            historyFromIndex,
+            historyToIndex
+          );
+
+        if (historyError) {
+          console.log(
+            "Historical income load error:",
+            historyError
+          );
+
+          return;
+        }
+
+        historicalRows = [
+          ...historicalRows,
+          ...(historyPage || []),
+        ];
+
+        hasMoreHistoryRows =
+          Array.isArray(
+            historyPage
+          ) &&
+          historyPage.length ===
+            pageSize;
+
+        historyFromIndex +=
+          pageSize;
+      }
+
+      /*
+        نجهّز كل أشهر النطاق بصفر
+        أولًا، حتى إذا حُذفت خدمة
+        لا تبقى قيمة قديمة محفوظة.
+      */
+      const rangeMonthTotals =
+        {};
+
+      const firstHistoryMonth =
+        new Date(
+          `${
+            historyFromDate.slice(
+              0,
+              7
+            )
+          }-01T12:00:00`
+        );
+
+      const lastHistoryMonth =
+        new Date(
+          `${
+            historyToDate.slice(
+              0,
+              7
+            )
+          }-01T12:00:00`
+        );
+
+      for (
+        let monthCursor =
+          new Date(
+            firstHistoryMonth
+          );
+
+        monthCursor <=
+        lastHistoryMonth;
+
+        monthCursor.setMonth(
+          monthCursor.getMonth() +
+            1
+        )
+      ) {
+        const monthKey =
+          monthCursor
+            .toISOString()
+            .slice(
+              0,
+              7
+            );
+
+        rangeMonthTotals[
+          monthKey
+        ] = {
+          income: 0,
+          cash: 0,
+          bankTransfer: 0,
+          serviceRecords: 0,
+          paidRecords: 0,
+        };
+      }
+
+      historicalRows.forEach(
+        (serviceRow) => {
+          const serviceDate =
+            String(
+              serviceRow
+                .service_date ||
+                ""
+            ).slice(
+              0,
+              10
+            );
+
+          const monthKey =
+            serviceDate.slice(
+              0,
+              7
+            );
+
+          if (
+            !rangeMonthTotals[
+              monthKey
+            ]
+          ) {
+            rangeMonthTotals[
+              monthKey
+            ] = {
+              income: 0,
+              cash: 0,
+              bankTransfer: 0,
+              serviceRecords: 0,
+              paidRecords: 0,
+            };
+          }
+
+          const amount =
+            Number(
+              serviceRow
+                .total_price ||
+                0
+            );
+
+          const safeAmount =
+            Number.isFinite(
+              amount
+            )
+              ? amount
+              : 0;
+
+          const paymentMethod =
+            String(
+              serviceRow
+                .payment_method ||
+                ""
+            )
+              .trim()
+              .toLowerCase()
+              .replace(
+                /\s+/g,
+                "_"
+              );
+
+          rangeMonthTotals[
+            monthKey
+          ].income +=
+            safeAmount;
+
+          rangeMonthTotals[
+            monthKey
+          ].serviceRecords +=
+            1;
+
+          if (
+            safeAmount > 0
+          ) {
+            rangeMonthTotals[
+              monthKey
+            ].paidRecords +=
+              1;
+          }
+
+          if (
+            paymentMethod ===
+            "cash"
+          ) {
+            rangeMonthTotals[
+              monthKey
+            ].cash +=
+              safeAmount;
+          }
+
+          if (
+            paymentMethod ===
+            "bank_transfer"
+          ) {
+            rangeMonthTotals[
+              monthKey
+            ].bankTransfer +=
+              safeAmount;
+          }
+        }
+      );
+
+      setHistoricalIncomeByMonth(
+        (
+          previousIncomeByMonth
+        ) => ({
+          ...previousIncomeByMonth,
+          ...rangeMonthTotals,
+        })
+      );
+    }
+
+    /*
+      المصروفات اليومية تبقى من
+      daily_reports كما هي؛ لا نحذف
+      ولا نغيّر أي مصروف مسجل.
+    */
+    const {
+      data: dailyReports,
+      error: reportsError,
+    } = await supabase
+      .from("daily_reports")
+      .select(
+        [
+          "report_date",
+          "report_data",
+          "updated_at",
+          "updated_by",
+        ].join(",")
+      )
+      .gte(
+        "report_date",
+        fromDate
+      )
+      .lte(
+        "report_date",
+        toDate
+      );
+
+    if (reportsError) {
+      console.log(
+        "Income expense daily reports load error:",
+        reportsError
+      );
+
+      return;
+    }
+
+    setDailyManualData(
+      (
+        previousDailyManualData
+      ) => {
+        const nextDailyManualData = {
+          ...previousDailyManualData,
+        };
+
+        (
+          dailyReports || []
+        ).forEach(
+          (report) => {
+            if (
+              report.report_date
+            ) {
+              nextDailyManualData[
+                report.report_date
+              ] =
+                report.report_data ||
+                {};
+            }
+          }
+        );
+
+        return nextDailyManualData;
+      }
+    );
+
+    incomeExpenseLoadedRangesRef
+      .current[rangeKey] =
+      true;
+  };
   const applyScheduleRowFromRemote = (record) => {
     if (!record?.schedule_date && !record?.id) return;
     if (record?.updated_by === sharedDataDeviceIdRef.current) return;
@@ -16661,58 +17167,403 @@ const normalizeOrderLabelForStats = (orderValue) =>
     return date.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
   };
 
-  const getIncomeExpenseManualData = (monthKey) =>
-    financeMonthlySettings?.[monthKey]?.incomeExpenseManual || {};
+  /*
+    هذه الحقول محسوبة تلقائيًا من
+    سجل الخدمات وجدول المواعيد.
 
-  const updateIncomeExpenseManualData = (monthKey, field, value) => {
-    financeSettingsLastEditRef.current = Date.now();
+    لا يجوز إدخالها أو تعديلها يدويًا.
+  */
+  const systemCalculatedIncomeExpenseFields =
+    new Set([
+      "income",
+      "netIncome",
+      "cash",
+      "bankTransfer",
+    ]);
 
-    setFinanceMonthlySettings((prev) => ({
-      ...prev,
-      [monthKey]: {
-        ...getFinanceMonthSettings(monthKey),
-        ...(prev[monthKey] || {}),
-        incomeExpenseManual: {
-          ...((prev[monthKey] || {}).incomeExpenseManual || {}),
-          [field]: value,
-        },
-      },
-    }));
-  };
+  const isSystemCalculatedIncomeExpenseField =
+    (field) =>
+      systemCalculatedIncomeExpenseFields.has(
+        String(field || "")
+      );
 
-  const getIncomeExpenseReportRow = (monthKey) => {
-    const stats = getFinanceMonthStats(monthKey);
-    const manual = getIncomeExpenseManualData(monthKey);
-    const useAutoReportData = monthKey >= "2026-05";
-    const valueOrAuto = (field, autoValue) => {
-      const manualValue = manual[field];
-      return manualValue === undefined || manualValue === ""
-        ? useAutoReportData
-          ? autoValue
-          : 0
-        : parseAmount(manualValue);
+  /*
+    نخفي أي قيم يدوية قديمة لهذه
+    الحقول حتى لو بقيت مؤقتًا داخل
+    localStorage على جهاز قديم.
+  */
+  const getIncomeExpenseManualData =
+    (monthKey) => {
+      const savedManual =
+        financeMonthlySettings
+          ?.[monthKey]
+          ?.incomeExpenseManual;
+
+      if (
+        !savedManual ||
+        typeof savedManual !==
+          "object" ||
+        Array.isArray(
+          savedManual
+        )
+      ) {
+        return {};
+      }
+
+      const {
+        income: _oldIncome,
+        netIncome: _oldNetIncome,
+        cash: _oldCash,
+        bankTransfer:
+          _oldBankTransfer,
+        ...editableManual
+      } = savedManual;
+
+      return editableManual;
     };
 
-    return {
+  const updateIncomeExpenseManualData =
+    (
       monthKey,
-      date: getShortMonthLabel(monthKey),
-      income: valueOrAuto("income", stats.totalIncome),
-      expenses: valueOrAuto("expenses", stats.totalExpenses),
-      netIncome: valueOrAuto("netIncome", stats.totalNetProfit),
-      cash: valueOrAuto("cash", stats.paymentTotals.Cash),
-      bankTransfer: valueOrAuto("bankTransfer", stats.paymentTotals["Bank Transfer"]),
-      avgServicePrice: valueOrAuto("avgServicePrice", stats.averageServicePrice),
-      newClients: valueOrAuto("newClients", stats.newClients),
-      loyalClients: valueOrAuto("loyalClients", stats.loyalClients),
-      giftsAdded: valueOrAuto("giftsAdded", stats.giftsAdded),
-      giftsReceived: valueOrAuto("giftsReceived", stats.giftsReceived),
-      free1Service: valueOrAuto("free1Service", stats.freeGifts),
-      free2Services: valueOrAuto("free2Services", stats.twoFreeGifts),
-      massage: valueOrAuto("massage", stats.servicesTotals.Massage),
-      maniPedi: valueOrAuto("maniPedi", stats.servicesTotals["Mani & Pedi"]),
-      cancelledApp: valueOrAuto("cancelledApp", stats.clientsTurnedAway),
+      field,
+      value
+    ) => {
+      /*
+        حماية إضافية تمنع إعادة
+        إدخال الأرقام المحسوبة حتى
+        لو استُدعيت الدالة بالخطأ.
+      */
+      if (
+        isSystemCalculatedIncomeExpenseField(
+          field
+        )
+      ) {
+        return;
+      }
+
+      financeSettingsLastEditRef
+        .current =
+        Date.now();
+
+      setFinanceMonthlySettings(
+        (previousSettings) => ({
+          ...previousSettings,
+
+          [monthKey]: {
+            ...getFinanceMonthSettings(
+              monthKey
+            ),
+
+            ...(
+              previousSettings[
+                monthKey
+              ] || {}
+            ),
+
+            incomeExpenseManual: {
+              ...(
+                previousSettings[
+                  monthKey
+                ]
+                  ?.incomeExpenseManual ||
+                {}
+              ),
+
+              [field]:
+                value,
+            },
+          },
+        })
+      );
     };
-  };
+
+  /*
+    يحسب دخل جدول المواعيد فقط من
+    2026-05-30 وما بعده.
+
+    لذلك شهر مايو 2026 يجمع:
+    سجل الخدمات حتى 29 مايو
+    + جدول المواعيد من 30 مايو.
+  */
+  const getScheduleIncomeForReportMonth =
+    (
+      monthKey
+    ) => {
+      const monthlySettings =
+        getFinanceMonthSettings(
+          monthKey
+        );
+
+      const currentMonthKey =
+        currentDate.slice(
+          0,
+          7
+        );
+
+      const eligibleDates =
+        getFinanceMonthDates(
+          monthKey
+        ).filter(
+          (date) =>
+            date >=
+              LIVE_SCHEDULE_INCOME_FROM_DATE &&
+            (
+              monthKey !==
+                currentMonthKey ||
+              date <=
+                currentDate
+            )
+        );
+
+      return eligibleDates.reduce(
+        (
+          totals,
+          date
+        ) => {
+          const dayStats =
+            getFinanceDayStats(
+              date,
+              monthlySettings
+            );
+
+          totals.income +=
+            parseAmount(
+              dayStats.income
+            );
+
+          totals.cash +=
+            parseAmount(
+              dayStats
+                .paymentTotals
+                .Cash
+            );
+
+          totals.bankTransfer +=
+            parseAmount(
+              dayStats
+                .paymentTotals[
+                  "Bank Transfer"
+                ]
+            );
+
+          return totals;
+        },
+        {
+          income: 0,
+          cash: 0,
+          bankTransfer: 0,
+        }
+      );
+    };
+
+  const getIncomeExpenseReportRow =
+    (
+      monthKey
+    ) => {
+      const stats =
+        getFinanceMonthStats(
+          monthKey
+        );
+
+      const manual =
+        getIncomeExpenseManualData(
+          monthKey
+        );
+
+      const historicalIncome =
+        historicalIncomeByMonth[
+          monthKey
+        ] || {
+          income: 0,
+          cash: 0,
+          bankTransfer: 0,
+        };
+
+      const scheduleIncome =
+        getScheduleIncomeForReportMonth(
+          monthKey
+        );
+
+      /*
+        هذه القيم الثلاث لا تقرأ
+        من الأرقام اليدوية نهائيًا.
+      */
+      const systemIncome =
+        parseAmount(
+          historicalIncome.income
+        ) +
+        parseAmount(
+          scheduleIncome.income
+        );
+
+      const systemCash =
+        parseAmount(
+          historicalIncome.cash
+        ) +
+        parseAmount(
+          scheduleIncome.cash
+        );
+
+      const systemBankTransfer =
+        parseAmount(
+          historicalIncome
+            .bankTransfer
+        ) +
+        parseAmount(
+          scheduleIncome
+            .bankTransfer
+        );
+
+      const useAutoReportData =
+        monthKey >=
+        "2026-05";
+
+      const valueOrAuto =
+        (
+          field,
+          autoValue
+        ) => {
+          const manualValue =
+            manual[field];
+
+          return (
+            manualValue ===
+              undefined ||
+            manualValue ===
+              ""
+          )
+            ? (
+                useAutoReportData
+                  ? autoValue
+                  : 0
+              )
+            : parseAmount(
+                manualValue
+              );
+        };
+
+      /*
+        المصاريف القديمة تبقى من
+        الأرقام اليدوية المسجلة.
+
+        من مايو 2026 وما بعده يستخدم
+        النظام حساب المصروفات الحالي.
+      */
+      const expenses =
+        valueOrAuto(
+          "expenses",
+          stats.totalExpenses
+        );
+
+      /*
+        قبل مايو 2026 كان صافي الدخل
+        في الجدول محسوبًا:
+        الدخل - المصاريف.
+
+        من مايو 2026 وما بعده يبقى
+        منطق النظام الحالي مع الضريبة.
+      */
+      const netIncome =
+        monthKey <
+        "2026-05"
+          ? systemIncome -
+            expenses
+          : systemIncome -
+            expenses -
+            (
+              systemIncome *
+              15 /
+              115
+            );
+
+      return {
+        monthKey,
+
+        date:
+          getShortMonthLabel(
+            monthKey
+          ),
+
+        income:
+          systemIncome,
+
+        expenses,
+
+        netIncome,
+
+        cash:
+          systemCash,
+
+        bankTransfer:
+          systemBankTransfer,
+
+        avgServicePrice:
+          valueOrAuto(
+            "avgServicePrice",
+            stats.averageServicePrice
+          ),
+
+        newClients:
+          valueOrAuto(
+            "newClients",
+            stats.newClients
+          ),
+
+        loyalClients:
+          valueOrAuto(
+            "loyalClients",
+            stats.loyalClients
+          ),
+
+        giftsAdded:
+          valueOrAuto(
+            "giftsAdded",
+            stats.giftsAdded
+          ),
+
+        giftsReceived:
+          valueOrAuto(
+            "giftsReceived",
+            stats.giftsReceived
+          ),
+
+        free1Service:
+          valueOrAuto(
+            "free1Service",
+            stats.freeGifts
+          ),
+
+        free2Services:
+          valueOrAuto(
+            "free2Services",
+            stats.twoFreeGifts
+          ),
+
+        massage:
+          valueOrAuto(
+            "massage",
+            stats
+              .servicesTotals
+              .Massage
+          ),
+
+        maniPedi:
+          valueOrAuto(
+            "maniPedi",
+            stats
+              .servicesTotals[
+                "Mani & Pedi"
+              ]
+          ),
+
+        cancelledApp:
+          valueOrAuto(
+            "cancelledApp",
+            stats
+              .clientsTurnedAway
+          ),
+      };
+    };
 
   const getFilteredIncomeExpenseReportRows = () => {
     const allMonths = getIncomeExpenseReportMonths();
@@ -42852,25 +43703,58 @@ if (screen === "printFrame") {
               {reportRows.map((row, index) => (
                 <tr key={row.monthKey} style={{ backgroundColor: index % 2 === 0 ? "#fffaf3" : "#f2e7da" }}>
                   <td style={reportCellStyle}>{row.date}</td>
-                  {reportFields.map(([field]) => {
-                    const manualValue = getIncomeExpenseManualData(row.monthKey)[field] ?? "";
-                    return (
-                      <td key={field} style={reportCellStyle}>
-                        {incomeExpensesEditMode ? (
-                          <input
-                            value={manualValue}
-                            placeholder={formatCurrency(row[field])}
-                            onChange={(event) =>
-                              updateIncomeExpenseManualData(row.monthKey, field, event.target.value)
-                            }
-                            style={reportInputStyle}
-                          />
-                        ) : (
-                          formatCurrency(row[field])
-                        )}
-                      </td>
-                    );
-                  })}
+                  {reportFields.map(
+                    ([field]) => {
+                      const isSystemField =
+                        isSystemCalculatedIncomeExpenseField(
+                          field
+                        );
+
+                      const manualValue =
+                        getIncomeExpenseManualData(
+                          row.monthKey
+                        )[field] ?? "";
+
+                      return (
+                        <td
+                          key={field}
+                          style={
+                            reportCellStyle
+                          }
+                        >
+                          {incomeExpensesEditMode &&
+                          !isSystemField ? (
+                            <input
+                              value={
+                                manualValue
+                              }
+                              placeholder={formatCurrency(
+                                row[field]
+                              )}
+                              onChange={(
+                                event
+                              ) =>
+                                updateIncomeExpenseManualData(
+                                  row.monthKey,
+                                  field,
+                                  event
+                                    .target
+                                    .value
+                                )
+                              }
+                              style={
+                                reportInputStyle
+                              }
+                            />
+                          ) : (
+                            formatCurrency(
+                              row[field]
+                            )
+                          )}
+                        </td>
+                      );
+                    }
+                  )}
                 </tr>
               ))}
               <tr style={{ backgroundColor: "#c9b2a2", fontWeight: "900" }}>
