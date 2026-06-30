@@ -36747,6 +36747,18 @@ if (screen === "invoices") {
       0
     );
 
+    const invoicesSubtotalTotal =
+      filteredInvoices.reduce(
+        (total, invoice) =>
+          total +
+          getInvoiceDocumentSign(invoice) *
+            Number(
+              invoice.subtotalExcludingVat ||
+                0
+            ),
+        0
+      );
+
     const formatInvoiceAmount = (value) =>
       Number(value || 0).toLocaleString(
         "en-US",
@@ -38646,7 +38658,7 @@ if (screen === "invoices") {
             .invoices-summary-grid {
               display: grid;
               grid-template-columns:
-                repeat(3, minmax(160px, 1fr));
+                repeat(4, minmax(160px, 1fr));
               gap: 12px;
             }
 
@@ -38843,6 +38855,12 @@ if (screen === "invoices") {
                 "صافي الضريبة",
                 `${formatInvoiceAmount(
                   invoicesVatTotal
+                )} ر.س`,
+              ],
+              [
+                "الصافي بدون ضريبة",
+                `${formatInvoiceAmount(
+                  invoicesSubtotalTotal
                 )} ر.س`,
               ],
               [
