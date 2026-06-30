@@ -4340,7 +4340,9 @@ useEffect(() => {
   ) {
     loadIncomeExpenseReportDataRange(
       selectedFinanceMonth,
-      selectedFinanceMonth
+      selectedFinanceMonth,
+      selectedFinanceMonth ===
+        "2026-05"
     );
   }
 }, [
@@ -7093,7 +7095,8 @@ const getMonthEndDate = (monthKey) => {
 const loadIncomeExpenseReportDataRange =
   async (
     fromMonth,
-    toMonth
+    toMonth,
+    forceReload = false
   ) => {
     if (
       !fromMonth ||
@@ -7103,14 +7106,18 @@ const loadIncomeExpenseReportDataRange =
     }
 
     /*
-      نستخدم مفتاح نسخة جديد حتى لا
-      يعتمد المتصفح على نطاق قديم
-      تم تحميله قبل إضافة سجل الخدمات.
+      نحفظ النطاق المحمّل لتقليل
+      الطلبات المتكررة.
+
+      ويمكن تجاوز الحفظ عند الحاجة
+      لإعادة قراءة البيانات الحديثة
+      مباشرة من قاعدة البيانات.
     */
     const rangeKey =
       `income-expenses-v2-${fromMonth}_${toMonth}`;
 
     if (
+      !forceReload &&
       incomeExpenseLoadedRangesRef
         .current[rangeKey]
     ) {
