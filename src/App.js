@@ -858,6 +858,20 @@ useEffect(() => {
       matchedInvoice?.id ||
       "";
 
+    const invoiceCode =
+      matchedInvoice?.invoice_code ||
+      "";
+
+    const invoiceNumber =
+      Number(
+        matchedInvoice?.invoice_number ||
+        0
+      );
+
+    const invoiceIssuedAt =
+      matchedInvoice?.issued_at ||
+      "";
+
     return {
       id: service.id,
 
@@ -937,6 +951,10 @@ useEffect(() => {
         invoiceId
           ? {
               invoiceId,
+              invoiceCode,
+              invoiceNumber,
+              issuedAt:
+                invoiceIssuedAt,
             }
           : null,
 
@@ -953,9 +971,20 @@ useEffect(() => {
     linkedInvoices
   ) => {
     if (service.invoice_id) {
-      return {
-        id: service.invoice_id,
-      };
+      return (
+        linkedInvoices.find(
+          (invoice) =>
+            String(
+              invoice.id || ""
+            ) ===
+            String(
+              service.invoice_id ||
+                ""
+            )
+        ) || {
+          id: service.invoice_id,
+        }
+      );
     }
 
     if (
@@ -1123,6 +1152,25 @@ useEffect(() => {
       const historyRows =
         data || [];
 
+      /*
+        الفواتير التي رُبطت مباشرة
+        بسجل الخدمة عن طريق invoice_id.
+      */
+      const directInvoiceIds = [
+        ...new Set(
+          historyRows
+            .map(
+              (service) =>
+                service.invoice_id
+            )
+            .filter(Boolean)
+        ),
+      ];
+
+      /*
+        حماية للسجلات المرتبطة بالموعد
+        التي لم يُحفظ invoice_id فيها.
+      */
       const scheduleRowIds = [
         ...new Set(
           historyRows
@@ -1140,8 +1188,98 @@ useEffect(() => {
         ),
       ];
 
-      let linkedInvoices = [];
+      /*
+        نستخدم Map لمنع تكرار نفس
+        الفاتورة إذا وصلت من الطريقتين.
+      */
+      const linkedInvoiceMap =
+        new Map();
 
+      const addLinkedInvoices =
+        (invoiceRows) => {
+          (invoiceRows || []).forEach(
+            (invoice) => {
+              if (!invoice?.id) {
+                return;
+              }
+
+              linkedInvoiceMap.set(
+                String(invoice.id),
+                invoice
+              );
+            }
+          );
+        };
+
+      /*
+        الحقول المطلوبة في سجل الخدمات،
+        ومنها تاريخ إصدار الفاتورة.
+      */
+      const linkedInvoiceColumns =
+        [
+          "id",
+          "invoice_number",
+          "invoice_code",
+          "issued_at",
+          "document_type",
+          "schedule_row_id",
+          "household_role",
+          "household_client_key",
+          "client_id",
+        ].join(",");
+
+      /*
+        تحميل الفواتير المرتبطة مباشرة
+        عن طريق invoice_id.
+      */
+      for (
+        let startIndex = 0;
+        startIndex <
+        directInvoiceIds.length;
+        startIndex += 100
+      ) {
+        const invoiceIdsBatch =
+          directInvoiceIds.slice(
+            startIndex,
+            startIndex + 100
+          );
+
+        const {
+          data: invoiceRows,
+          error: invoiceLoadError,
+        } = await supabase
+          .from("invoices")
+          .select(
+            linkedInvoiceColumns
+          )
+          .in(
+            "id",
+            invoiceIdsBatch
+          )
+          .eq(
+            "document_type",
+            "invoice"
+          );
+
+        if (invoiceLoadError) {
+          console.error(
+            "Direct service invoice links load error:",
+            invoiceLoadError
+          );
+
+          break;
+        }
+
+        addLinkedInvoices(
+          invoiceRows
+        );
+      }
+
+      /*
+        تحميل أي فاتورة مرتبطة بصف
+        موعد ولم يُحفظ invoice_id
+        داخل سجل الخدمة.
+      */
       for (
         let startIndex = 0;
         startIndex <
@@ -1160,14 +1298,7 @@ useEffect(() => {
         } = await supabase
           .from("invoices")
           .select(
-            [
-              "id",
-              "document_type",
-              "schedule_row_id",
-              "household_role",
-              "household_client_key",
-              "client_id",
-            ].join(",")
+            linkedInvoiceColumns
           )
           .in(
             "schedule_row_id",
@@ -1180,18 +1311,22 @@ useEffect(() => {
 
         if (invoiceLoadError) {
           console.error(
-            "Service history invoice links load error:",
+            "Schedule service invoice links load error:",
             invoiceLoadError
           );
 
           break;
         }
 
-        linkedInvoices = [
-          ...linkedInvoices,
-          ...(invoiceRows || []),
-        ];
+        addLinkedInvoices(
+          invoiceRows
+        );
       }
+
+      const linkedInvoices =
+        Array.from(
+          linkedInvoiceMap.values()
+        );
 
       if (!effectActive) {
         return;
@@ -2673,23 +2808,6 @@ function fetchSharedClientLists() {
       )
   );
 
-  const getDefaultIncomeExpensesFromMonth = () => {
-    const now = new Date();
-    now.setMonth(now.getMonth() - 2);
-
-    return now.toISOString().slice(0, 7);
-  };
-
-  const [incomeExpensesFromMonth, setIncomeExpensesFromMonth] = useState(
-    getDefaultIncomeExpensesFromMonth()
-  );
-
-  const [incomeExpensesToMonth, setIncomeExpensesToMonth] = useState(
-    () => getCurrentLocalDate().slice(0, 7)
-  );
-
-  const [incomeExpensesEditMode, setIncomeExpensesEditMode] = useState(false);
-
   /*
     المصدر الرسمي للدخل:
 
@@ -2708,6 +2826,76 @@ function fetchSharedClientLists() {
 
   const LIVE_SCHEDULE_INCOME_FROM_DATE =
     "2026-05-30";
+
+  const getDefaultIncomeExpensesFromMonth =
+    () => {
+      const now = new Date();
+
+      now.setMonth(
+        now.getMonth() - 2
+      );
+
+      return now
+        .toISOString()
+        .slice(0, 7);
+    };
+
+  const getDefaultIncomeExpensesFromDate =
+    () => {
+      const today =
+        getCurrentLocalDate();
+
+      const currentMonthStart =
+        `${today.slice(0, 7)}-01`;
+
+      return currentMonthStart <
+        LIVE_SCHEDULE_INCOME_FROM_DATE
+        ? LIVE_SCHEDULE_INCOME_FROM_DATE
+        : currentMonthStart;
+    };
+
+  const [
+    incomeExpensesViewMode,
+    setIncomeExpensesViewMode,
+  ] = useState("monthly");
+
+  const [
+    incomeExpensesFromMonth,
+    setIncomeExpensesFromMonth,
+  ] = useState(
+    getDefaultIncomeExpensesFromMonth()
+  );
+
+  const [
+    incomeExpensesToMonth,
+    setIncomeExpensesToMonth,
+  ] = useState(
+    () =>
+      getCurrentLocalDate().slice(
+        0,
+        7
+      )
+  );
+
+  const [
+    incomeExpensesFromDate,
+    setIncomeExpensesFromDate,
+  ] = useState(
+    getDefaultIncomeExpensesFromDate()
+  );
+
+  const [
+    incomeExpensesToDate,
+    setIncomeExpensesToDate,
+  ] = useState(
+    () =>
+      getCurrentLocalDate()
+  );
+
+  const [
+    incomeExpensesEditMode,
+    setIncomeExpensesEditMode,
+  ] = useState(false);
 
   const [
     historicalIncomeByMonth,
@@ -4108,17 +4296,48 @@ useEffect(() => {
 
 
 useEffect(() => {
-  if (!isLoggedIn) return;
+  if (!isLoggedIn) {
+    return;
+  }
 
+  if (
+    screen ===
+    "incomeExpenses"
+  ) {
+    const fromMonth =
+      incomeExpensesViewMode ===
+      "daily"
+        ? String(
+            incomeExpensesFromDate ||
+              LIVE_SCHEDULE_INCOME_FROM_DATE
+          ).slice(
+            0,
+            7
+          )
+        : incomeExpensesFromMonth;
 
-  if (screen === "incomeExpenses") {
+    const toMonth =
+      incomeExpensesViewMode ===
+      "daily"
+        ? String(
+            incomeExpensesToDate ||
+              currentDate
+          ).slice(
+            0,
+            7
+          )
+        : incomeExpensesToMonth;
+
     loadIncomeExpenseReportDataRange(
-      incomeExpensesFromMonth,
-      incomeExpensesToMonth
+      fromMonth,
+      toMonth
     );
   }
 
-  if (screen === "finance") {
+  if (
+    screen ===
+    "finance"
+  ) {
     loadIncomeExpenseReportDataRange(
       selectedFinanceMonth,
       selectedFinanceMonth
@@ -4127,9 +4346,13 @@ useEffect(() => {
 }, [
   isLoggedIn,
   screen,
+  incomeExpensesViewMode,
   incomeExpensesFromMonth,
   incomeExpensesToMonth,
+  incomeExpensesFromDate,
+  incomeExpensesToDate,
   selectedFinanceMonth,
+  currentDate,
 ]);
 
 
@@ -17565,15 +17788,270 @@ const normalizeOrderLabelForStats = (orderValue) =>
       };
     };
 
-  const getFilteredIncomeExpenseReportRows = () => {
-    const allMonths = getIncomeExpenseReportMonths();
-    const fromMonth = incomeExpensesFromMonth || allMonths[0] || "2024-11";
-    const toMonth = incomeExpensesToMonth || allMonths[allMonths.length - 1] || currentDate.slice(0, 7);
+  const getIncomeExpenseDailyDates =
+    () => {
+      const requestedFromDate =
+        incomeExpensesFromDate ||
+        LIVE_SCHEDULE_INCOME_FROM_DATE;
 
-    return allMonths
-      .filter((monthKey) => monthKey >= fromMonth && monthKey <= toMonth)
-      .map(getIncomeExpenseReportRow);
-  };
+      const requestedToDate =
+        incomeExpensesToDate ||
+        currentDate;
+
+      const safeFromDate =
+        requestedFromDate <
+        LIVE_SCHEDULE_INCOME_FROM_DATE
+          ? LIVE_SCHEDULE_INCOME_FROM_DATE
+          : requestedFromDate;
+
+      const safeToDate =
+        requestedToDate >
+        currentDate
+          ? currentDate
+          : requestedToDate;
+
+      if (
+        safeFromDate >
+        safeToDate
+      ) {
+        return [];
+      }
+
+      const dates = [];
+
+      const cursor =
+        new Date(
+          `${safeFromDate}T12:00:00`
+        );
+
+      const endDate =
+        new Date(
+          `${safeToDate}T12:00:00`
+        );
+
+      while (
+        cursor <= endDate
+      ) {
+        const year =
+          cursor.getFullYear();
+
+        const month =
+          String(
+            cursor.getMonth() + 1
+          ).padStart(
+            2,
+            "0"
+          );
+
+        const day =
+          String(
+            cursor.getDate()
+          ).padStart(
+            2,
+            "0"
+          );
+
+        dates.push(
+          `${year}-${month}-${day}`
+        );
+
+        cursor.setDate(
+          cursor.getDate() + 1
+        );
+      }
+
+      return dates;
+    };
+
+  const getIncomeExpenseDailyReportRow =
+    (
+      date
+    ) => {
+      const monthKey =
+        date.slice(
+          0,
+          7
+        );
+
+      const monthlySettings =
+        getFinanceMonthSettings(
+          monthKey
+        );
+
+      const stats =
+        getFinanceDayStats(
+          date,
+          monthlySettings
+        );
+
+      const totalServices =
+        parseAmount(
+          stats.totalServices
+        );
+
+      const income =
+        parseAmount(
+          stats.income
+        );
+
+      return {
+        rowKey:
+          date,
+
+        monthKey,
+
+        isDaily:
+          true,
+
+        date:
+          new Date(
+            `${date}T12:00:00`
+          ).toLocaleDateString(
+            "en-US",
+            {
+              day: "2-digit",
+              month: "short",
+              year: "numeric",
+            }
+          ),
+
+        income,
+
+        expenses:
+          parseAmount(
+            stats.expenses
+          ),
+
+        netIncome:
+          parseAmount(
+            stats.netProfit
+          ),
+
+        cash:
+          parseAmount(
+            stats
+              .paymentTotals
+              .Cash
+          ),
+
+        bankTransfer:
+          parseAmount(
+            stats
+              .paymentTotals[
+                "Bank Transfer"
+              ]
+          ),
+
+        avgServicePrice:
+          totalServices > 0
+            ? income /
+              totalServices
+            : 0,
+
+        newClients:
+          parseAmount(
+            stats.newClients
+          ),
+
+        loyalClients:
+          parseAmount(
+            stats.loyalClients
+          ),
+
+        giftsAdded:
+          parseAmount(
+            stats.giftsAdded
+          ),
+
+        giftsReceived:
+          parseAmount(
+            stats.giftsReceived
+          ),
+
+        free1Service:
+          parseAmount(
+            stats.freeGifts
+          ),
+
+        free2Services:
+          parseAmount(
+            stats.twoFreeGifts
+          ),
+
+        massage:
+          parseAmount(
+            stats
+              .servicesTotals
+              .Massage
+          ),
+
+        maniPedi:
+          parseAmount(
+            stats
+              .servicesTotals[
+                "Mani & Pedi"
+              ]
+          ),
+
+        cancelledApp:
+          parseAmount(
+            stats.clientsTurnedAway
+          ),
+      };
+    };
+
+  const getFilteredIncomeExpenseReportRows =
+    () => {
+      if (
+        incomeExpensesViewMode ===
+        "daily"
+      ) {
+        return getIncomeExpenseDailyDates()
+          .map(
+            getIncomeExpenseDailyReportRow
+          );
+      }
+
+      const allMonths =
+        getIncomeExpenseReportMonths();
+
+      const fromMonth =
+        incomeExpensesFromMonth ||
+        allMonths[0] ||
+        "2024-11";
+
+      const toMonth =
+        incomeExpensesToMonth ||
+        allMonths[
+          allMonths.length - 1
+        ] ||
+        currentDate.slice(
+          0,
+          7
+        );
+
+      return allMonths
+        .filter(
+          (monthKey) =>
+            monthKey >=
+              fromMonth &&
+            monthKey <=
+              toMonth
+        )
+        .map(
+          (monthKey) => ({
+            ...getIncomeExpenseReportRow(
+              monthKey
+            ),
+
+            rowKey:
+              monthKey,
+
+            isDaily:
+              false,
+          })
+        );
+    };
 
   const exportFinanceMonthToExcel = (monthKey) => {
   const monthDates = getFinanceMonthDates(monthKey);
@@ -19625,11 +20103,11 @@ const leavingTime = addMinutesToDisplayTime(
     ],
     [
       "finance",
-      "التقارير",
+      "لوحة الأداء",
     ],
     [
       "incomeExpenses",
-      "الدخل والمصاريف",
+      "التقرير المالي",
     ],
     [
       "settings",
@@ -19700,11 +20178,11 @@ const leavingTime = addMinutesToDisplayTime(
     ],
     [
       "finance",
-      "التقارير",
+      "لوحة الأداء",
     ],
     [
       "incomeExpenses",
-      "الدخل والمصاريف",
+      "التقرير المالي",
     ],
     [
       "settings",
@@ -25970,7 +26448,7 @@ const welcomeBoardNameStyle = {
     },
     {
       tableName: "daily_reports",
-      label: "التقارير اليومية",
+      label: "لوحة الأداء اليومية",
     },
     {
       tableName: "employee_accounts",
@@ -31609,7 +32087,7 @@ if (screen === "menu") {
                 "1px solid #d6c7b8",
             }}
           >
-            التقارير
+            لوحة الأداء
           </button>
 
           <button
@@ -31632,7 +32110,7 @@ if (screen === "menu") {
                 "1px solid #d6c7b8",
             }}
           >
-            الدخل والمصاريف
+            التقرير المالي
           </button>
         </div>
       </div>
@@ -43518,8 +43996,16 @@ if (screen === "printFrame") {
   }
 
   if (screen === "incomeExpenses") {
-    const reportMonths = getIncomeExpenseReportMonths();
-    const reportRows = getFilteredIncomeExpenseReportRows();
+    const reportMonths =
+      getIncomeExpenseReportMonths();
+
+    const reportRows =
+      getFilteredIncomeExpenseReportRows();
+
+    const isDailyView =
+      incomeExpensesViewMode ===
+      "daily";
+
     const reportFields = [
       ["income", "Income"],
       ["expenses", "Expenses"],
@@ -43537,234 +44023,1113 @@ if (screen === "printFrame") {
       ["maniPedi", "Mani / Pedi"],
       ["cancelledApp", "Cancelled App"],
     ];
-    const reportTotals = reportRows.reduce(
-      (totals, row) => {
-        reportFields.forEach(([field]) => {
-          totals[field] = (totals[field] || 0) + parseAmount(row[field]);
-        });
-        return totals;
+
+    const reportTotals =
+      reportRows.reduce(
+        (totals, row) => {
+          reportFields.forEach(
+            ([field]) => {
+              totals[field] =
+                parseAmount(
+                  totals[field]
+                ) +
+                parseAmount(
+                  row[field]
+                );
+            }
+          );
+
+          return totals;
+        },
+        {}
+      );
+
+    const averageServiceRows =
+      reportRows.filter(
+        (row) =>
+          parseAmount(
+            row.avgServicePrice
+          ) > 0
+      );
+
+    reportTotals.avgServicePrice =
+      averageServiceRows.length
+        ? averageServiceRows.reduce(
+            (total, row) =>
+              total +
+              parseAmount(
+                row.avgServicePrice
+              ),
+            0
+          ) /
+          averageServiceRows.length
+        : 0;
+
+    const summaryCards = [
+      {
+        field: "income",
+        label: "Total Income",
+        icon: "↗",
+        accent: "#4b2e1f",
       },
-      {}
-    );
-    const averageServiceRows = reportRows.filter((row) => parseAmount(row.avgServicePrice) > 0);
-    reportTotals.avgServicePrice = averageServiceRows.length
-      ? averageServiceRows.reduce((total, row) => total + parseAmount(row.avgServicePrice), 0) /
-        averageServiceRows.length
-      : 0;
+      {
+        field: "expenses",
+        label: "Total Expenses",
+        icon: "↘",
+        accent: "#8a5f48",
+      },
+      {
+        field: "netIncome",
+        label: "Net Income",
+        icon: "◆",
+        accent:
+          parseAmount(
+            reportTotals.netIncome
+          ) >= 0
+            ? "#315f45"
+            : "#963e35",
+      },
+      {
+        field: "cash",
+        label: "Cash",
+        icon: "C",
+        accent: "#76513b",
+      },
+      {
+        field: "bankTransfer",
+        label: "Bank Transfer",
+        icon: "B",
+        accent: "#604235",
+      },
+    ];
+
     const reportInputStyle = {
       width: "100%",
-      border: "none",
-      background: "transparent",
-      textAlign: "center",
-      fontWeight: "700",
-      color: "#111",
-      outline: "none",
-      padding: "0 1px",
+      minWidth: "92px",
       boxSizing: "border-box",
-      height: "18px",
-      lineHeight: "16px",
+      border:
+        "1px solid rgba(176,139,109,0.42)",
+      borderRadius: "10px",
+      background:
+        "rgba(255,255,255,0.88)",
+      color: "#4b2e1f",
+      textAlign: "center",
+      fontSize: "12px",
+      fontWeight: "850",
+      outline: "none",
+      padding: "8px 7px",
+      boxShadow:
+        "inset 0 1px 3px rgba(75,46,31,0.05)",
     };
+
     const reportCellStyle = {
-      ...scheduleCellStyle,
-      padding: "0 2px",
-      height: "20px",
-      lineHeight: "18px",
-      fontSize: "14px",
-      fontWeight: "700",
-      color: "#111",
+      padding: "13px 12px",
+      borderBottom:
+        "1px solid rgba(189,157,130,0.24)",
+      borderRight:
+        "1px solid rgba(189,157,130,0.16)",
+      textAlign: "center",
+      verticalAlign: "middle",
+      fontSize: "12px",
+      fontWeight: "800",
+      color: "#4b2e1f",
       whiteSpace: "nowrap",
     };
+
     const reportHeaderCellStyle = {
-      ...scheduleHeaderCellStyle,
       position: "sticky",
       top: 0,
-      padding: "2px 5px",
-      height: "22px",
-      lineHeight: "18px",
+      zIndex: 4,
+      padding: "14px 12px",
+      background:
+        "linear-gradient(135deg, #cdb8a5 0%, #eaded3 100%)",
+      color: "#6f6258",
+      borderRight:
+        "1px solid rgba(255,255,255,0.45)",
+      textAlign: "center",
+      verticalAlign: "middle",
+      fontSize: "12px",
+      fontWeight: "900",
+      letterSpacing: "0.2px",
+      whiteSpace: "nowrap",
     };
+
+    const filterInputStyle = {
+      ...inputStyle,
+      width: "190px",
+      minWidth: "170px",
+      margin: 0,
+      boxSizing: "border-box",
+      padding: "13px 14px",
+      borderRadius: "15px",
+      border:
+        "1px solid rgba(179,145,117,0.42)",
+      background:
+        "rgba(255,253,249,0.96)",
+      color: "#4b2e1f",
+      fontSize: "13px",
+      fontWeight: "850",
+      textAlign: "center",
+      outline: "none",
+      boxShadow:
+        "0 7px 18px rgba(75,46,31,0.05)",
+    };
+
+    const periodLabel =
+      isDailyView
+        ? `${
+            incomeExpensesFromDate ||
+            LIVE_SCHEDULE_INCOME_FROM_DATE
+          } — ${
+            incomeExpensesToDate ||
+            currentDate
+          }`
+        : `${
+            getShortMonthLabel(
+              incomeExpensesFromMonth
+            )
+          } — ${
+            getShortMonthLabel(
+              incomeExpensesToMonth
+            )
+          }`;
 
     return withGreeting(
       <div
         className="paradise-income-expenses-page"
         style={{
           width: "100%",
+          minHeight: "100vh",
+          boxSizing: "border-box",
+          padding:
+            "clamp(14px, 2.5vw, 30px)",
           color: "#4b2e1f",
-          fontFamily: "Arial",
+          fontFamily: "Arial, sans-serif",
           direction: "ltr",
+          background:
+            "radial-gradient(circle at top right, rgba(231,211,193,0.72), transparent 34%), linear-gradient(145deg, #fbf7f1 0%, #f4eadf 52%, #efe0d1 100%)",
+          borderRadius: "28px",
         }}
       >
         <div
-  className="paradise-income-expenses-header"
-  style={{
-    textAlign: "center",
-    marginBottom: "60px",
-  }}
->
-  <img
-    src={logo}
-    alt="logo"
-    style={{
-      width: "100px",
-      marginBottom: "35px",
-      display: "block",
-      marginInline: "auto",
-    }}
-  />
-
-  <h2
-    style={{
-      margin: 0,
-      marginBottom: "25px",
-      fontSize: "28px",
-      color: "#4b2e1f",
-    }}
-  >
-    الدخل والمصاريف
-  </h2>
-</div>
-
-<div
-  className="paradise-income-expenses-controls"
-  style={{
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: "20px",
-    flexWrap: "wrap",
-    direction: "ltr",
-    transform: "translateY(-15px)",
-  }}
->
-          <label style={{ fontWeight: "900" }}>From</label>
-          <select
-            value={incomeExpensesFromMonth}
-            onChange={(event) => setIncomeExpensesFromMonth(event.target.value)}
-            style={{ ...inputStyle, width: "160px", margin: 0, textAlign: "center" }}
-          >
-            {reportMonths.map((monthKey) => (
-              <option key={monthKey} value={monthKey}>
-                {getShortMonthLabel(monthKey)}
-              </option>
-            ))}
-          </select>
-
-          <label style={{ fontWeight: "900" }}>To</label>
-          <select
-            value={incomeExpensesToMonth}
-            onChange={(event) => setIncomeExpensesToMonth(event.target.value)}
-            style={{ ...inputStyle, width: "160px", margin: 0, textAlign: "center" }}
-          >
-            {reportMonths.map((monthKey) => (
-              <option key={monthKey} value={monthKey}>
-                {getShortMonthLabel(monthKey)}
-              </option>
-            ))}
-          </select>
-
-          <button
-            onClick={() => setIncomeExpensesEditMode((prev) => !prev)}
-            style={{
-              ...buttonStyle,
-              background: incomeExpensesEditMode
-                ? "linear-gradient(135deg, #1f9f54, #25D366)"
-                : "linear-gradient(135deg, #4b2e1f, #7a5a43)",
-              color: "white",
-              padding: "12px 22px",
-              borderRadius: "16px",
-            }}
-          >
-            {incomeExpensesEditMode ? "Save" : "Edit"}
-          </button>
-        </div>
-
-        <div
-          className="paradise-income-expenses-table-scroll"
-          style={scheduleTableWrapperStyle}
+          className="paradise-income-expenses-shell"
+          style={{
+            width: "min(1500px, 100%)",
+            margin: "0 auto",
+          }}
         >
-          <table
-            className="paradise-income-expenses-table"
+          <section
+            className="paradise-income-expenses-hero"
             style={{
-              minWidth: "max-content",
-              width: "max-content",
-              borderCollapse: "collapse",
-              borderSpacing: 0,
-              color: "#4b2e1f",
+              position: "relative",
+              overflow: "hidden",
+              padding:
+                "clamp(24px, 4vw, 42px)",
+              borderRadius: "28px",
+              border:
+                "1px solid rgba(183,148,119,0.32)",
+              background:
+                "linear-gradient(135deg, rgba(255,253,249,0.97), rgba(239,224,209,0.94))",
+              boxShadow:
+                "0 22px 60px rgba(75,46,31,0.11)",
+              marginBottom: "22px",
             }}
           >
-            <thead>
-              <tr>
-                <th style={{ ...reportHeaderCellStyle, width: "90px", minWidth: "90px" }}>Date</th>
-                {reportFields.map(([, label]) => (
-                  <th key={label} style={{ ...reportHeaderCellStyle, width: "112px", minWidth: "112px" }}>{label}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {reportRows.map((row, index) => (
-                <tr key={row.monthKey} style={{ backgroundColor: index % 2 === 0 ? "#fffaf3" : "#f2e7da" }}>
-                  <td style={reportCellStyle}>{row.date}</td>
-                  {reportFields.map(
-                    ([field]) => {
-                      const isSystemField =
-                        isSystemCalculatedIncomeExpenseField(
-                          field
+            <div
+              style={{
+                position: "absolute",
+                width: "230px",
+                height: "230px",
+                borderRadius: "50%",
+                right: "-70px",
+                top: "-95px",
+                background:
+                  "rgba(159,116,83,0.12)",
+                pointerEvents: "none",
+              }}
+            />
+
+            <div
+              style={{
+                position: "relative",
+                display: "flex",
+                alignItems: "center",
+                justifyContent:
+                  "space-between",
+                gap: "22px",
+                flexWrap: "wrap",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "18px",
+                  minWidth: 0,
+                }}
+              >
+                <div
+                  style={{
+                    width: "82px",
+                    height: "82px",
+                    flex: "0 0 82px",
+                    borderRadius: "22px",
+                    display: "grid",
+                    placeItems: "center",
+                    background:
+                      "rgba(255,255,255,0.78)",
+                    border:
+                      "1px solid rgba(178,143,115,0.3)",
+                    boxShadow:
+                      "0 12px 30px rgba(75,46,31,0.08)",
+                  }}
+                >
+                  <img
+                    src={logo}
+                    alt="logo"
+                    style={{
+                      width: "64px",
+                      height: "64px",
+                      objectFit: "contain",
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <div
+                    style={{
+                      marginBottom: "7px",
+                      color: "#9a765f",
+                      fontSize: "12px",
+                      fontWeight: "900",
+                      letterSpacing: "1.5px",
+                      textTransform:
+                        "uppercase",
+                    }}
+                  >
+                    Paradise Spa Finance
+                  </div>
+
+                  <h2
+                    style={{
+                      margin: 0,
+                      color: "#4b2e1f",
+                      fontSize:
+                        "clamp(25px, 4vw, 38px)",
+                      fontWeight: "950",
+                      lineHeight: 1.15,
+                    }}
+                  >
+                    التقرير المالي
+                  </h2>
+
+                  <p
+                    style={{
+                      margin: "9px 0 0",
+                      color: "#765b4b",
+                      fontSize: "14px",
+                      fontWeight: "700",
+                    }}
+                  >
+                    {isDailyView
+                      ? "تفصيل يومي دقيق من 30 مايو 2026 وما بعده"
+                      : "ملخص شهري شامل للفترات القديمة والجديدة"}
+                  </p>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  padding: "5px",
+                  borderRadius: "16px",
+                  background:
+                    "rgba(255,255,255,0.72)",
+                  border:
+                    "1px solid rgba(178,143,115,0.32)",
+                  boxShadow:
+                    "0 10px 24px rgba(75,46,31,0.06)",
+                }}
+              >
+                {[
+                  [
+                    "monthly",
+                    "Monthly View",
+                  ],
+                  [
+                    "daily",
+                    "Daily View",
+                  ],
+                ].map(
+                  ([mode, label]) => {
+                    const isActive =
+                      incomeExpensesViewMode ===
+                      mode;
+
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => {
+                          setIncomeExpensesViewMode(
+                            mode
+                          );
+
+                          if (
+                            mode ===
+                            "daily"
+                          ) {
+                            setIncomeExpensesEditMode(
+                              false
+                            );
+                          }
+                        }}
+                        style={{
+                          border: "none",
+                          borderRadius:
+                            "12px",
+                          padding:
+                            "11px 17px",
+                          background:
+                            isActive
+                              ? "linear-gradient(135deg, #4b2e1f, #76513b)"
+                              : "transparent",
+                          color:
+                            isActive
+                              ? "#fffaf5"
+                              : "#6b4c3b",
+                          fontSize:
+                            "13px",
+                          fontWeight:
+                            "900",
+                          cursor:
+                            "pointer",
+                          boxShadow:
+                            isActive
+                              ? "0 8px 18px rgba(75,46,31,0.18)"
+                              : "none",
+                          transition:
+                            "all 0.2s ease",
+                        }}
+                      >
+                        {label}
+                      </button>
+                    );
+                  }
+                )}
+              </div>
+            </div>
+          </section>
+
+          <section
+            className="paradise-income-expenses-filter-card"
+            style={{
+              marginBottom: "22px",
+              padding:
+                "clamp(18px, 3vw, 26px)",
+              borderRadius: "24px",
+              border:
+                "1px solid rgba(183,148,119,0.3)",
+              background:
+                "rgba(255,252,247,0.88)",
+              boxShadow:
+                "0 16px 42px rgba(75,46,31,0.08)",
+              backdropFilter:
+                "blur(10px)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent:
+                  "space-between",
+                gap: "16px",
+                flexWrap: "wrap",
+                marginBottom: "18px",
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    marginBottom: "4px",
+                    color: "#9b7861",
+                    fontSize: "12px",
+                    fontWeight: "900",
+                    letterSpacing: "0.8px",
+                    textTransform:
+                      "uppercase",
+                  }}
+                >
+                  Report period
+                </div>
+
+                <div
+                  style={{
+                    color: "#4b2e1f",
+                    fontSize: "17px",
+                    fontWeight: "950",
+                  }}
+                >
+                  {periodLabel}
+                </div>
+              </div>
+
+              {!isDailyView && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setIncomeExpensesEditMode(
+                      (previous) =>
+                        !previous
+                    )
+                  }
+                  style={{
+                    ...buttonStyle,
+                    margin: 0,
+                    padding: "12px 22px",
+                    border:
+                      "1px solid rgba(84,55,40,0.12)",
+                    borderRadius: "14px",
+                    background:
+                      incomeExpensesEditMode
+                        ? "linear-gradient(135deg, #315f45, #4b8663)"
+                        : "linear-gradient(135deg, #4b2e1f, #76513b)",
+                    color: "#fff",
+                    fontWeight: "900",
+                    boxShadow:
+                      "0 10px 22px rgba(75,46,31,0.14)",
+                  }}
+                >
+                  {incomeExpensesEditMode
+                    ? "Save"
+                    : "Edit Monthly Data"}
+                </button>
+              )}
+            </div>
+
+            <div
+              className="paradise-income-expenses-controls"
+              style={{
+                display: "flex",
+                alignItems: "flex-end",
+                gap: "14px",
+                flexWrap: "wrap",
+              }}
+            >
+              {!isDailyView ? (
+                <>
+                  <label
+                    style={{
+                      display: "grid",
+                      gap: "7px",
+                      color: "#6f5141",
+                      fontSize: "12px",
+                      fontWeight: "900",
+                    }}
+                  >
+                    From month
+                    <select
+                      value={
+                        incomeExpensesFromMonth
+                      }
+                      onChange={(event) => {
+                        const nextMonth =
+                          event.target.value;
+
+                        setIncomeExpensesFromMonth(
+                          nextMonth
                         );
 
-                      const manualValue =
-                        getIncomeExpenseManualData(
-                          row.monthKey
-                        )[field] ?? "";
+                        if (
+                          nextMonth >
+                          incomeExpensesToMonth
+                        ) {
+                          setIncomeExpensesToMonth(
+                            nextMonth
+                          );
+                        }
+                      }}
+                      style={filterInputStyle}
+                    >
+                      {reportMonths.map(
+                        (monthKey) => (
+                          <option
+                            key={monthKey}
+                            value={monthKey}
+                          >
+                            {getShortMonthLabel(
+                              monthKey
+                            )}
+                          </option>
+                        )
+                      )}
+                    </select>
+                  </label>
+
+                  <label
+                    style={{
+                      display: "grid",
+                      gap: "7px",
+                      color: "#6f5141",
+                      fontSize: "12px",
+                      fontWeight: "900",
+                    }}
+                  >
+                    To month
+                    <select
+                      value={
+                        incomeExpensesToMonth
+                      }
+                      onChange={(event) => {
+                        const nextMonth =
+                          event.target.value;
+
+                        setIncomeExpensesToMonth(
+                          nextMonth
+                        );
+
+                        if (
+                          nextMonth <
+                          incomeExpensesFromMonth
+                        ) {
+                          setIncomeExpensesFromMonth(
+                            nextMonth
+                          );
+                        }
+                      }}
+                      style={filterInputStyle}
+                    >
+                      {reportMonths.map(
+                        (monthKey) => (
+                          <option
+                            key={monthKey}
+                            value={monthKey}
+                          >
+                            {getShortMonthLabel(
+                              monthKey
+                            )}
+                          </option>
+                        )
+                      )}
+                    </select>
+                  </label>
+                </>
+              ) : (
+                <>
+                  <label
+                    style={{
+                      display: "grid",
+                      gap: "7px",
+                      color: "#6f5141",
+                      fontSize: "12px",
+                      fontWeight: "900",
+                    }}
+                  >
+                    From date
+                    <input
+                      type="date"
+                      value={
+                        incomeExpensesFromDate
+                      }
+                      min={
+                        LIVE_SCHEDULE_INCOME_FROM_DATE
+                      }
+                      max={
+                        incomeExpensesToDate ||
+                        currentDate
+                      }
+                      onChange={(event) => {
+                        const nextDate =
+                          event.target.value;
+
+                        setIncomeExpensesFromDate(
+                          nextDate
+                        );
+
+                        if (
+                          nextDate >
+                          incomeExpensesToDate
+                        ) {
+                          setIncomeExpensesToDate(
+                            nextDate
+                          );
+                        }
+                      }}
+                      style={filterInputStyle}
+                    />
+                  </label>
+
+                  <label
+                    style={{
+                      display: "grid",
+                      gap: "7px",
+                      color: "#6f5141",
+                      fontSize: "12px",
+                      fontWeight: "900",
+                    }}
+                  >
+                    To date
+                    <input
+                      type="date"
+                      value={
+                        incomeExpensesToDate
+                      }
+                      min={
+                        incomeExpensesFromDate ||
+                        LIVE_SCHEDULE_INCOME_FROM_DATE
+                      }
+                      max={currentDate}
+                      onChange={(event) => {
+                        const nextDate =
+                          event.target.value;
+
+                        setIncomeExpensesToDate(
+                          nextDate
+                        );
+
+                        if (
+                          nextDate <
+                          incomeExpensesFromDate
+                        ) {
+                          setIncomeExpensesFromDate(
+                            nextDate
+                          );
+                        }
+                      }}
+                      style={filterInputStyle}
+                    />
+                  </label>
+
+                  <div
+                    style={{
+                      alignSelf: "stretch",
+                      display: "flex",
+                      alignItems: "center",
+                      padding: "0 4px",
+                      color: "#8b6b57",
+                      fontSize: "12px",
+                      fontWeight: "850",
+                    }}
+                  >
+                    Daily data starts from
+                    30-05-2026
+                  </div>
+                </>
+              )}
+            </div>
+          </section>
+
+          <section
+            className="paradise-income-expenses-summary"
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(185px, 1fr))",
+              gap: "14px",
+              marginBottom: "22px",
+            }}
+          >
+            {summaryCards.map(
+              ({
+                field,
+                label,
+                icon,
+                accent,
+              }) => (
+                <div
+                  key={field}
+                  style={{
+                    position: "relative",
+                    overflow: "hidden",
+                    minHeight: "112px",
+                    padding: "19px",
+                    borderRadius: "21px",
+                    border:
+                      "1px solid rgba(181,145,116,0.3)",
+                    background:
+                      "linear-gradient(145deg, rgba(255,255,255,0.96), rgba(244,233,222,0.94))",
+                    boxShadow:
+                      "0 14px 34px rgba(75,46,31,0.075)",
+                  }}
+                >
+                  <div
+                    style={{
+                      position: "absolute",
+                      width: "74px",
+                      height: "74px",
+                      right: "-25px",
+                      bottom: "-27px",
+                      borderRadius: "50%",
+                      background:
+                        `${accent}18`,
+                    }}
+                  />
+
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent:
+                        "space-between",
+                      gap: "10px",
+                      marginBottom: "12px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        color: "#9a765f",
+                        fontSize: "11px",
+                        fontWeight: "900",
+                        letterSpacing: "0.8px",
+                        textTransform:
+                          "uppercase",
+                      }}
+                    >
+                      {label}
+                    </div>
+
+                    <div
+                      style={{
+                        width: "28px",
+                        height: "28px",
+                        borderRadius: "9px",
+                        display: "grid",
+                        placeItems: "center",
+                        background:
+                          `${accent}16`,
+                        color: accent,
+                        fontSize: "12px",
+                        fontWeight: "950",
+                      }}
+                    >
+                      {icon}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      position: "relative",
+                      color: accent,
+                      fontSize:
+                        "clamp(20px, 2.7vw, 27px)",
+                      fontWeight: "950",
+                      lineHeight: 1,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {formatCurrency(
+                      reportTotals[field] ||
+                        0
+                    )}
+                  </div>
+                </div>
+              )
+            )}
+          </section>
+
+          <section
+            className="paradise-income-expenses-table-card"
+            style={{
+              overflow: "hidden",
+              borderRadius: "24px",
+              border:
+                "1px solid rgba(181,145,116,0.34)",
+              background:
+                "rgba(255,253,249,0.95)",
+              boxShadow:
+                "0 20px 50px rgba(75,46,31,0.1)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent:
+                  "space-between",
+                gap: "12px",
+                flexWrap: "wrap",
+                padding: "18px 20px",
+                borderBottom:
+                  "1px solid rgba(185,151,123,0.25)",
+                background:
+                  "linear-gradient(135deg, rgba(246,235,224,0.95), rgba(255,252,248,0.96))",
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    color: "#4b2e1f",
+                    fontSize: "16px",
+                    fontWeight: "950",
+                  }}
+                >
+                  {isDailyView
+                    ? "Daily financial details"
+                    : "Monthly financial summary"}
+                </div>
+
+                <div
+                  style={{
+                    marginTop: "4px",
+                    color: "#92715d",
+                    fontSize: "12px",
+                    fontWeight: "750",
+                  }}
+                >
+                  {reportRows.length}{" "}
+                  {isDailyView
+                    ? "days"
+                    : "months"}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  padding: "8px 13px",
+                  borderRadius: "999px",
+                  background: "#efe0d2",
+                  color: "#654635",
+                  fontSize: "12px",
+                  fontWeight: "900",
+                }}
+              >
+                {periodLabel}
+              </div>
+            </div>
+
+            <div
+              className="paradise-income-expenses-table-scroll"
+              style={{
+                width: "100%",
+                maxHeight: "68vh",
+                overflowX: "auto",
+                overflowY: "auto",
+              }}
+            >
+              <table
+                className="paradise-income-expenses-table"
+                style={{
+                  width: "100%",
+                  minWidth: "1900px",
+                  borderCollapse:
+                    "separate",
+                  borderSpacing: 0,
+                  color: "#4b2e1f",
+                }}
+              >
+                <thead>
+                  <tr>
+                    <th
+                      style={{
+                        ...reportHeaderCellStyle,
+                        left: 0,
+                        zIndex: 6,
+                        minWidth: "130px",
+                        boxShadow:
+                          "5px 0 12px rgba(41,25,18,0.08)",
+                      }}
+                    >
+                      {isDailyView
+                        ? "Date"
+                        : "Month"}
+                    </th>
+
+                    {reportFields.map(
+                      ([field, label]) => (
+                        <th
+                          key={field}
+                          style={{
+                            ...reportHeaderCellStyle,
+                            minWidth: "118px",
+                          }}
+                        >
+                          {label}
+                        </th>
+                      )
+                    )}
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {reportRows.map(
+                    (row, index) => {
+                      const rowBackground =
+                        index % 2 === 0
+                          ? "#fffdf9"
+                          : "#f7eee6";
 
                       return (
-                        <td
-                          key={field}
-                          style={
-                            reportCellStyle
+                        <tr
+                          key={
+                            row.rowKey ||
+                            row.monthKey ||
+                            `${row.date}-${index}`
                           }
+                          style={{
+                            background:
+                              rowBackground,
+                          }}
                         >
-                          {incomeExpensesEditMode &&
-                          !isSystemField ? (
-                            <input
-                              value={
-                                manualValue
-                              }
-                              placeholder={formatCurrency(
-                                row[field]
-                              )}
-                              onChange={(
-                                event
-                              ) =>
-                                updateIncomeExpenseManualData(
-                                  row.monthKey,
-                                  field,
-                                  event
-                                    .target
-                                    .value
-                                )
-                              }
-                              style={
-                                reportInputStyle
-                              }
-                            />
-                          ) : (
-                            formatCurrency(
-                              row[field]
-                            )
+                          <td
+                            style={{
+                              ...reportCellStyle,
+                              position:
+                                "sticky",
+                              left: 0,
+                              zIndex: 2,
+                              minWidth:
+                                "130px",
+                              background:
+                                rowBackground,
+                              color:
+                                "#5a3d2e",
+                              fontWeight:
+                                "950",
+                              boxShadow:
+                                "5px 0 12px rgba(75,46,31,0.04)",
+                            }}
+                          >
+                            {row.date}
+                          </td>
+
+                          {reportFields.map(
+                            ([field]) => {
+                              const isSystemField =
+                                isSystemCalculatedIncomeExpenseField(
+                                  field
+                                );
+
+                              const manualValue =
+                                row.isDaily
+                                  ? ""
+                                  : getIncomeExpenseManualData(
+                                      row.monthKey
+                                    )[field] ??
+                                    "";
+
+                              return (
+                                <td
+                                  key={field}
+                                  style={
+                                    reportCellStyle
+                                  }
+                                >
+                                  {incomeExpensesEditMode &&
+                                  !row.isDaily &&
+                                  !isSystemField ? (
+                                    <input
+                                      value={
+                                        manualValue
+                                      }
+                                      placeholder={formatCurrency(
+                                        row[field]
+                                      )}
+                                      onChange={(event) =>
+                                        updateIncomeExpenseManualData(
+                                          row.monthKey,
+                                          field,
+                                          event.target.value
+                                        )
+                                      }
+                                      style={
+                                        reportInputStyle
+                                      }
+                                    />
+                                  ) : (
+                                    formatCurrency(
+                                      row[field]
+                                    )
+                                  )}
+                                </td>
+                              );
+                            }
                           )}
-                        </td>
+                        </tr>
                       );
                     }
                   )}
-                </tr>
-              ))}
-              <tr style={{ backgroundColor: "#c9b2a2", fontWeight: "900" }}>
-                <td style={{ ...reportCellStyle, fontWeight: "900" }}>Total</td>
-                {reportFields.map(([field]) => (
-                  <td key={field} style={{ ...reportCellStyle, fontWeight: "900" }}>{formatCurrency(reportTotals[field])}</td>
-                ))}
-              </tr>
-            </tbody>
-          </table>
+
+                  {reportRows.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={
+                          reportFields.length +
+                          1
+                        }
+                        style={{
+                          padding:
+                            "44px 20px",
+                          background:
+                            "#fffaf5",
+                          color: "#8c6d59",
+                          textAlign:
+                            "center",
+                          fontWeight:
+                            "850",
+                        }}
+                      >
+                        No data in the selected
+                        period.
+                      </td>
+                    </tr>
+                  )}
+
+                  <tr>
+                    <td
+                      style={{
+                        ...reportCellStyle,
+                        position: "sticky",
+                        left: 0,
+                        zIndex: 3,
+                        background:
+                          "linear-gradient(135deg, #d8c1ae, #c9ad96)",
+                        color: "#3f2a20",
+                        fontWeight: "950",
+                        boxShadow:
+                          "5px 0 12px rgba(75,46,31,0.06)",
+                      }}
+                    >
+                      Total
+                    </td>
+
+                    {reportFields.map(
+                      ([field]) => (
+                        <td
+                          key={field}
+                          style={{
+                            ...reportCellStyle,
+                            background:
+                              "linear-gradient(135deg, #e4d1c0, #d7bda7)",
+                            color:
+                              field ===
+                              "netIncome"
+                                ? parseAmount(
+                                    reportTotals[
+                                      field
+                                    ]
+                                  ) >= 0
+                                  ? "#28563c"
+                                  : "#8b332c"
+                                : "#3f2a20",
+                            fontWeight:
+                              "950",
+                          }}
+                        >
+                          {formatCurrency(
+                            reportTotals[field] ||
+                              0
+                          )}
+                        </td>
+                      )
+                    )}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
         </div>
       </div>
     );
@@ -49870,7 +51235,7 @@ if (screen === "potentialClients") {
                 >
                   هذه الخدمة تُضاف إلى سجل العميلة
                   فقط، ولا تؤثر على المواعيد أو
-                  الولاء أو التقارير. وتُستخدم
+                  الولاء أو لوحة الأداء. وتُستخدم
                   لاحقًا لإصدار الفواتير التاريخية.
                 </div>
 
@@ -50062,7 +51427,7 @@ if (screen === "potentialClients") {
                 <div
                   className="paradise-client-history-content"
                   style={{
-                    minWidth: "820px",
+                    minWidth: "950px",
                   }}
                 >
                   <div
@@ -50070,7 +51435,7 @@ if (screen === "potentialClients") {
                     style={{
                       display: "grid",
                       gridTemplateColumns:
-                        "0.9fr 0.9fr 1fr 1.8fr 0.9fr 1.1fr",
+                        "0.9fr 0.9fr 0.9fr 1fr 1.8fr 0.9fr 1.1fr",
                       alignItems: "center",
                       background:
                         "linear-gradient(135deg, #4a3226, #76513b)",
@@ -50083,7 +51448,8 @@ if (screen === "potentialClients") {
                     }}
                   >
                     {[
-                      "Date",
+                      "Service Date",
+                      "Invoice Date",
                       "Order No.",
                       "Therapist",
                       "Services",
@@ -50120,7 +51486,7 @@ if (screen === "potentialClients") {
                           style={{
                             display: "grid",
                             gridTemplateColumns:
-                              "0.9fr 0.9fr 1fr 1.8fr 0.9fr 1.1fr",
+                              "0.9fr 0.9fr 0.9fr 1fr 1.8fr 0.9fr 1.1fr",
                             alignItems: "stretch",
                             background:
                               index % 2 === 0
@@ -50149,6 +51515,33 @@ if (screen === "potentialClients") {
                             }}
                           >
                             {service.date || "-"}
+                          </div>
+
+                          <div
+                            style={{
+                              padding: "13px 10px",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              color: "#6c4b39",
+                              fontWeight: "900",
+                              fontSize: "11px",
+                              whiteSpace: "nowrap",
+                              borderRight:
+                                "1px solid rgba(190,157,130,0.24)",
+                            }}
+                          >
+                            {service.invoiceLink
+                              ?.issuedAt
+                              ? getInvoiceDateInRiyadh(
+                                  {
+                                    issuedAt:
+                                      service
+                                        .invoiceLink
+                                        .issuedAt,
+                                  }
+                                )
+                              : "-"}
                           </div>
 
                           <div
