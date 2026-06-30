@@ -36797,6 +36797,103 @@ if (screen === "invoices") {
       );
     };
 
+    /*
+      توحيد طريقة الدفع حتى تعمل
+      الفلترة حتى لو اختلفت المسافات
+      أو الأحرف الكبيرة والصغيرة.
+    */
+    const normalizeInvoicePaymentMethod =
+      (paymentMethod) =>
+        String(paymentMethod || "")
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, "_");
+
+    /*
+      فواتير الكاش الموجودة ضمن
+      الفواتير المفلترة حاليًا.
+    */
+    const cashInvoices =
+      filteredInvoices.filter(
+        (invoice) =>
+          normalizeInvoicePaymentMethod(
+            invoice.paymentMethod
+          ) === "cash"
+      );
+
+    /*
+      فواتير التحويل البنكي الموجودة
+      ضمن الفواتير المفلترة حاليًا.
+    */
+    const bankTransferInvoices =
+      filteredInvoices.filter(
+        (invoice) =>
+          normalizeInvoicePaymentMethod(
+            invoice.paymentMethod
+          ) === "bank_transfer"
+      );
+
+    const getInvoiceIds = (
+      invoiceList
+    ) =>
+      Array.from(
+        new Set(
+          invoiceList
+            .map((invoice) =>
+              String(invoice.id || "")
+            )
+            .filter(Boolean)
+        )
+      );
+
+    /*
+      نتأكد أن المجموعة المحددة هي
+      المجموعة المطلوبة فقط، بدون
+      وجود فواتير إضافية محددة.
+    */
+    const areOnlyInvoicesSelected = (
+      invoiceList
+    ) => {
+      const invoiceIds =
+        getInvoiceIds(invoiceList);
+
+      return (
+        invoiceIds.length > 0 &&
+        selectedInvoiceIds.length ===
+          invoiceIds.length &&
+        invoiceIds.every((invoiceId) =>
+          selectedInvoiceIds.includes(
+            invoiceId
+          )
+        )
+      );
+    };
+
+    /*
+      اختيار مجموعة واحدة فقط:
+      كاش أو تحويل بنكي أو الكل.
+
+      الضغط مرة ثانية يلغي تحديدها.
+    */
+    const selectOnlyInvoiceGroup = (
+      invoiceList
+    ) => {
+      const invoiceIds =
+        getInvoiceIds(invoiceList);
+
+      if (invoiceIds.length === 0) {
+        return;
+      }
+
+      setSelectedInvoiceIds(
+        areOnlyInvoicesSelected(
+          invoiceList
+        )
+          ? []
+          : invoiceIds
+      );
+    };
+
     const escapeInvoiceHtml = (value) =>
       String(value ?? "")
         .replace(/&/g, "&amp;")
@@ -38804,62 +38901,116 @@ if (screen === "invoices") {
             }}
           >
             {filteredInvoices.length > 0 && (
-              <button
-                type="button"
-                disabled={invoicesPdfBusy}
-                onClick={() => {
-                  const filteredInvoiceIds =
-                    filteredInvoices.map(
-                      (invoice) =>
-                        String(invoice.id)
-                    );
-
-                  const allFilteredSelected =
-                    filteredInvoiceIds.every(
-                      (invoiceId) =>
-                        selectedInvoiceIds.includes(
-                          invoiceId
-                        )
-                    );
-
-                  setSelectedInvoiceIds(
-                    (currentInvoiceIds) =>
-                      allFilteredSelected
-                        ? currentInvoiceIds.filter(
-                            (invoiceId) =>
-                              !filteredInvoiceIds.includes(
-                                invoiceId
-                              )
-                          )
-                        : Array.from(
-                            new Set([
-                              ...currentInvoiceIds,
-                              ...filteredInvoiceIds,
-                            ])
-                          )
-                  );
-                }}
-                style={{
-                  ...buttonStyle,
-                  padding: "12px 18px",
-                  borderRadius: "15px",
-                  background: "#d9c3ad",
-                  color: "#4b2e1f",
-                  fontWeight: 950,
-                  cursor: invoicesPdfBusy
-                    ? "not-allowed"
-                    : "pointer",
-                }}
-              >
-                {filteredInvoices.every(
-                  (invoice) =>
-                    selectedInvoiceIds.includes(
-                      String(invoice.id)
+              <>
+                <button
+                  type="button"
+                  disabled={
+                    invoicesPdfBusy ||
+                    cashInvoices.length === 0
+                  }
+                  onClick={() =>
+                    selectOnlyInvoiceGroup(
+                      cashInvoices
                     )
-                )
-                  ? "إلغاء تحديد الكل"
-                  : `تحديد الكل (${filteredInvoices.length})`}
-              </button>
+                  }
+                  style={{
+                    ...buttonStyle,
+                    padding: "12px 18px",
+                    borderRadius: "15px",
+                    background:
+                      cashInvoices.length === 0
+                        ? "#e7ddd4"
+                        : "#ead7c4",
+                    color: "#4b2e1f",
+                    fontWeight: 950,
+                    cursor:
+                      invoicesPdfBusy ||
+                      cashInvoices.length === 0
+                        ? "not-allowed"
+                        : "pointer",
+                    opacity:
+                      cashInvoices.length === 0
+                        ? 0.65
+                        : 1,
+                  }}
+                >
+                  {areOnlyInvoicesSelected(
+                    cashInvoices
+                  )
+                    ? `إلغاء تحديد فواتير الكاش (${cashInvoices.length})`
+                    : `تحديد فواتير الكاش (${cashInvoices.length})`}
+                </button>
+
+                <button
+                  type="button"
+                  disabled={
+                    invoicesPdfBusy ||
+                    bankTransferInvoices.length ===
+                      0
+                  }
+                  onClick={() =>
+                    selectOnlyInvoiceGroup(
+                      bankTransferInvoices
+                    )
+                  }
+                  style={{
+                    ...buttonStyle,
+                    padding: "12px 18px",
+                    borderRadius: "15px",
+                    background:
+                      bankTransferInvoices.length ===
+                      0
+                        ? "#e7ddd4"
+                        : "#dfc8b2",
+                    color: "#4b2e1f",
+                    fontWeight: 950,
+                    cursor:
+                      invoicesPdfBusy ||
+                      bankTransferInvoices.length ===
+                        0
+                        ? "not-allowed"
+                        : "pointer",
+                    opacity:
+                      bankTransferInvoices.length ===
+                      0
+                        ? 0.65
+                        : 1,
+                  }}
+                >
+                  {areOnlyInvoicesSelected(
+                    bankTransferInvoices
+                  )
+                    ? `إلغاء تحديد فواتير التحويل البنكي (${bankTransferInvoices.length})`
+                    : `تحديد فواتير التحويل البنكي (${bankTransferInvoices.length})`}
+                </button>
+
+                <button
+                  type="button"
+                  disabled={invoicesPdfBusy}
+                  onClick={() =>
+                    selectOnlyInvoiceGroup(
+                      filteredInvoices
+                    )
+                  }
+                  style={{
+                    ...buttonStyle,
+                    padding: "12px 18px",
+                    borderRadius: "15px",
+                    background: "#d9c3ad",
+                    color: "#4b2e1f",
+                    fontWeight: 950,
+                    cursor: invoicesPdfBusy
+                      ? "not-allowed"
+                      : "pointer",
+                  }}
+                >
+                  {areOnlyInvoicesSelected(
+                    filteredInvoices
+                  )
+                    ? "إلغاء تحديد الكل"
+                    : `تحديد الكل (${filteredInvoices.length})`}
+                </button>
+              </>
             )}
 
             <button
