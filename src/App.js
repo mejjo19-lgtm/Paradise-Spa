@@ -1478,7 +1478,6 @@ const sharedDataMetaRef = useRef({});
 const sharedDataDeviceIdRef = useRef(`${Date.now()}-${Math.random().toString(36).slice(2)}`);
 const scheduleEditingRef = useRef(false);
 const scheduleRowSaveTimersRef = useRef({});
-const scheduleRowSaveErrorAlertedRef = useRef({});
 const scheduleGiftSyncTimersRef = useRef({});
 const scheduleGiftSyncQueueRef = useRef({});
 const scheduleGiftLinkedIdsRef = useRef({});
@@ -7771,48 +7770,25 @@ const loadIncomeExpenseReportDataRange =
     if (!date || !Number.isInteger(Number(rowIndex))) return;
 
     const numericRowIndex = Number(rowIndex);
-    const rowId = getScheduleRowId(date, numericRowIndex);
-    const rowTime = timeSlots[numericRowIndex] || `صف ${numericRowIndex + 1}`;
 
-    const showScheduleSaveError = (error) => {
+    const { error } = await supabase.from("schedule_rows").upsert(
+      {
+        id: getScheduleRowId(date, numericRowIndex),
+        schedule_date: date,
+        row_index: numericRowIndex,
+        row_data: rowData || createEmptyAppointmentRow(timeSlots[numericRowIndex] || ""),
+        cell_styles: getScheduleRowCellStyles(cellStyles, numericRowIndex),
+        updated_at: new Date().toISOString(),
+        updated_by: sharedDataDeviceIdRef.current,
+      },
+      { onConflict: "id" }
+    );
+
+    if (error) {
       console.error(
-        "Schedule row save error JSON:",
-        JSON.stringify(error, null, 2)
-      );
-
-      if (scheduleRowSaveErrorAlertedRef.current[rowId]) {
-        return;
-      }
-
-      scheduleRowSaveErrorAlertedRef.current[rowId] = true;
-
-      alert(
-        `تنبيه مهم: لم يتم حفظ تعديل الموعد.\n\nالتاريخ: ${date}\nالوقت: ${rowTime}\n\nلا تحدثي الصفحة قبل إعادة التحقق من الاتصال أو إعادة إدخال التعديل.\n\n${error?.message || "تعذر حفظ التعديل في قاعدة البيانات."}`
-      );
-    };
-
-    try {
-      const { error } = await supabase.from("schedule_rows").upsert(
-        {
-          id: rowId,
-          schedule_date: date,
-          row_index: numericRowIndex,
-          row_data: rowData || createEmptyAppointmentRow(timeSlots[numericRowIndex] || ""),
-          cell_styles: getScheduleRowCellStyles(cellStyles, numericRowIndex),
-          updated_at: new Date().toISOString(),
-          updated_by: sharedDataDeviceIdRef.current,
-        },
-        { onConflict: "id" }
-      );
-
-      if (error) {
-        showScheduleSaveError(error);
-        return;
-      }
-
-      delete scheduleRowSaveErrorAlertedRef.current[rowId];
-    } catch (error) {
-      showScheduleSaveError(error);
+  "Schedule row save error JSON:",
+  JSON.stringify(error, null, 2)
+);
     }
   };
 
