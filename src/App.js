@@ -7802,7 +7802,7 @@ const loadIncomeExpenseReportDataRange =
     scheduleRowSaveTimersRef.current[rowId] = setTimeout(() => {
       saveScheduleRowToSupabase(date, rowIndex, rowData, cellStyles);
       delete scheduleRowSaveTimersRef.current[rowId];
-    }, 1500);
+    }, 3000);
   };
 
   const persistScheduleRowsForDate = (date, rows, cellStyles, rowIndexes) => {
