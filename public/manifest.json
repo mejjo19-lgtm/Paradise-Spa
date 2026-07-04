@@ -1,6 +1,6 @@
 {
-  "short_name": "Paradise",
-  "name": "Paradise Spa",
+  "short_name": "React App",
+  "name": "Create React App Sample",
   "icons": [
     {
       "src": "favicon.ico",
@@ -10,18 +10,16 @@
     {
       "src": "logo192.png",
       "type": "image/png",
-      "sizes": "192x192",
-      "purpose": "any maskable"
+      "sizes": "192x192"
     },
     {
       "src": "logo512.png",
       "type": "image/png",
-      "sizes": "512x512",
-      "purpose": "any maskable"
+      "sizes": "512x512"
     }
   ],
   "start_url": ".",
   "display": "standalone",
-  "theme_color": "#4b2e1f",
-  "background_color": "#f4eadf"
+  "theme_color": "#000000",
+  "background_color": "#ffffff"
 }
