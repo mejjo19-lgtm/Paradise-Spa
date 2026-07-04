@@ -20164,28 +20164,10 @@ const leavingTime = addMinutesToDisplayTime(
         ([key]) => key !== "dashboard"
       );
 
-  const activeSidebarSectionId =
-    dashboardMenuSections.find(
-      (section) =>
-        section.items.some(
-          ([key]) => key === screen
-        )
-    )?.id || "main";
-
   const [
     openSidebarSectionId,
     setOpenSidebarSectionId,
-  ] = useState(activeSidebarSectionId);
-
-  useEffect(() => {
-    if (!activeSidebarSectionId) {
-      return;
-    }
-
-    setOpenSidebarSectionId(
-      activeSidebarSectionId
-    );
-  }, [activeSidebarSectionId]);
+  ] = useState("");
 
   const settingsTables = [
     "clients",
@@ -31386,22 +31368,15 @@ const welcomeBoardNameStyle = {
               justifyContent: "space-between",
               gap: "10px",
               background:
-                sectionHasActiveScreen
-                  ? "linear-gradient(135deg, #3a2418, #7a5a43)"
-                  : "linear-gradient(135deg, rgba(255,250,243,0.86), rgba(229,211,194,0.74))",
-              color:
-                sectionHasActiveScreen
-                  ? "#fffaf3"
-                  : "#4b2e1f",
+                "linear-gradient(135deg, rgba(255,250,243,0.88), rgba(229,211,194,0.76))",
+              color: "#4b2e1f",
               fontSize: "13px",
               fontWeight: "950",
               letterSpacing: "0.2px",
               transition:
                 "background 0.22s ease, color 0.22s ease",
               boxShadow:
-                sectionHasActiveScreen
-                  ? "inset 0 1px 0 rgba(255,255,255,0.12)"
-                  : "inset 0 1px 0 rgba(255,255,255,0.72)",
+                "inset 0 1px 0 rgba(255,255,255,0.72)",
             }}
           >
             <span>{section.title}</span>
@@ -31414,14 +31389,8 @@ const welcomeBoardNameStyle = {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                background:
-                  sectionHasActiveScreen
-                    ? "rgba(255,255,255,0.13)"
-                    : "rgba(75,46,31,0.08)",
-                color:
-                  sectionHasActiveScreen
-                    ? "#fffaf3"
-                    : "#6d4f3c",
+                background: "rgba(75,46,31,0.08)",
+                color: "#6d4f3c",
                 fontSize: "13px",
                 lineHeight: 1,
                 transform: sectionIsOpen
