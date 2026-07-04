@@ -31262,7 +31262,7 @@ const welcomeBoardNameStyle = {
     .paradise-luxury-menu-items {
       display: grid;
       gap: 7px;
-      padding: 0 8px 9px;
+      padding: 10px 8px 9px;
       animation: paradiseMenuOpen 0.18s ease both;
     }
 
@@ -31334,7 +31334,7 @@ const welcomeBoardNameStyle = {
 
       .paradise-luxury-menu-items {
         gap: 6px !important;
-        padding: 0 7px 8px !important;
+        padding: 10px 7px 8px !important;
       }
     }
   `}</style>
