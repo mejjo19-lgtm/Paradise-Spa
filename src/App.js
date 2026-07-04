@@ -20060,68 +20060,132 @@ const leavingTime = addMinutesToDisplayTime(
         .slice(0, 8)
     : [];
 
-  const dashboardServices = [
-    [
-      "appointments",
-      "جدول المواعيد",
-    ],
-    [
-      "clients",
-      "عملائنا",
-    ],
-    [
-      "loyalty",
-      "كروت الولاء",
-    ],
-    [
-      "giftClients",
-      "عملاء الإهداء",
-    ],
-    [
-      "referrals",
-      "العملاء المرشحين",
-    ],
-    [
-      "potentialClients",
-      "العملاء المحتملين",
-    ],
-    [
-      "inactiveClients",
-      "العملاء المنقطعين",
-    ],
-    [
-      "availableAppointments",
-      "المواعيد المتاحة",
-    ],
-    [
-      "giftCards",
-      "كروت الإهداء",
-    ],
-    [
-      "printFrame",
-      "طباعة اللوحة الترحيبية",
-    ],
-    [
-      "invoices",
-      "الفواتير",
-    ],
-    [
-      "purchases",
-      "المشتريات",
-    ],
-    [
-      "finance",
-      "لوحة الأداء",
-    ],
-    [
-      "incomeExpenses",
-      "التقرير المالي",
-    ],
-    [
-      "settings",
-      "الإعدادات",
-    ],
+  const dashboardMenuSections = [
+    {
+      id: "main",
+      title: "الرئيسية",
+      items: [
+        [
+          "dashboard",
+          "المواعيد",
+        ],
+        [
+          "appointments",
+          "جدول المواعيد",
+        ],
+        [
+          "availableAppointments",
+          "المواعيد المتاحة",
+        ],
+      ],
+    },
+    {
+      id: "clients",
+      title: "العملاء",
+      items: [
+        [
+          "clients",
+          "عملائنا",
+        ],
+        [
+          "loyalty",
+          "كروت الولاء",
+        ],
+        [
+          "inactiveClients",
+          "العملاء المنقطعين",
+        ],
+        [
+          "giftClients",
+          "عملاء الإهداء",
+        ],
+        [
+          "referrals",
+          "العملاء المرشحون",
+        ],
+        [
+          "potentialClients",
+          "العملاء المحتملين",
+        ],
+      ],
+    },
+    {
+      id: "finance",
+      title: "المالية",
+      items: [
+        [
+          "invoices",
+          "الفواتير",
+        ],
+        [
+          "purchases",
+          "المشتريات",
+        ],
+        [
+          "finance",
+          "لوحة الأداء",
+        ],
+        [
+          "incomeExpenses",
+          "التقرير المالي",
+        ],
+      ],
+    },
+    {
+      id: "design",
+      title: "التصاميم",
+      items: [
+        [
+          "giftCards",
+          "كروت الإهداء",
+        ],
+        [
+          "printFrame",
+          "طباعة اللوحة الترحيبية",
+        ],
+      ],
+    },
+    {
+      id: "admin",
+      title: "الإدارة",
+      items: [
+        [
+          "settings",
+          "الإعدادات",
+        ],
+      ],
+    },
   ];
+
+  const dashboardServices =
+    dashboardMenuSections
+      .flatMap((section) => section.items)
+      .filter(
+        ([key]) => key !== "dashboard"
+      );
+
+  const activeSidebarSectionId =
+    dashboardMenuSections.find(
+      (section) =>
+        section.items.some(
+          ([key]) => key === screen
+        )
+    )?.id || "main";
+
+  const [
+    openSidebarSectionId,
+    setOpenSidebarSectionId,
+  ] = useState(activeSidebarSectionId);
+
+  useEffect(() => {
+    if (!activeSidebarSectionId) {
+      return;
+    }
+
+    setOpenSidebarSectionId(
+      activeSidebarSectionId
+    );
+  }, [activeSidebarSectionId]);
 
   const settingsTables = [
     "clients",
@@ -31176,73 +31240,287 @@ const welcomeBoardNameStyle = {
     cursor: "default",
   }}
 />
-<div className="paradise-global-sidebar-buttons">
-  
-            {[
-  ["dashboard", "المواعيد"],
-  ...dashboardServices.filter(([key]) => canViewMenu(key)),
-].map(([key, label]) => (
-              <button
-                key={key}
-                className={`paradise-navigation-button ${
-                  screen === key
-                    ? "paradise-navigation-button-active"
-                    : ""
-                }`}
-                aria-current={
-                  screen === key
-                    ? "page"
-                    : undefined
-                }
-                onClick={() => setScreen(key)}
-                onMouseEnter={(event) => {
-                  event.currentTarget.style.transform =
-                    "translateY(-2px) scale(1.015)";
+<>
+  <style>{`
+    .paradise-luxury-menu-section {
+      width: 100%;
+      margin-bottom: 10px;
+      border-radius: 22px;
+      background:
+        linear-gradient(
+          145deg,
+          rgba(255,250,243,0.74),
+          rgba(236,221,207,0.54)
+        );
+      border: 1px solid rgba(214,199,184,0.68);
+      box-shadow:
+        0 10px 24px rgba(75,46,31,0.08),
+        inset 0 1px 0 rgba(255,255,255,0.70);
+      overflow: hidden;
+    }
 
-                  event.currentTarget.style.boxShadow =
-                    "none";
-                }}
-                onMouseLeave={(event) => {
-                  event.currentTarget.style.transform =
-                    "translateY(0) scale(1)";
+    .paradise-luxury-menu-items {
+      display: grid;
+      gap: 7px;
+      padding: 0 8px 9px;
+      animation: paradiseMenuOpen 0.18s ease both;
+    }
 
-                  event.currentTarget.style.boxShadow =
-                    "none";
-                }}
-                onMouseDown={(event) => {
-                  event.currentTarget.style.transform =
-                    "translateY(0) scale(0.99)";
-                }}
-                onMouseUp={(event) => {
-                  event.currentTarget.style.transform =
-                    "translateY(-2px) scale(1.015)";
-                }}
-                style={{
-                  ...buttonStyle,
-                  width: "100%",
-                  marginBottom: "9px",
-                  textAlign: "right",
-                  background:
+    @keyframes paradiseMenuOpen {
+      from {
+        opacity: 0;
+        transform: translateY(-4px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @media (max-width: 1050px) {
+      .paradise-global-sidebar-buttons {
+        display: block !important;
+        max-height: 420px !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        padding: 2px 2px 12px !important;
+      }
+
+      .paradise-luxury-menu-section {
+        margin-bottom: 9px !important;
+      }
+    }
+
+    @media (max-width: 700px) {
+      .paradise-global-sidebar {
+        display: block !important;
+        top: auto !important;
+        bottom: 8px !important;
+        left: 8px !important;
+        right: 8px !important;
+        width: auto !important;
+        max-height: 62dvh !important;
+        overflow: hidden !important;
+        padding: 10px !important;
+        border-radius: 26px !important;
+        background:
+          linear-gradient(
+            145deg,
+            rgba(255,250,243,0.97),
+            rgba(238,224,211,0.94)
+          ) !important;
+        box-shadow:
+          0 22px 44px rgba(46,31,23,0.22),
+          inset 0 1px 0 rgba(255,255,255,0.82) !important;
+      }
+
+      .paradise-global-logo {
+        display: none !important;
+      }
+
+      .paradise-global-sidebar-buttons {
+        display: block !important;
+        max-height: calc(62dvh - 20px) !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        padding: 2px !important;
+      }
+
+      .paradise-luxury-menu-section {
+        margin-bottom: 8px !important;
+        border-radius: 20px !important;
+      }
+
+      .paradise-luxury-menu-items {
+        gap: 6px !important;
+        padding: 0 7px 8px !important;
+      }
+    }
+  `}</style>
+
+  <div className="paradise-global-sidebar-buttons">
+    {dashboardMenuSections.map((section) => {
+      const visibleItems =
+        section.items.filter(
+          ([key]) =>
+            key === "dashboard" ||
+            canViewMenu(key)
+        );
+
+      if (visibleItems.length === 0) {
+        return null;
+      }
+
+      const sectionIsOpen =
+        openSidebarSectionId === section.id;
+
+      const sectionHasActiveScreen =
+        section.items.some(
+          ([key]) => key === screen
+        );
+
+      return (
+        <div
+          key={section.id}
+          className="paradise-luxury-menu-section"
+        >
+          <button
+            type="button"
+            aria-expanded={sectionIsOpen}
+            onClick={() =>
+              setOpenSidebarSectionId(
+                sectionIsOpen
+                  ? ""
+                  : section.id
+              )
+            }
+            style={{
+              width: "100%",
+              border: "none",
+              borderRadius: "0",
+              padding: "12px 12px",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "10px",
+              background:
+                sectionHasActiveScreen
+                  ? "linear-gradient(135deg, #3a2418, #7a5a43)"
+                  : "linear-gradient(135deg, rgba(255,250,243,0.86), rgba(229,211,194,0.74))",
+              color:
+                sectionHasActiveScreen
+                  ? "#fffaf3"
+                  : "#4b2e1f",
+              fontSize: "13px",
+              fontWeight: "950",
+              letterSpacing: "0.2px",
+              transition:
+                "background 0.22s ease, color 0.22s ease",
+              boxShadow:
+                sectionHasActiveScreen
+                  ? "inset 0 1px 0 rgba(255,255,255,0.12)"
+                  : "inset 0 1px 0 rgba(255,255,255,0.72)",
+            }}
+          >
+            <span>{section.title}</span>
+
+            <span
+              style={{
+                width: "24px",
+                height: "24px",
+                borderRadius: "999px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background:
+                  sectionHasActiveScreen
+                    ? "rgba(255,255,255,0.13)"
+                    : "rgba(75,46,31,0.08)",
+                color:
+                  sectionHasActiveScreen
+                    ? "#fffaf3"
+                    : "#6d4f3c",
+                fontSize: "13px",
+                lineHeight: 1,
+                transform: sectionIsOpen
+                  ? "rotate(90deg)"
+                  : "rotate(0deg)",
+                transition: "transform 0.18s ease",
+              }}
+            >
+              ›
+            </span>
+          </button>
+
+          {sectionIsOpen && (
+            <div className="paradise-luxury-menu-items">
+              {visibleItems.map(([key, label]) => (
+                <button
+                  key={key}
+                  className={`paradise-navigation-button ${
                     screen === key
-                      ? "linear-gradient(135deg, #3a2418, #7a5a43)"
-                      : ["finance", "incomeExpenses", "settings"].includes(key)
-                      ? "linear-gradient(135deg, #a58979, #8a6048)"
-                      : "rgba(255,255,255,0.68)",
-                  color: screen === key || ["finance", "incomeExpenses", "settings"].includes(key) ? "white" : "#4b2e1f",
-                  border: "1px solid rgba(214,199,184,0.75)",
-                  borderRadius: "18px",
-                  transition:
-                    "transform 0.18s ease, background 0.25s ease, color 0.25s ease",
-                  transform:
-                    "translateY(0) scale(1)",
-                  boxShadow: "none",
-                  fontSize: "13px",
-                }}
-              >
-                {label}
-              </button>
-            ))}
+                      ? "paradise-navigation-button-active"
+                      : ""
+                  }`}
+                  aria-current={
+                    screen === key
+                      ? "page"
+                      : undefined
+                  }
+                  onClick={() => {
+                    setOpenSidebarSectionId(
+                      section.id
+                    );
+
+                    setScreen(key);
+                  }}
+                  onMouseEnter={(event) => {
+                    event.currentTarget.style.transform =
+                      "translateY(-2px) scale(1.015)";
+
+                    event.currentTarget.style.boxShadow =
+                      "0 10px 20px rgba(75,46,31,0.10)";
+                  }}
+                  onMouseLeave={(event) => {
+                    event.currentTarget.style.transform =
+                      "translateY(0) scale(1)";
+
+                    event.currentTarget.style.boxShadow =
+                      screen === key
+                        ? "0 10px 22px rgba(58,36,24,0.18)"
+                        : "none";
+                  }}
+                  onMouseDown={(event) => {
+                    event.currentTarget.style.transform =
+                      "translateY(0) scale(0.99)";
+                  }}
+                  onMouseUp={(event) => {
+                    event.currentTarget.style.transform =
+                      "translateY(-2px) scale(1.015)";
+                  }}
+                  style={{
+                    ...buttonStyle,
+                    width: "100%",
+                    marginBottom: "0",
+                    textAlign: "right",
+                    background:
+                      screen === key
+                        ? "linear-gradient(135deg, #3a2418, #7a5a43)"
+                        : "rgba(255,255,255,0.74)",
+                    color:
+                      screen === key
+                        ? "white"
+                        : "#4b2e1f",
+                    border:
+                      screen === key
+                        ? "1px solid rgba(255,255,255,0.28)"
+                        : "1px solid rgba(214,199,184,0.62)",
+                    borderRadius: "16px",
+                    transition:
+                      "transform 0.18s ease, background 0.25s ease, color 0.25s ease, box-shadow 0.2s ease",
+                    transform:
+                      "translateY(0) scale(1)",
+                    boxShadow:
+                      screen === key
+                        ? "0 10px 22px rgba(58,36,24,0.18)"
+                        : "none",
+                    fontSize: "12.5px",
+                    fontWeight: "850",
+                    padding: "10px 11px",
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
+          )}
+        </div>
+      );
+    })}
+  </div>
+</>
             
           </aside>
         )}
