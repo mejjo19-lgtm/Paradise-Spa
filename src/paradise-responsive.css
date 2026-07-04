@@ -11138,3 +11138,268 @@ html body [style*="font-family:'Arial'"] {
     Arial,
     sans-serif !important;
 }
+
+/* =========================================================
+   PARADISE MOBILE LUXURY DOCK OVERRIDE
+   واجهة جوال فخمة ومرتبة بدون تغيير أي منطق
+   ========================================================= */
+
+@media (max-width: 700px) {
+  html body .paradise-global-sidebar {
+    position: fixed !important;
+
+    top: auto !important;
+    right: 10px !important;
+    bottom:
+      max(
+        10px,
+        env(safe-area-inset-bottom)
+      ) !important;
+    left: 10px !important;
+
+    width: auto !important;
+    max-width: none !important;
+
+    height: 58px !important;
+    max-height: 58px !important;
+
+    margin: 0 !important;
+    padding: 6px !important;
+
+    display: block !important;
+
+    background:
+      linear-gradient(
+        145deg,
+        rgba(255, 252, 246, 0.94),
+        rgba(232, 216, 202, 0.90)
+      ) !important;
+
+    border:
+      1px solid
+      rgba(255, 255, 255, 0.78) !important;
+
+    border-radius: 22px !important;
+
+    box-shadow:
+      0 14px 34px
+      rgba(45, 29, 20, 0.22),
+      inset 0 1px 0
+      rgba(255, 255, 255, 0.72) !important;
+
+    backdrop-filter:
+      blur(18px) saturate(1.25) !important;
+    -webkit-backdrop-filter:
+      blur(18px) saturate(1.25) !important;
+
+    overflow: hidden !important;
+
+    z-index: 9500 !important;
+  }
+
+  html body .paradise-global-sidebar::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+
+    background:
+      radial-gradient(
+        circle at 12% 0%,
+        rgba(255, 255, 255, 0.58),
+        transparent 34%
+      ),
+      linear-gradient(
+        180deg,
+        rgba(255, 255, 255, 0.34),
+        transparent 58%
+      );
+
+    pointer-events: none;
+  }
+
+  html body .paradise-global-logo {
+    display: none !important;
+  }
+
+  html body .paradise-global-sidebar-buttons {
+    position: relative !important;
+    z-index: 1 !important;
+
+    width: 100% !important;
+    height: 46px !important;
+
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+
+    gap: 5px !important;
+
+    margin: 0 !important;
+    padding: 0 2px !important;
+
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+
+    scroll-padding-inline: 5px;
+    scroll-snap-type: x proximity;
+
+    overscroll-behavior-x: contain;
+    touch-action: pan-x;
+
+    -webkit-overflow-scrolling: touch;
+
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+  }
+
+  html body
+    .paradise-global-sidebar-buttons::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+
+  html body .paradise-navigation-button,
+  html body .paradise-global-sidebar-buttons button {
+    flex: 0 0 auto !important;
+
+    width: auto !important;
+    min-width: 82px !important;
+    max-width: 116px !important;
+
+    height: 40px !important;
+    min-height: 40px !important;
+
+    margin: 0 !important;
+    padding: 6px 8px !important;
+
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+
+    background:
+      linear-gradient(
+        145deg,
+        rgba(255, 255, 255, 0.72),
+        rgba(247, 238, 229, 0.62)
+      ) !important;
+
+    color: #4b2e1f !important;
+
+    border:
+      1px solid
+      rgba(180, 151, 128, 0.42) !important;
+
+    border-radius: 15px !important;
+
+    box-shadow:
+      inset 0 1px 0
+      rgba(255, 255, 255, 0.62) !important;
+
+    font-size: 10.5px !important;
+    font-weight: 900 !important;
+    line-height: 1.15 !important;
+
+    text-align: center !important;
+    white-space: nowrap !important;
+
+    transform: none !important;
+
+    scroll-snap-align: center;
+
+    -webkit-tap-highlight-color:
+      transparent;
+  }
+
+  html body .paradise-navigation-button:hover,
+  html body .paradise-global-sidebar-buttons button:hover {
+    transform: none !important;
+    box-shadow:
+      inset 0 1px 0
+      rgba(255, 255, 255, 0.62) !important;
+  }
+
+  html body .paradise-navigation-button:active,
+  html body .paradise-global-sidebar-buttons button:active {
+    transform:
+      scale(0.96) !important;
+  }
+
+  html body .paradise-navigation-button-active {
+    background:
+      linear-gradient(
+        135deg,
+        #352116,
+        #6f4f3b
+      ) !important;
+
+    color: #fffaf3 !important;
+
+    border-color:
+      rgba(73, 45, 30, 0.72) !important;
+
+    box-shadow:
+      0 8px 18px
+      rgba(61, 39, 27, 0.26),
+      inset 0 1px 0
+      rgba(255, 255, 255, 0.16) !important;
+  }
+
+  html body .paradise-global-page {
+    padding-bottom:
+      calc(
+        90px +
+        env(safe-area-inset-bottom)
+      ) !important;
+  }
+
+  html body .paradise-inactive-follow-up-notice {
+    right: 10px !important;
+    left: 10px !important;
+    bottom:
+      calc(
+        78px +
+        env(safe-area-inset-bottom)
+      ) !important;
+
+    width: auto !important;
+    max-width: none !important;
+
+    border-radius: 20px !important;
+
+    box-shadow:
+      0 14px 32px
+      rgba(75, 46, 31, 0.18) !important;
+  }
+}
+
+@media (max-width: 380px) {
+  html body .paradise-global-sidebar {
+    right: 8px !important;
+    left: 8px !important;
+
+    height: 56px !important;
+    max-height: 56px !important;
+
+    padding: 5px !important;
+  }
+
+  html body .paradise-global-sidebar-buttons {
+    height: 44px !important;
+    gap: 4px !important;
+  }
+
+  html body .paradise-navigation-button,
+  html body .paradise-global-sidebar-buttons button {
+    min-width: 76px !important;
+    max-width: 104px !important;
+
+    height: 38px !important;
+    min-height: 38px !important;
+
+    padding-right: 7px !important;
+    padding-left: 7px !important;
+
+    font-size: 10px !important;
+  }
+}
