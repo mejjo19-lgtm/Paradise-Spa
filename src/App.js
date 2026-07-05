@@ -2090,6 +2090,9 @@ const normalizeClientRecord = (client) => ({
   visits: Number(client.visits || 0),
   frame: Boolean(client.frame),
   blacklist: Boolean(client.blacklist),
+  excludeFromInactiveClients: Boolean(
+    client.exclude_from_inactive_clients
+  ),
   notes: client.notes || "",
   last_order_at: client.last_order_at || "",
   last_activity_at: client.last_activity_at || "",
@@ -2156,7 +2159,7 @@ async function fetchClientsWithSupabaseClient() {
     const { data, error } = await supabase
       .from("clients")
       .select(
-        "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at"
+        "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at"
       )
       .order("id", { ascending: false })
       .range(from, to);
@@ -2199,7 +2202,7 @@ async function fetchClientsWithRestApi() {
 
   while (hasMore) {
     const response = await fetch(
-      `${supabaseUrl}/rest/v1/clients?select=id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at&order=id.desc&limit=${pageSize}&offset=${offset}`,
+      `${supabaseUrl}/rest/v1/clients?select=id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at&order=id.desc&limit=${pageSize}&offset=${offset}`,
       {
         headers: {
           apikey: supabaseKey,
@@ -5764,6 +5767,10 @@ const deletePurchase = async (
   const [profileNotes, setProfileNotes] = useState("");
   const [profileBlacklist, setProfileBlacklist] = useState(false);
   const [profileFrame, setProfileFrame] = useState(false);
+  const [
+    profileExcludeFromInactiveClients,
+    setProfileExcludeFromInactiveClients,
+  ] = useState(false);
   const [profileReferrals, setProfileReferrals] = useState([]);
 
 
@@ -6300,6 +6307,9 @@ const deletePurchase = async (
   setProfileNotes(fullClient?.notes || "");
   setProfileBlacklist(fullClient?.blacklist || false);
   setProfileFrame(fullClient?.frame || false);
+  setProfileExcludeFromInactiveClients(
+    Boolean(fullClient?.exclude_from_inactive_clients)
+  );
 
   const sharedReferrals = await getSharedReferralsForClient(client.id);
 
@@ -6364,7 +6374,7 @@ goToScreen("clientProfile");
     } = await supabase
       .from("clients")
       .select(
-        "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at"
+        "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at"
       )
       .eq(
         "id",
@@ -6465,6 +6475,8 @@ goToScreen("clientProfile");
       notes: profileNotes,
       blacklist: profileBlacklist,
       frame: profileFrame,
+      exclude_from_inactive_clients:
+        profileExcludeFromInactiveClients,
       referrals: updatedReferrals,
     };
 
@@ -6502,6 +6514,10 @@ goToScreen("clientProfile");
 
               frame:
                 profileUpdate.frame,
+
+              exclude_from_inactive_clients:
+                profileUpdate
+                  .exclude_from_inactive_clients,
             })
             .eq(
               "id",
@@ -6550,6 +6566,11 @@ goToScreen("clientProfile");
                     ? {
                         ...client,
                         ...profileUpdate,
+                        excludeFromInactiveClients:
+                          Boolean(
+                            profileUpdate
+                              .exclude_from_inactive_clients
+                          ),
                       }
                     : client
               );
@@ -6633,7 +6654,7 @@ goToScreen("clientProfile");
     .from("clients")
     .update({ visits: newVisits })
     .eq("id", id)
-    .select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at")
+    .select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at")
     .single();
 
   if (error) {
@@ -6658,7 +6679,7 @@ goToScreen("clientProfile");
     .from("clients")
     .update({ visits: newVisits })
     .eq("id", id)
-    .select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at")
+    .select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at")
     .single();
 
   if (error) {
@@ -6706,7 +6727,7 @@ const updateClientLastActivity = async (id) => {
       .from("clients")
       .update({ frame: frameValue })
       .eq("id", id)
-      .select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at")
+      .select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at")
       .single();
 
     if (error) {
@@ -6726,6 +6747,122 @@ const updateClientLastActivity = async (id) => {
         prev.map((client) => String(client.id) === String(nextClient.id) ? nextClient : client)
       );
     }
+  };
+
+  // 🚫 UPDATE INACTIVE CLIENTS EXCLUSION
+  const updateClientInactiveExclusion = async (
+    id,
+    excludeValue
+  ) => {
+    if (
+      !ensureSystemWritable() ||
+      !canEditData ||
+      !id
+    ) {
+      return false;
+    }
+
+    const nextExcludeValue =
+      Boolean(excludeValue);
+
+    setProfileExcludeFromInactiveClients(
+      nextExcludeValue
+    );
+
+    setClients((prev) => {
+      const nextClients =
+        prev.map((client) =>
+          String(client.id) === String(id)
+            ? {
+                ...client,
+                exclude_from_inactive_clients:
+                  nextExcludeValue,
+                excludeFromInactiveClients:
+                  nextExcludeValue,
+              }
+            : client
+        );
+
+      saveClientsToCache(nextClients);
+
+      return nextClients;
+    });
+
+    const {
+      data: updatedClient,
+      error,
+    } = await supabase
+      .from("clients")
+      .update({
+        exclude_from_inactive_clients:
+          nextExcludeValue,
+      })
+      .eq("id", id)
+      .select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at")
+      .single();
+
+    if (error) {
+      console.log(
+        "Inactive exclusion update error:",
+        error
+      );
+
+      setProfileExcludeFromInactiveClients(
+        !nextExcludeValue
+      );
+
+      setClients((prev) => {
+        const revertedClients =
+          prev.map((client) =>
+            String(client.id) === String(id)
+              ? {
+                  ...client,
+                  exclude_from_inactive_clients:
+                    !nextExcludeValue,
+                  excludeFromInactiveClients:
+                    !nextExcludeValue,
+                }
+              : client
+          );
+
+        saveClientsToCache(
+          revertedClients
+        );
+
+        return revertedClients;
+      });
+
+      alert(
+        "لم يتم حفظ خيار إخفاء العميلة من العملاء المنقطعين. تأكد من الاتصال وجرب مرة ثانية."
+      );
+
+      return false;
+    }
+
+    if (updatedClient) {
+      const nextClient =
+        normalizeClientRecord(
+          updatedClient
+        );
+
+      setClients((prev) => {
+        const nextClients =
+          prev.map((client) =>
+            String(client.id) ===
+            String(nextClient.id)
+              ? nextClient
+              : client
+          );
+
+        saveClientsToCache(
+          nextClients
+        );
+
+        return nextClients;
+      });
+    }
+
+    return true;
   };
 
   // 📊 EXPORT CLIENTS TO EXCEL
@@ -12359,7 +12496,7 @@ const getScheduleClientBadges = (
             matchedClient.id
           )
           .select(
-            "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at"
+            "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at"
           )
           .single();
 
@@ -16100,7 +16237,7 @@ const handleScheduleRowAction = (rowIndex, action) => {
             matchedClientForOrder.id
           )
           .select(
-            "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at"
+            "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at"
           )
           .single();
 
@@ -20797,7 +20934,7 @@ const leavingTime = addMinutesToDisplayTime(
         })
         .eq("id", client.id)
         .select(
-          "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,notes,last_order_at,last_activity_at,last_contacted_at"
+          "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at"
         )
         .single();
 
@@ -21030,6 +21167,12 @@ const leavingTime = addMinutesToDisplayTime(
       }
 
       if (
+        client.excludeFromInactiveClients
+      ) {
+        return false;
+      }
+
+      if (
         inactiveFutureClientIdsSet.has(
           String(client.id)
         )
@@ -21150,7 +21293,8 @@ const leavingTime = addMinutesToDisplayTime(
     clients
       .filter(
         (client) =>
-          !client.blacklist
+          !client.blacklist &&
+          !client.excludeFromInactiveClients
       )
       .map(
         applyInactiveClientServiceData
@@ -52548,6 +52692,115 @@ if (screen === "potentialClients") {
                     flex: "0 0 18px",
                     cursor: "pointer",
                     accentColor: "#6d4a36",
+                  }}
+                />
+              </label>
+
+              <label
+                style={{
+                  minHeight: "74px",
+                  padding: "13px 14px",
+                  boxSizing: "border-box",
+                  borderRadius: "17px",
+                  border: profileExcludeFromInactiveClients
+                    ? "1px solid rgba(124,84,53,0.48)"
+                    : "1px solid rgba(177,141,112,0.30)",
+                  background: profileExcludeFromInactiveClients
+                    ? "linear-gradient(145deg, #d7b894, #a8764f)"
+                    : "linear-gradient(145deg, #fffdf9, #efe1d5)",
+                  boxShadow: profileExcludeFromInactiveClients
+                    ? "0 10px 22px rgba(93,62,44,0.16)"
+                    : "0 8px 18px rgba(75,46,31,0.06)",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "12px",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    minWidth: 0,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "29px",
+                      height: "29px",
+                      flex: "0 0 29px",
+                      borderRadius: "9px",
+                      background:
+                        profileExcludeFromInactiveClients
+                          ? "rgba(255,255,255,0.28)"
+                          : "#ead7c7",
+                      color:
+                        profileExcludeFromInactiveClients
+                          ? "#fffaf5"
+                          : "#533a2d",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "13px",
+                      fontWeight: "900",
+                    }}
+                  >
+                    ⊘
+                  </div>
+
+                  <div
+                    style={{
+                      textAlign: "right",
+                    }}
+                  >
+                    <div
+                      style={{
+                        color:
+                          profileExcludeFromInactiveClients
+                            ? "#fffaf5"
+                            : "#3f2b21",
+                        fontSize: "13px",
+                        fontWeight: "950",
+                      }}
+                    >
+                      Hide from Inactive
+                    </div>
+
+                    <div
+                      style={{
+                        color:
+                          profileExcludeFromInactiveClients
+                            ? "rgba(255,250,245,0.78)"
+                            : "#765642",
+                        fontSize: "9px",
+                        fontWeight: "800",
+                        marginTop: "3px",
+                      }}
+                    >
+                      إخفاء من العملاء المنقطعين
+                    </div>
+                  </div>
+                </div>
+
+                <input
+                  type="checkbox"
+                  checked={
+                    profileExcludeFromInactiveClients
+                  }
+                  onChange={(e) => {
+                    updateClientInactiveExclusion(
+                      selectedClient.id,
+                      e.target.checked
+                    );
+                  }}
+                  style={{
+                    width: "18px",
+                    height: "18px",
+                    flex: "0 0 18px",
+                    cursor: "pointer",
+                    accentColor: "#7a5438",
                   }}
                 />
               </label>
