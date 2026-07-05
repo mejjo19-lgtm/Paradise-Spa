@@ -1580,6 +1580,46 @@ const welcomeBoardFonts = [
   },
 ];
 
+/*
+  خطوط مستقلة لكروت الإهداء فقط.
+
+  لا تغيّر هذه القائمة أي شيء في
+  طباعة اللوحة الترحيبية؛ لأن اللوحة
+  تستمر باستخدام welcomeBoardFonts.
+*/
+const giftCardFonts = [
+  {
+    id: "riwaya-29lt-only",
+    name: "Gift Arabic Soft",
+    font: '"Riwaya29LTOnly"',
+  },
+  {
+    id: "riwaya",
+    name: "Gift Riwaya Informal",
+    font: '"LTRiwayaInformal"',
+  },
+  {
+    id: "diphylleia",
+    name: "Gift Diphylleia",
+    font: '"Diphylleia"',
+  },
+  {
+    id: "cormorant-upright-bold",
+    name: "Gift Cormorant Upright Bold",
+    font: '"CormorantUprightBold"',
+  },
+  {
+    id: "cormorant-regular",
+    name: "Gift Cormorant Regular",
+    font: '"CormorantRegular"',
+  },
+  {
+    id: "cormorant",
+    name: "Gift Cormorant Italic",
+    font: '"CormorantItalic"',
+  },
+];
+
 const [selectedWelcomeFont, setSelectedWelcomeFont] = useState(() => {
   const savedFont = localStorage.getItem("selectedWelcomeFont") || "riwaya-29lt-only";
   return welcomeBoardFonts.some((font) => font.id === savedFont)
@@ -2732,9 +2772,21 @@ function fetchSharedClientLists() {
 
   const createDefaultGiftCardTextSettings = (language = "ar", messagePosition = {}) => {
     const isEnglish = language === "en";
-    const defaultFontId = isEnglish
-      ? "cormorant-upright-bold"
-      : "riwaya-29lt-only";
+    const defaultFontId = giftCardFonts.some(
+      (font) =>
+        font.id ===
+        (
+          isEnglish
+            ? "cormorant-upright-bold"
+            : "riwaya-29lt-only"
+        )
+    )
+      ? (
+          isEnglish
+            ? "cormorant-upright-bold"
+            : "riwaya-29lt-only"
+        )
+      : giftCardFonts[0].id;
 
     return {
       recipient: {
@@ -48369,11 +48421,11 @@ if (screen === "potentialClients") {
       ];
 
     const fontData =
-      welcomeBoardFonts.find(
+      giftCardFonts.find(
         (font) =>
           font.id ===
           settings.fontId
-      ) || welcomeBoardFonts[0];
+      ) || giftCardFonts[0];
 
     const isSelected =
       selectedGiftCardTextKey ===
@@ -49307,7 +49359,7 @@ if (screen === "potentialClients") {
                           "14px",
                       }}
                     >
-                      {welcomeBoardFonts.map(
+                      {giftCardFonts.map(
                         (
                           fontOption
                         ) => (
