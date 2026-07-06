@@ -48613,20 +48613,6 @@ if (screen === "potentialClients") {
               ? "4px 5px"
               : "1px 3px",
 
-          minHeight:
-            textKey === "message"
-              ? "auto"
-              : "4.8%",
-
-          display:
-            "flex",
-
-          alignItems:
-            "center",
-
-          justifyContent:
-            "center",
-
           color:
             cleanValue
               ? "#8b654d"
