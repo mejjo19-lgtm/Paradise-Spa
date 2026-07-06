@@ -48566,159 +48566,6 @@ if (screen === "potentialClients") {
           settings.fontId
       ) || giftCardFonts[0];
 
-    const textDirection =
-      selectedGiftCardTemplate
-        .language === "en"
-        ? "ltr"
-        : "rtl";
-
-    const renderedDisplayValue =
-      textKey === "message"
-        ? String(
-            displayValue || ""
-          )
-            .replace(
-              /\r\n/g,
-              "\n"
-            )
-            .replace(
-              /[\u00A0\u2007\u202F]/g,
-              " "
-            )
-            .replace(
-              /[\u200B-\u200D\u2060]/g,
-              ""
-            )
-        : String(
-            displayValue || ""
-          )
-            .replace(
-              /[\u00A0\u2007\u202F]/g,
-              " "
-            )
-            .replace(
-              /[\u200B-\u200D\u2060]/g,
-              ""
-            )
-            .replace(
-              /[ \t\r\n]+/g,
-              " "
-            )
-            .trim();
-
-    const shouldUseStableAmiriSpacing =
-      textKey !== "message" &&
-      textDirection === "rtl" &&
-      String(
-        fontData.font || ""
-      ).includes(
-        "GiftCardArabicAmiri"
-      ) &&
-      /[\u0600-\u06FF]/.test(
-        renderedDisplayValue
-      );
-
-    const renderGiftCardTextContent =
-      () => {
-        if (
-          !shouldUseStableAmiriSpacing
-        ) {
-          return renderedDisplayValue;
-        }
-
-        const words =
-          renderedDisplayValue
-            .split(/\s+/)
-            .filter(Boolean);
-
-        if (words.length <= 1) {
-          return renderedDisplayValue;
-        }
-
-        return words.map(
-          (
-            word,
-            wordIndex
-          ) => {
-            const isNumberWord =
-              /^[0-9\u0660-\u0669\u06F0-\u06F9]+([.,:/-][0-9\u0660-\u0669\u06F0-\u06F9]+)*$/.test(
-                word
-              );
-
-            const isLatinWord =
-              /[A-Za-z]/.test(
-                word
-              ) &&
-              !/[\u0600-\u06FF]/.test(
-                word
-              );
-
-            return (
-              <span
-                key={`gift-card-amiri-part-${textKey}-${wordIndex}`}
-                style={{
-                  display:
-                    "inline",
-                }}
-              >
-                <span
-                  dir={
-                    isNumberWord ||
-                    isLatinWord
-                      ? "ltr"
-                      : "rtl"
-                  }
-                  style={{
-                    display:
-                      "inline",
-
-                    whiteSpace:
-                      "nowrap",
-
-                    unicodeBidi:
-                      "isolate",
-                  }}
-                >
-                  {word}
-                </span>
-
-                {wordIndex <
-                  words.length - 1 && (
-                  <span
-                    aria-hidden="true"
-                    style={{
-                      display:
-                        "inline-block",
-
-                      width:
-                        "0.16em",
-
-                      minWidth:
-                        "0.16em",
-
-                      maxWidth:
-                        "0.16em",
-
-                      height:
-                        "0",
-
-                      lineHeight:
-                        "0",
-
-                      overflow:
-                        "hidden",
-
-                      verticalAlign:
-                        "baseline",
-                    }}
-                  />
-                )}
-              </span>
-            );
-          }
-        );
-      };
-
     const isSelected =
       selectedGiftCardTextKey ===
       textKey;
@@ -48740,7 +48587,6 @@ if (screen === "potentialClients") {
     return (
       <div
         key={textKey}
-        dir={textDirection}
         onClick={() =>
           setSelectedGiftCardTextKey(
             textKey
@@ -48785,7 +48631,10 @@ if (screen === "potentialClients") {
             settings.lineHeight,
 
           direction:
-            textDirection,
+            selectedGiftCardTemplate
+              .language === "en"
+              ? "ltr"
+              : "rtl",
 
           textAlign:
             "center",
@@ -48793,26 +48642,10 @@ if (screen === "potentialClients") {
           whiteSpace:
             textKey === "message"
               ? "pre-wrap"
-              : "nowrap",
-
-          wordBreak:
-            textKey === "message"
-              ? "break-word"
               : "normal",
 
           overflowWrap:
-            textKey === "message"
-              ? "break-word"
-              : "normal",
-
-          unicodeBidi:
-            "isolate",
-
-          letterSpacing:
-            "normal",
-
-          wordSpacing:
-            "normal",
+            "anywhere",
 
           cursor:
             giftCardIsSaving
@@ -48842,7 +48675,7 @@ if (screen === "potentialClients") {
             "none",
         }}
       >
-        {renderGiftCardTextContent()}
+        {displayValue}
 
         {showEditor && (
           <span
