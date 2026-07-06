@@ -3160,7 +3160,11 @@ function fetchSharedClientLists() {
   const [
     governmentReportsFromDate,
     setGovernmentReportsFromDate,
-  ] = useState("2024-01-01");
+  ] = useState(() => {
+    const today = getCurrentLocalDate();
+
+    return `${today.slice(0, 7)}-01`;
+  });
 
   const [
     governmentReportsToDate,
@@ -37817,25 +37821,19 @@ if (screen === "governmentReports") {
       id: "purchases",
       title: "المشتريات الضريبية",
       description:
-        "المشتريات المسجلة عليها صح فقط تدخل في ضريبة المدخلات.",
+        "المشتريات المؤهلة لضريبة المدخلات.",
     },
     {
       id: "payments",
       title: "طرق الدفع",
       description:
-        "تجميع الفواتير حسب طريقة الدفع للمطابقة.",
+        "تجميع الفواتير حسب طريقة الدفع.",
     },
     {
       id: "notes",
       title: "الإشعارات",
       description:
         "الإشعارات الدائنة والمدينة عند توفرها.",
-    },
-    {
-      id: "review",
-      title: "الفروقات والمراجعة",
-      description:
-        "مقارنة المواعيد مع الفواتير لاكتشاف الأخطاء.",
     },
   ];
 
@@ -38032,7 +38030,7 @@ if (screen === "governmentReports") {
         getGovernmentReportValue(
           governmentSalesIncludingVat
         ),
-      note: "من الفواتير فقط",
+      note: "إجمالي الفواتير",
     },
     {
       title: "المبيعات بدون الضريبة",
@@ -38040,7 +38038,7 @@ if (screen === "governmentReports") {
         getGovernmentReportValue(
           governmentSalesExcludingVat
         ),
-      note: "من subtotal",
+      note: "قبل احتساب VAT",
     },
     {
       title: "ضريبة المخرجات",
@@ -38056,7 +38054,7 @@ if (screen === "governmentReports") {
         getGovernmentReportValue(
           governmentEligiblePurchasesIncludingVat
         ),
-      note: "purchases عليها صح",
+      note: "المشتريات",
     },
     {
       title: "ضريبة المدخلات",
@@ -38064,7 +38062,7 @@ if (screen === "governmentReports") {
         getGovernmentReportValue(
           governmentInputVat
         ),
-      note: "خصم ضريبة الموردين",
+      note: "ضريبة الموردين",
     },
     {
       title: "صافي الضريبة",
@@ -38072,7 +38070,7 @@ if (screen === "governmentReports") {
         getGovernmentReportValue(
           governmentNetVatDue
         ),
-      note: "المخرجات - المدخلات",
+      note: "المبلغ المستحق",
     },
     {
       title: "عدد الفواتير",
@@ -38081,7 +38079,7 @@ if (screen === "governmentReports") {
           governmentInvoicesCount,
           "count"
         ),
-      note: "مستندات invoice",
+      note: "فاتورة",
     },
     {
       title: "عدد الإشعارات",
@@ -38090,7 +38088,7 @@ if (screen === "governmentReports") {
           governmentNotesCount,
           "count"
         ),
-      note: "دائن / مدين",
+      note: "إشعار",
     },
   ];
 
@@ -38130,43 +38128,36 @@ if (screen === "governmentReports") {
           "البند",
           "المصدر",
           "المبلغ",
-          "ملاحظة",
         ],
         [
           "إجمالي المبيعات شامل الضريبة",
           "الفواتير",
           governmentSalesIncludingVat.toFixed(2),
-          "الدخل الرسمي من الفواتير فقط",
         ],
         [
           "إجمالي المبيعات بدون الضريبة",
           "الفواتير",
           governmentSalesExcludingVat.toFixed(2),
-          "حسب subtotal_excluding_vat",
         ],
         [
           "ضريبة المخرجات",
           "الفواتير",
           governmentOutputVat.toFixed(2),
-          "ضريبة المبيعات",
         ],
         [
           "المشتريات الضريبية المؤهلة شامل الضريبة",
           "المشتريات",
           governmentEligiblePurchasesIncludingVat.toFixed(2),
-          "فقط المشتريات التي عليها فاتورة ضريبية",
         ],
         [
           "ضريبة المدخلات",
           "المشتريات",
           governmentInputVat.toFixed(2),
-          "ضريبة الموردين القابلة للخصم",
         ],
         [
           "صافي الضريبة المستحقة",
           "ضريبة المخرجات - ضريبة المدخلات",
           governmentNetVatDue.toFixed(2),
-          "المبلغ المتوقع سداده",
         ],
       ];
 
@@ -38487,13 +38478,12 @@ if (screen === "governmentReports") {
         >
           <div
             style={{
-              display: "flex",
-              justifyContent:
-                "space-between",
-              alignItems: "center",
+              display: "grid",
+              gridTemplateColumns:
+                "minmax(0, 1fr) auto",
               gap: "18px",
-              flexWrap: "wrap",
-              marginBottom: "24px",
+              alignItems: "center",
+              marginBottom: "22px",
             }}
           >
             <div>
@@ -38501,8 +38491,9 @@ if (screen === "governmentReports") {
                 style={{
                   margin: 0,
                   color: "#4b2e1f",
-                  fontSize: "28px",
+                  fontSize: "30px",
                   fontWeight: "900",
+                  letterSpacing: "-0.4px",
                 }}
               >
                 التقارير الحكومية
@@ -38512,13 +38503,12 @@ if (screen === "governmentReports") {
                 style={{
                   margin: "8px 0 0",
                   color: "#8a7a68",
-                  fontSize: "14px",
-                  fontWeight: "700",
+                  fontSize: "15px",
+                  fontWeight: "800",
                   lineHeight: 1.8,
                 }}
               >
-                مركز موحد لتقارير الضريبة والفواتير والمشتريات والمطابقة.
-                الدخل الرسمي يعتمد على الفواتير فقط.
+                ملخص التقارير الضريبية والفواتير والمشتريات حسب الفترة المختارة.
               </p>
             </div>
 
@@ -38535,10 +38525,10 @@ if (screen === "governmentReports") {
                     ? "#c9b8a8"
                     : "linear-gradient(135deg, #7d6049, #a9886e)",
                 color: "white",
-                padding: "14px 22px",
-                borderRadius: "18px",
+                padding: "13px 20px",
+                borderRadius: "999px",
                 boxShadow:
-                  "0 14px 30px rgba(75,46,31,0.20)",
+                  "0 16px 32px rgba(75,46,31,0.18)",
                 opacity:
                   governmentReportsLoading
                     ? 0.75
@@ -38547,6 +38537,7 @@ if (screen === "governmentReports") {
                   governmentReportsLoading
                     ? "not-allowed"
                     : "pointer",
+                whiteSpace: "nowrap",
               }}
             >
               {governmentReportsLoading
@@ -38559,23 +38550,37 @@ if (screen === "governmentReports") {
             style={{
               display: "grid",
               gridTemplateColumns:
-                "repeat(auto-fit, minmax(190px, 1fr))",
-              gap: "14px",
+                "repeat(auto-fit, minmax(260px, 1fr))",
+              gap: "16px",
               marginBottom: "22px",
             }}
           >
             <label
               style={{
-                background: "#fffaf3",
+                background:
+                  "linear-gradient(145deg, #fffdf8, #f5eadf)",
                 border:
-                  "1px solid rgba(214,199,184,0.8)",
-                borderRadius: "18px",
-                padding: "14px",
+                  "1px solid rgba(214,199,184,0.85)",
+                borderRadius: "22px",
+                padding: "16px",
                 color: "#5a4030",
                 fontWeight: "900",
+                boxShadow:
+                  "0 14px 30px rgba(75,46,31,0.06)",
+                display: "block",
+                minWidth: 0,
               }}
             >
-              من تاريخ
+              <span
+                style={{
+                  display: "block",
+                  marginBottom: "10px",
+                  fontSize: "15px",
+                }}
+              >
+                من تاريخ
+              </span>
+
               <input
                 type="date"
                 min="2024-01-01"
@@ -38587,31 +38592,47 @@ if (screen === "governmentReports") {
                 }
                 style={{
                   width: "100%",
-                  marginTop: "10px",
+                  boxSizing: "border-box",
                   border:
-                    "1px solid rgba(214,199,184,0.9)",
-                  borderRadius: "14px",
-                  padding: "11px",
-                  background: "white",
+                    "1px solid rgba(214,199,184,0.95)",
+                  borderRadius: "16px",
+                  padding: "12px 14px",
+                  background: "#fffaf3",
                   color: "#4b2e1f",
                   fontWeight: "900",
+                  fontSize: "15px",
                   outline: "none",
+                  minWidth: 0,
                 }}
               />
             </label>
 
             <label
               style={{
-                background: "#fffaf3",
+                background:
+                  "linear-gradient(145deg, #fffdf8, #f5eadf)",
                 border:
-                  "1px solid rgba(214,199,184,0.8)",
-                borderRadius: "18px",
-                padding: "14px",
+                  "1px solid rgba(214,199,184,0.85)",
+                borderRadius: "22px",
+                padding: "16px",
                 color: "#5a4030",
                 fontWeight: "900",
+                boxShadow:
+                  "0 14px 30px rgba(75,46,31,0.06)",
+                display: "block",
+                minWidth: 0,
               }}
             >
-              إلى تاريخ
+              <span
+                style={{
+                  display: "block",
+                  marginBottom: "10px",
+                  fontSize: "15px",
+                }}
+              >
+                إلى تاريخ
+              </span>
+
               <input
                 type="date"
                 min="2024-01-01"
@@ -38623,54 +38644,29 @@ if (screen === "governmentReports") {
                 }
                 style={{
                   width: "100%",
-                  marginTop: "10px",
+                  boxSizing: "border-box",
                   border:
-                    "1px solid rgba(214,199,184,0.9)",
-                  borderRadius: "14px",
-                  padding: "11px",
-                  background: "white",
+                    "1px solid rgba(214,199,184,0.95)",
+                  borderRadius: "16px",
+                  padding: "12px 14px",
+                  background: "#fffaf3",
                   color: "#4b2e1f",
                   fontWeight: "900",
+                  fontSize: "15px",
                   outline: "none",
+                  minWidth: 0,
                 }}
               />
             </label>
-
-            <div
-              style={{
-                background:
-                  "linear-gradient(135deg, #f7efe6, #efe2d5)",
-                border:
-                  "1px solid rgba(214,199,184,0.8)",
-                borderRadius: "18px",
-                padding: "14px",
-                color: "#5a4030",
-                fontWeight: "900",
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "center",
-                gap: "6px",
-              }}
-            >
-              <span>مصدر الدخل الرسمي</span>
-              <strong
-                style={{
-                  color: "#4b2e1f",
-                  fontSize: "17px",
-                }}
-              >
-                الفواتير فقط
-              </strong>
-            </div>
           </div>
 
           <div
             style={{
               display: "grid",
               gridTemplateColumns:
-                "repeat(auto-fit, minmax(190px, 1fr))",
-              gap: "14px",
-              marginBottom: "24px",
+                "repeat(4, minmax(0, 1fr))",
+              gap: "12px",
+              marginBottom: "22px",
             }}
           >
             {governmentReportCards.map(
@@ -38679,21 +38675,29 @@ if (screen === "governmentReports") {
                   key={card.title}
                   style={{
                     background:
-                      "linear-gradient(145deg, #fffdf8, #f7efe8)",
+                      "linear-gradient(145deg, #fffdf9, #f7eee4)",
                     border:
-                      "1px solid rgba(214,199,184,0.78)",
-                    borderRadius: "22px",
-                    padding: "18px",
+                      "1px solid rgba(214,199,184,0.72)",
+                    borderRadius: "18px",
+                    padding: "12px 14px",
                     boxShadow:
-                      "0 12px 28px rgba(75,46,31,0.07)",
+                      "0 8px 18px rgba(75,46,31,0.045)",
+                    minHeight: "86px",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                    minWidth: 0,
                   }}
                 >
                   <div
                     style={{
-                      color: "#8a7a68",
+                      color: "#6f6259",
                       fontSize: "13px",
-                      fontWeight: "900",
-                      marginBottom: "9px",
+                      fontWeight: "850",
+                      lineHeight: 1.4,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
                     }}
                   >
                     {card.title}
@@ -38702,8 +38706,13 @@ if (screen === "governmentReports") {
                   <div
                     style={{
                       color: "#4b2e1f",
-                      fontSize: "20px",
-                      fontWeight: "900",
+                      fontSize: "15px",
+                      fontWeight: "800",
+                      marginTop: "8px",
+                      direction: "ltr",
+                      textAlign: "right",
+                      letterSpacing: 0,
+                      whiteSpace: "nowrap",
                     }}
                   >
                     {card.value}
@@ -38713,8 +38722,12 @@ if (screen === "governmentReports") {
                     style={{
                       color: "#9b8a79",
                       fontSize: "12px",
-                      fontWeight: "800",
-                      marginTop: "8px",
+                      fontWeight: "750",
+                      marginTop: "6px",
+                      lineHeight: 1.4,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
                     }}
                   >
                     {card.note}
@@ -38847,8 +38860,9 @@ if (screen === "governmentReports") {
                     >
                       <th
                         style={{
-                          padding: "14px",
+                          padding: "15px",
                           fontWeight: "900",
+                          fontSize: "14px",
                         }}
                       >
                         البند
@@ -38856,8 +38870,9 @@ if (screen === "governmentReports") {
 
                       <th
                         style={{
-                          padding: "14px",
+                          padding: "15px",
                           fontWeight: "900",
+                          fontSize: "14px",
                         }}
                       >
                         المصدر
@@ -38865,20 +38880,12 @@ if (screen === "governmentReports") {
 
                       <th
                         style={{
-                          padding: "14px",
+                          padding: "15px",
                           fontWeight: "900",
+                          fontSize: "14px",
                         }}
                       >
                         المبلغ
-                      </th>
-
-                      <th
-                        style={{
-                          padding: "14px",
-                          fontWeight: "900",
-                        }}
-                      >
-                        ملاحظة
                       </th>
                     </tr>
                   </thead>
@@ -38887,51 +38894,45 @@ if (screen === "governmentReports") {
                     {[
                       [
                         "إجمالي المبيعات شامل الضريبة",
-                        "الفواتير الصادرة",
+                        "الفواتير",
                         formatGovernmentCurrency(
                           governmentSalesIncludingVat
                         ),
-                        "لا يدخل جدول المواعيد في هذا الرقم",
                       ],
                       [
                         "إجمالي المبيعات بدون الضريبة",
-                        "الفواتير الصادرة",
+                        "الفواتير",
                         formatGovernmentCurrency(
                           governmentSalesExcludingVat
                         ),
-                        "حسب subtotal_excluding_vat",
                       ],
                       [
                         "ضريبة المخرجات",
-                        "الفواتير الصادرة",
+                        "الفواتير",
                         formatGovernmentCurrency(
                           governmentOutputVat
                         ),
-                        "ضريبة المبيعات المستحقة",
                       ],
                       [
                         "المشتريات الضريبية المؤهلة",
-                        "purchases عليها صح",
+                        "المشتريات",
                         formatGovernmentCurrency(
                           governmentEligiblePurchasesIncludingVat
                         ),
-                        "vat_invoice = true فقط",
                       ],
                       [
                         "ضريبة المدخلات",
-                        "purchases عليها صح",
+                        "المشتريات",
                         formatGovernmentCurrency(
                           governmentInputVat
                         ),
-                        "الضريبة القابلة للخصم",
                       ],
                       [
                         "صافي الضريبة المستحقة",
-                        "المخرجات - المدخلات",
+                        "VAT",
                         formatGovernmentCurrency(
                           governmentNetVatDue
                         ),
-                        "المبلغ المتوقع سداده",
                       ],
                     ].map(
                       (row, index) => (
@@ -38946,11 +38947,12 @@ if (screen === "governmentReports") {
                         >
                           <td
                             style={{
-                              padding: "14px",
+                              padding: "15px",
                               borderBottom:
                                 "1px solid rgba(214,199,184,0.55)",
                               color: "#4b2e1f",
                               fontWeight: "900",
+                              fontSize: "14px",
                             }}
                           >
                             {row[0]}
@@ -38958,11 +38960,12 @@ if (screen === "governmentReports") {
 
                           <td
                             style={{
-                              padding: "14px",
+                              padding: "15px",
                               borderBottom:
                                 "1px solid rgba(214,199,184,0.55)",
                               color: "#6f6259",
-                              fontWeight: "800",
+                              fontWeight: "850",
+                              fontSize: "14px",
                             }}
                           >
                             {row[1]}
@@ -38970,29 +38973,18 @@ if (screen === "governmentReports") {
 
                           <td
                             style={{
-                              padding: "14px",
+                              padding: "15px",
                               borderBottom:
                                 "1px solid rgba(214,199,184,0.55)",
                               color: "#4b2e1f",
                               fontWeight: "900",
                               direction: "ltr",
+                              fontSize: "15px",
                             }}
                           >
                             {governmentReportsLoading
                               ? "جاري التحميل..."
                               : row[2]}
-                          </td>
-
-                          <td
-                            style={{
-                              padding: "14px",
-                              borderBottom:
-                                "1px solid rgba(214,199,184,0.55)",
-                              color: "#8a7a68",
-                              fontWeight: "800",
-                            }}
-                          >
-                            {row[3]}
                           </td>
                         </tr>
                       )
@@ -39042,15 +39034,7 @@ if (screen === "governmentReports") {
                         )}
                       </div>
 
-                      <div
-                        style={{
-                          color: "#8a7a68",
-                          fontWeight: "800",
-                          fontSize: "13px",
-                        }}
-                      >
-                        المصدر الرسمي: invoices فقط
-                      </div>
+                      {null}
                     </div>
 
                     <div
@@ -39392,15 +39376,7 @@ if (screen === "governmentReports") {
                         )}
                       </div>
 
-                      <div
-                        style={{
-                          color: "#8a7a68",
-                          fontWeight: "800",
-                          fontSize: "13px",
-                        }}
-                      >
-                        لا تدخل في VAT إلا المشتريات المحددة عليها صح
-                      </div>
+                      {null}
                     </div>
 
                     {nonTaxPurchaseCount > 0 && (
@@ -40100,21 +40076,7 @@ if (screen === "governmentReports") {
                       </table>
                     </div>
 
-                    <div
-                      style={{
-                        marginTop: "14px",
-                        background: "#fff7e8",
-                        border:
-                          "1px solid rgba(194,137,62,0.28)",
-                        borderRadius: "16px",
-                        padding: "13px 15px",
-                        color: "#7d6049",
-                        fontWeight: "900",
-                        lineHeight: 1.8,
-                      }}
-                    >
-                      ملاحظة: Split Payment يظهر كسطر مستقل حاليًا، لأن تفاصيل تقسيمه بين كاش وتحويل غير محفوظة داخل الفاتورة.
-                    </div>
+                    {null}
                   </div>
                 );
               })()
