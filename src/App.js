@@ -32139,40 +32139,31 @@ const welcomeBoardNameStyle = {
 
             <label
               className="paradise-topbar-date"
-              title="تاريخ العمل وإصدار الفاتورة"
+              title="تاريخ إصدار الفاتورة"
               style={{
                 background:
                   "linear-gradient(135deg, #fffaf3, #f3e8df)",
                 border:
                   "1px solid rgba(214,199,184,0.95)",
                 borderRadius: "20px",
-                padding: "0 12px",
+                padding: "0 18px",
                 height: "44px",
+                minWidth: "168px",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                gap: "8px",
                 boxShadow:
                   "0 12px 28px rgba(75,46,31,0.10)",
-                color: "#6f6259",
-                fontWeight: "800",
+                color: "#4b2e1f",
+                fontWeight: "900",
                 textAlign: "center",
                 pointerEvents: "auto",
                 whiteSpace: "nowrap",
                 cursor: "pointer",
               }}
             >
-              <span
-                style={{
-                  fontSize: "12px",
-                  color: "#8a7a68",
-                  fontWeight: "900",
-                }}
-              >
-                تاريخ العمل
-              </span>
-
               <input
+                className="paradise-topbar-date-input"
                 type="date"
                 value={selectedScheduleDate || todayDate}
                 max={todayDate}
@@ -32209,10 +32200,14 @@ const welcomeBoardNameStyle = {
                   background: "transparent",
                   color: "#4b2e1f",
                   fontWeight: "900",
-                  fontSize: "13px",
+                  fontSize: "15px",
+                  lineHeight: "1",
                   outline: "none",
                   cursor: "pointer",
-                  width: "132px",
+                  width: "128px",
+                  textAlign: "center",
+                  padding: 0,
+                  margin: 0,
                 }}
               />
             </label>
@@ -32270,6 +32265,23 @@ const welcomeBoardNameStyle = {
 
         <style>
           {`
+            .paradise-topbar-date-input::-webkit-calendar-picker-indicator {
+              display: none;
+              opacity: 0;
+              -webkit-appearance: none;
+            }
+
+            .paradise-topbar-date-input::-webkit-inner-spin-button,
+            .paradise-topbar-date-input::-webkit-clear-button {
+              display: none;
+              -webkit-appearance: none;
+            }
+
+            .paradise-topbar-date-input {
+              appearance: none;
+              -webkit-appearance: none;
+            }
+
             @keyframes paradiseFollowUpNoticeIn {
               from {
                 opacity: 0;
