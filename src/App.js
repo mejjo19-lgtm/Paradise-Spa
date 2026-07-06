@@ -1590,35 +1590,134 @@ const welcomeBoardFonts = [
 const giftCardFonts = [
   {
     id: "riwaya-29lt-only",
-    name: "Gift Arabic Soft",
-    font: '"Riwaya29LTOnly"',
+    name: "Gift Arabic Amiri",
+    font: '"GiftCardArabicAmiri"',
   },
   {
     id: "riwaya",
-    name: "Gift Riwaya Informal",
-    font: '"LTRiwayaInformal"',
+    name: "Gift Neuton Cursive",
+    font: '"GiftCardNeutonCursive"',
   },
   {
     id: "diphylleia",
     name: "Gift Diphylleia",
-    font: '"Diphylleia"',
+    font: '"GiftCardDiphylleia"',
   },
   {
     id: "cormorant-upright-bold",
     name: "Gift Cormorant Upright Bold",
-    font: '"CormorantUprightBold"',
+    font: '"GiftCardCormorantUprightBold"',
   },
   {
     id: "cormorant-regular",
     name: "Gift Cormorant Regular",
-    font: '"CormorantRegular"',
+    font: '"GiftCardCormorantRegular"',
   },
   {
     id: "cormorant",
     name: "Gift Cormorant Italic",
-    font: '"CormorantItalic"',
+    font: '"GiftCardCormorantItalic"',
+  },
+  {
+    id: "cormorant-upright",
+    name: "Gift Cormorant Upright",
+    font: '"GiftCardCormorantUpright"',
   },
 ];
+
+useEffect(() => {
+  if (
+    typeof window === "undefined" ||
+    typeof FontFace === "undefined" ||
+    !document.fonts
+  ) {
+    return;
+  }
+
+  const fontDefinitions = [
+    {
+      family: "GiftCardArabicAmiri",
+      source: "url('/fonts/GiftArabicAmiri.ttf')",
+      descriptors: {
+        weight: "400",
+        style: "normal",
+      },
+    },
+    {
+      family: "GiftCardNeutonCursive",
+      source: "url('/fonts/NeutonCursive-Regular.woff2')",
+      descriptors: {
+        weight: "400",
+        style: "normal",
+      },
+    },
+    {
+      family: "GiftCardDiphylleia",
+      source: "url('/fonts/Diphylleia-Regular.ttf')",
+      descriptors: {
+        weight: "400",
+        style: "normal",
+      },
+    },
+    {
+      family: "GiftCardCormorantRegular",
+      source: "url('/fonts/Cormorant-Regular.ttf')",
+      descriptors: {
+        weight: "400",
+        style: "normal",
+      },
+    },
+    {
+      family: "GiftCardCormorantItalic",
+      source: "url('/fonts/Cormorant-Italic.ttf')",
+      descriptors: {
+        weight: "400",
+        style: "italic",
+      },
+    },
+    {
+      family: "GiftCardCormorantUpright",
+      source: "url('/fonts/CormorantUpright.ttf')",
+      descriptors: {
+        weight: "400",
+        style: "normal",
+      },
+    },
+    {
+      family: "GiftCardCormorantUprightBold",
+      source: "url('/fonts/CormorantUpright-Bold.ttf')",
+      descriptors: {
+        weight: "700",
+        style: "normal",
+      },
+    },
+  ];
+
+  fontDefinitions.forEach(({ family, source, descriptors }) => {
+    const alreadyLoaded = Array.from(document.fonts).some(
+      (fontFace) => fontFace.family === family
+    );
+
+    if (alreadyLoaded) {
+      return;
+    }
+
+    const fontFace = new FontFace(
+      family,
+      source,
+      descriptors
+    );
+
+    fontFace
+      .load()
+      .then((loadedFontFace) => {
+        document.fonts.add(loadedFontFace);
+      })
+      .catch(() => {
+        // لا نوقف النظام إذا فشل تحميل خط واحد.
+      });
+  });
+}, []);
 
 const [selectedWelcomeFont, setSelectedWelcomeFont] = useState(() => {
   const savedFont = localStorage.getItem("selectedWelcomeFont") || "riwaya-29lt-only";
@@ -48108,11 +48207,11 @@ if (screen === "potentialClients") {
     }
 
     const fontData =
-      welcomeBoardFonts.find(
+      giftCardFonts.find(
         (font) =>
           font.id ===
           currentSettings.fontId
-      ) || welcomeBoardFonts[0];
+      ) || giftCardFonts[0];
 
     const maximumWidth =
       540 *
