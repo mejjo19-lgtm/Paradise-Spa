@@ -99,6 +99,7 @@ function App() {
     "referrals",
     "invoices",
     "purchases",
+    "governmentReports",
     "finance",
     "incomeExpenses",
     "giftClients",
@@ -3156,6 +3157,49 @@ function fetchSharedClientLists() {
     return savedSettings ? JSON.parse(savedSettings) : {};
   });
 
+  const [
+    governmentReportsFromDate,
+    setGovernmentReportsFromDate,
+  ] = useState("2024-01-01");
+
+  const [
+    governmentReportsToDate,
+    setGovernmentReportsToDate,
+  ] = useState(() => getCurrentLocalDate());
+
+  const [
+    governmentReportsActiveTab,
+    setGovernmentReportsActiveTab,
+  ] = useState("vat");
+
+  const [
+    governmentReportsData,
+    setGovernmentReportsData,
+  ] = useState({
+    invoices: [],
+    purchases: [],
+  });
+
+  const [
+    governmentReportsLoading,
+    setGovernmentReportsLoading,
+  ] = useState(false);
+
+  const [
+    governmentReportsError,
+    setGovernmentReportsError,
+  ] = useState("");
+
+  const [
+    governmentReportsInvoicesVisibleCount,
+    setGovernmentReportsInvoicesVisibleCount,
+  ] = useState(80);
+
+  const [
+    governmentReportsPurchasesVisibleCount,
+    setGovernmentReportsPurchasesVisibleCount,
+  ] = useState(80);
+
   // صفحة الفواتير
   const [invoices, setInvoices] = useState([]);
 
@@ -5408,6 +5452,275 @@ useEffect(() => {
   screen,
   purchasesFromDate,
   purchasesToDate,
+]);
+
+
+useEffect(() => {
+  if (
+    !isLoggedIn ||
+    screen !== "governmentReports"
+  ) {
+    return undefined;
+  }
+
+  if (
+    !governmentReportsFromDate ||
+    !governmentReportsToDate ||
+    governmentReportsFromDate >
+      governmentReportsToDate
+  ) {
+    setGovernmentReportsData({
+      invoices: [],
+      purchases: [],
+    });
+
+    setGovernmentReportsLoading(false);
+
+    setGovernmentReportsError(
+      "تأكد من اختيار فترة صحيحة."
+    );
+
+    return undefined;
+  }
+
+  let effectActive = true;
+
+  const loadGovernmentReportsData =
+    async () => {
+      setGovernmentReportsLoading(true);
+      setGovernmentReportsError("");
+
+      try {
+        const reportToDateObject =
+          new Date(
+            `${governmentReportsToDate}T00:00:00+03:00`
+          );
+
+        if (
+          Number.isNaN(
+            reportToDateObject.getTime()
+          )
+        ) {
+          throw new Error(
+            "Invalid government reports to date"
+          );
+        }
+
+        const reportToDateExclusive =
+          new Date(
+            reportToDateObject.getTime() +
+              24 * 60 * 60 * 1000
+          ).toISOString();
+
+        const pageSize = 1000;
+
+        let loadedInvoices = [];
+        let invoicesFromIndex = 0;
+        let hasMoreInvoices = true;
+
+        while (
+          hasMoreInvoices &&
+          effectActive
+        ) {
+          const invoicesToIndex =
+            invoicesFromIndex +
+            pageSize -
+            1;
+
+          const {
+            data,
+            error,
+          } = await supabase
+            .from("invoices")
+            .select(
+              [
+                "id",
+                "invoice_number",
+                "invoice_code",
+                "document_type",
+                "status",
+                "source_service_key",
+                "schedule_row_id",
+                "schedule_date",
+                "schedule_row_index",
+                "household_role",
+                "household_client_key",
+                "client_id",
+                "client_name",
+                "client_phone",
+                "service_name",
+                "service_time",
+                "payment_method",
+                "service_amount_including_vat",
+                "transportation_amount_including_vat",
+                "total_including_vat",
+                "subtotal_excluding_vat",
+                "vat_rate",
+                "vat_amount",
+                "issued_at",
+                "original_invoice_id",
+                "correction_reason",
+                "created_at",
+                "updated_at",
+              ].join(",")
+            )
+            .gte(
+              "issued_at",
+              `${governmentReportsFromDate}T00:00:00+03:00`
+            )
+            .lt(
+              "issued_at",
+              reportToDateExclusive
+            )
+            .order("issued_at", {
+              ascending: false,
+            })
+            .range(
+              invoicesFromIndex,
+              invoicesToIndex
+            );
+
+          if (error) {
+            throw error;
+          }
+
+          const invoicePage =
+            data || [];
+
+          loadedInvoices = [
+            ...loadedInvoices,
+            ...invoicePage,
+          ];
+
+          hasMoreInvoices =
+            invoicePage.length ===
+            pageSize;
+
+          invoicesFromIndex +=
+            pageSize;
+        }
+
+        let loadedPurchases = [];
+        let purchasesFromIndex = 0;
+        let hasMorePurchases = true;
+
+        while (
+          hasMorePurchases &&
+          effectActive
+        ) {
+          const purchasesToIndex =
+            purchasesFromIndex +
+            pageSize -
+            1;
+
+          const {
+            data,
+            error,
+          } = await supabase
+            .from("purchases")
+            .select(
+              [
+                "id",
+                "purchase_date",
+                "product_name",
+                "quantity",
+                "total_price",
+                "supplier_name",
+                "vat_invoice",
+                "vat_amount",
+                "unit_price",
+                "created_by",
+                "created_at",
+                "updated_at",
+              ].join(",")
+            )
+            .gte(
+              "purchase_date",
+              governmentReportsFromDate
+            )
+            .lte(
+              "purchase_date",
+              governmentReportsToDate
+            )
+            .order("purchase_date", {
+              ascending: false,
+            })
+            .order("id", {
+              ascending: false,
+            })
+            .range(
+              purchasesFromIndex,
+              purchasesToIndex
+            );
+
+          if (error) {
+            throw error;
+          }
+
+          const purchasePage =
+            data || [];
+
+          loadedPurchases = [
+            ...loadedPurchases,
+            ...purchasePage,
+          ];
+
+          hasMorePurchases =
+            purchasePage.length ===
+            pageSize;
+
+          purchasesFromIndex +=
+            pageSize;
+        }
+
+        if (!effectActive) {
+          return;
+        }
+
+        setGovernmentReportsData({
+          invoices:
+            loadedInvoices.map(
+              normalizeInvoiceRecord
+            ),
+
+          purchases:
+            loadedPurchases.map(
+              normalizePurchaseRecord
+            ),
+        });
+      } catch (error) {
+        console.error(
+          "Government reports load error:",
+          error
+        );
+
+        if (effectActive) {
+          setGovernmentReportsData({
+            invoices: [],
+            purchases: [],
+          });
+
+          setGovernmentReportsError(
+            "تعذر تحميل التقارير الحكومية. تأكد من الاتصال وجرب مرة أخرى."
+          );
+        }
+      } finally {
+        if (effectActive) {
+          setGovernmentReportsLoading(false);
+        }
+      }
+    };
+
+  loadGovernmentReportsData();
+
+  return () => {
+    effectActive = false;
+  };
+}, [
+  isLoggedIn,
+  screen,
+  governmentReportsFromDate,
+  governmentReportsToDate,
 ]);
 
 
@@ -20563,6 +20876,10 @@ const leavingTime = addMinutesToDisplayTime(
       title: "المالية",
       items: [
         [
+          "governmentReports",
+          "التقارير الحكومية",
+        ],
+        [
           "invoices",
           "الفواتير",
         ],
@@ -20674,6 +20991,10 @@ const leavingTime = addMinutesToDisplayTime(
     [
       "printFrame",
       "طباعة اللوحة الترحيبية",
+    ],
+    [
+      "governmentReports",
+      "التقارير الحكومية",
     ],
     [
       "invoices",
@@ -37477,6 +37798,2712 @@ margin: "0 auto",
       </div>
     );
   }
+
+if (screen === "governmentReports") {
+  const governmentReportTabs = [
+    {
+      id: "vat",
+      title: "ملخص VAT",
+      description:
+        "ملخص ضريبة القيمة المضافة من الفواتير والمشتريات الضريبية.",
+    },
+    {
+      id: "invoices",
+      title: "الفواتير",
+      description:
+        "كل الفواتير الرسمية حسب تاريخ الإصدار.",
+    },
+    {
+      id: "purchases",
+      title: "المشتريات الضريبية",
+      description:
+        "المشتريات المسجلة عليها صح فقط تدخل في ضريبة المدخلات.",
+    },
+    {
+      id: "payments",
+      title: "طرق الدفع",
+      description:
+        "تجميع الفواتير حسب طريقة الدفع للمطابقة.",
+    },
+    {
+      id: "notes",
+      title: "الإشعارات",
+      description:
+        "الإشعارات الدائنة والمدينة عند توفرها.",
+    },
+    {
+      id: "review",
+      title: "الفروقات والمراجعة",
+      description:
+        "مقارنة المواعيد مع الفواتير لاكتشاف الأخطاء.",
+    },
+  ];
+
+  const activeGovernmentReportTab =
+    governmentReportTabs.find(
+      (tab) =>
+        tab.id ===
+        governmentReportsActiveTab
+    ) || governmentReportTabs[0];
+
+  const governmentReportInvoices =
+    governmentReportsData.invoices || [];
+
+  const governmentReportPurchases =
+    governmentReportsData.purchases || [];
+
+  const issuedGovernmentInvoices =
+    governmentReportInvoices.filter(
+      (invoice) =>
+        String(
+          invoice.status || ""
+        ).trim() === "issued"
+    );
+
+  const getGovernmentDocumentSign = (
+    documentType
+  ) =>
+    String(documentType || "") ===
+    "credit_note"
+      ? -1
+      : 1;
+
+  const sumGovernmentInvoiceField = (
+    fieldName
+  ) =>
+    Number(
+      issuedGovernmentInvoices
+        .reduce(
+          (total, invoice) =>
+            total +
+            getGovernmentDocumentSign(
+              invoice.documentType
+            ) *
+              Number(
+                invoice[fieldName] || 0
+              ),
+          0
+        )
+        .toFixed(2)
+    );
+
+  const eligibleGovernmentPurchases =
+    governmentReportPurchases.filter(
+      (purchase) =>
+        Boolean(
+          purchase.vatInvoice
+        )
+    );
+
+  const getGovernmentPurchaseVatAmount =
+    (purchase) => {
+      const savedVatAmount =
+        Number(
+          purchase.vatAmount || 0
+        );
+
+      if (
+        Number.isFinite(
+          savedVatAmount
+        ) &&
+        savedVatAmount > 0
+      ) {
+        return savedVatAmount;
+      }
+
+      return calculatePurchaseVatAmount(
+        purchase.totalPrice
+      );
+    };
+
+  const governmentSalesIncludingVat =
+    sumGovernmentInvoiceField(
+      "totalIncludingVat"
+    );
+
+  const governmentSalesExcludingVat =
+    sumGovernmentInvoiceField(
+      "subtotalExcludingVat"
+    );
+
+  const governmentOutputVat =
+    sumGovernmentInvoiceField(
+      "vatAmount"
+    );
+
+  const governmentEligiblePurchasesIncludingVat =
+    Number(
+      eligibleGovernmentPurchases
+        .reduce(
+          (total, purchase) =>
+            total +
+            Number(
+              purchase.totalPrice || 0
+            ),
+          0
+        )
+        .toFixed(2)
+    );
+
+  const governmentInputVat =
+    Number(
+      eligibleGovernmentPurchases
+        .reduce(
+          (total, purchase) =>
+            total +
+            getGovernmentPurchaseVatAmount(
+              purchase
+            ),
+          0
+        )
+        .toFixed(2)
+    );
+
+  const governmentNetVatDue =
+    Number(
+      (
+        governmentOutputVat -
+        governmentInputVat
+      ).toFixed(2)
+    );
+
+  const governmentInvoicesCount =
+    issuedGovernmentInvoices.filter(
+      (invoice) =>
+        String(
+          invoice.documentType || ""
+        ) === "invoice"
+    ).length;
+
+  const governmentNotesCount =
+    issuedGovernmentInvoices.filter(
+      (invoice) =>
+        [
+          "credit_note",
+          "debit_note",
+        ].includes(
+          String(
+            invoice.documentType || ""
+          )
+        )
+    ).length;
+
+  const formatGovernmentCurrency = (
+    value
+  ) =>
+    `${Number(value || 0).toLocaleString(
+      "en-US",
+      {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }
+    )} ر.س`;
+
+  const formatGovernmentCount = (
+    value
+  ) =>
+    Number(value || 0).toLocaleString(
+      "en-US"
+    );
+
+  const getGovernmentReportValue = (
+    value,
+    type = "currency"
+  ) => {
+    if (governmentReportsLoading) {
+      return "جاري التحميل...";
+    }
+
+    if (type === "count") {
+      return formatGovernmentCount(
+        value
+      );
+    }
+
+    return formatGovernmentCurrency(
+      value
+    );
+  };
+
+  const governmentReportCards = [
+    {
+      title: "المبيعات شامل الضريبة",
+      value:
+        getGovernmentReportValue(
+          governmentSalesIncludingVat
+        ),
+      note: "من الفواتير فقط",
+    },
+    {
+      title: "المبيعات بدون الضريبة",
+      value:
+        getGovernmentReportValue(
+          governmentSalesExcludingVat
+        ),
+      note: "من subtotal",
+    },
+    {
+      title: "ضريبة المخرجات",
+      value:
+        getGovernmentReportValue(
+          governmentOutputVat
+        ),
+      note: "ضريبة المبيعات",
+    },
+    {
+      title: "المشتريات الضريبية",
+      value:
+        getGovernmentReportValue(
+          governmentEligiblePurchasesIncludingVat
+        ),
+      note: "purchases عليها صح",
+    },
+    {
+      title: "ضريبة المدخلات",
+      value:
+        getGovernmentReportValue(
+          governmentInputVat
+        ),
+      note: "خصم ضريبة الموردين",
+    },
+    {
+      title: "صافي الضريبة",
+      value:
+        getGovernmentReportValue(
+          governmentNetVatDue
+        ),
+      note: "المخرجات - المدخلات",
+    },
+    {
+      title: "عدد الفواتير",
+      value:
+        getGovernmentReportValue(
+          governmentInvoicesCount,
+          "count"
+        ),
+      note: "مستندات invoice",
+    },
+    {
+      title: "عدد الإشعارات",
+      value:
+        getGovernmentReportValue(
+          governmentNotesCount,
+          "count"
+        ),
+      note: "دائن / مدين",
+    },
+  ];
+
+  const createGovernmentCsv = (rows) => {
+    const safeRows = Array.isArray(rows)
+      ? rows
+      : [];
+
+    return safeRows
+      .map((row) =>
+        row
+          .map((value) =>
+            `"${String(value ?? "").replace(/"/g, '""')}"`
+          )
+          .join(",")
+      )
+      .join("\n");
+  };
+
+  const downloadGovernmentAuditPackage =
+    async () => {
+      if (governmentReportsLoading) {
+        alert(
+          "انتظر حتى ينتهي تحميل بيانات التقرير."
+        );
+
+        return;
+      }
+
+      const zip = new JSZip();
+
+      const reportPeriodLabel =
+        `${governmentReportsFromDate}_to_${governmentReportsToDate}`;
+
+      const vatRows = [
+        [
+          "البند",
+          "المصدر",
+          "المبلغ",
+          "ملاحظة",
+        ],
+        [
+          "إجمالي المبيعات شامل الضريبة",
+          "الفواتير",
+          governmentSalesIncludingVat.toFixed(2),
+          "الدخل الرسمي من الفواتير فقط",
+        ],
+        [
+          "إجمالي المبيعات بدون الضريبة",
+          "الفواتير",
+          governmentSalesExcludingVat.toFixed(2),
+          "حسب subtotal_excluding_vat",
+        ],
+        [
+          "ضريبة المخرجات",
+          "الفواتير",
+          governmentOutputVat.toFixed(2),
+          "ضريبة المبيعات",
+        ],
+        [
+          "المشتريات الضريبية المؤهلة شامل الضريبة",
+          "المشتريات",
+          governmentEligiblePurchasesIncludingVat.toFixed(2),
+          "فقط المشتريات التي عليها فاتورة ضريبية",
+        ],
+        [
+          "ضريبة المدخلات",
+          "المشتريات",
+          governmentInputVat.toFixed(2),
+          "ضريبة الموردين القابلة للخصم",
+        ],
+        [
+          "صافي الضريبة المستحقة",
+          "ضريبة المخرجات - ضريبة المدخلات",
+          governmentNetVatDue.toFixed(2),
+          "المبلغ المتوقع سداده",
+        ],
+      ];
+
+      zip.file(
+        `01-ملخص-VAT-${reportPeriodLabel}.csv`,
+        "\uFEFF" + createGovernmentCsv(vatRows)
+      );
+
+      const invoiceRows = [
+        [
+          "رقم الفاتورة",
+          "كود الفاتورة",
+          "تاريخ الإصدار",
+          "اسم العميلة",
+          "جوال العميلة",
+          "الخدمة",
+          "طريقة الدفع",
+          "الإجمالي شامل الضريبة",
+          "الإجمالي بدون الضريبة",
+          "مبلغ الضريبة",
+          "الحالة",
+        ],
+        ...issuedGovernmentInvoices
+          .filter(
+            (invoice) =>
+              String(
+                invoice.documentType || ""
+              ) === "invoice"
+          )
+          .map((invoice) => [
+            invoice.invoiceNumber || "",
+            invoice.invoiceCode || "",
+            getInvoiceDateInRiyadh(invoice),
+            invoice.clientName || "",
+            invoice.clientPhone || "",
+            invoice.serviceName || "",
+            invoice.paymentMethod || "",
+            Number(
+              invoice.totalIncludingVat || 0
+            ).toFixed(2),
+            Number(
+              invoice.subtotalExcludingVat || 0
+            ).toFixed(2),
+            Number(
+              invoice.vatAmount || 0
+            ).toFixed(2),
+            invoice.status || "",
+          ]),
+      ];
+
+      zip.file(
+        `02-الفواتير-${reportPeriodLabel}.csv`,
+        "\uFEFF" + createGovernmentCsv(invoiceRows)
+      );
+
+      const taxPurchaseRows = [
+        [
+          "تاريخ الشراء",
+          "المنتج",
+          "المورد",
+          "الكمية",
+          "الإجمالي",
+          "مبلغ الضريبة",
+          "سعر الوحدة",
+          "يدخل في VAT",
+        ],
+        ...governmentReportPurchases.map(
+          (purchase) => [
+            purchase.purchaseDate || "",
+            purchase.productName || "",
+            purchase.supplierName || "",
+            purchase.quantity || "",
+            Number(
+              purchase.totalPrice || 0
+            ).toFixed(2),
+            purchase.vatInvoice
+              ? getGovernmentPurchaseVatAmount(
+                  purchase
+                ).toFixed(2)
+              : "غير محتسبة",
+            Number(
+              purchase.unitPrice ||
+                calculatePurchaseUnitPrice(
+                  purchase.totalPrice,
+                  purchase.quantity
+                ) ||
+                0
+            ).toFixed(2),
+            purchase.vatInvoice
+              ? "نعم"
+              : "لا",
+          ]
+        ),
+      ];
+
+      zip.file(
+        `03-المشتريات-الضريبية-${reportPeriodLabel}.csv`,
+        "\uFEFF" + createGovernmentCsv(taxPurchaseRows)
+      );
+
+      const normalizeExportPaymentMethod =
+        (paymentMethod) => {
+          const cleanPaymentMethod =
+            String(paymentMethod || "")
+              .trim()
+              .toLowerCase()
+              .replace(/\s+/g, "_");
+
+          if (cleanPaymentMethod === "cash") {
+            return "كاش";
+          }
+
+          if (
+            cleanPaymentMethod ===
+            "bank_transfer"
+          ) {
+            return "تحويل بنكي";
+          }
+
+          if (
+            cleanPaymentMethod ===
+            "split_payment"
+          ) {
+            return "دفع مقسم";
+          }
+
+          if (cleanPaymentMethod === "debit") {
+            return "مدى";
+          }
+
+          if (cleanPaymentMethod === "credit") {
+            return "بطاقة ائتمانية";
+          }
+
+          if (cleanPaymentMethod === "tabby") {
+            return "تابي";
+          }
+
+          if (cleanPaymentMethod === "tamara") {
+            return "تمارا";
+          }
+
+          return "غير محدد";
+        };
+
+      const paymentSummaryMap =
+        new Map();
+
+      issuedGovernmentInvoices
+        .filter(
+          (invoice) =>
+            String(
+              invoice.documentType || ""
+            ) === "invoice"
+        )
+        .forEach((invoice) => {
+          const paymentLabel =
+            normalizeExportPaymentMethod(
+              invoice.paymentMethod
+            );
+
+          const current =
+            paymentSummaryMap.get(
+              paymentLabel
+            ) || {
+              count: 0,
+              total: 0,
+              subtotal: 0,
+              vat: 0,
+            };
+
+          current.count += 1;
+          current.total += Number(
+            invoice.totalIncludingVat || 0
+          );
+          current.subtotal += Number(
+            invoice.subtotalExcludingVat || 0
+          );
+          current.vat += Number(
+            invoice.vatAmount || 0
+          );
+
+          paymentSummaryMap.set(
+            paymentLabel,
+            current
+          );
+        });
+
+      const paymentRows = [
+        [
+          "طريقة الدفع",
+          "عدد الفواتير",
+          "الإجمالي شامل الضريبة",
+          "الإجمالي بدون الضريبة",
+          "مبلغ الضريبة",
+        ],
+        ...Array.from(
+          paymentSummaryMap.entries()
+        ).map(([paymentMethod, summary]) => [
+          paymentMethod,
+          summary.count,
+          summary.total.toFixed(2),
+          summary.subtotal.toFixed(2),
+          summary.vat.toFixed(2),
+        ]),
+      ];
+
+      zip.file(
+        `04-طرق-الدفع-${reportPeriodLabel}.csv`,
+        "\uFEFF" + createGovernmentCsv(paymentRows)
+      );
+
+      const noteRows = [
+        [
+          "نوع المستند",
+          "رقم المستند",
+          "تاريخ الإصدار",
+          "اسم العميلة",
+          "الخدمة",
+          "سبب التصحيح",
+          "الإجمالي شامل الضريبة",
+          "مبلغ الضريبة",
+          "معرف الفاتورة الأصلية",
+        ],
+        ...issuedGovernmentInvoices
+          .filter((invoice) =>
+            [
+              "credit_note",
+              "debit_note",
+            ].includes(
+              String(
+                invoice.documentType || ""
+              )
+            )
+          )
+          .map((note) => {
+            const sign =
+              getGovernmentDocumentSign(
+                note.documentType
+              );
+
+            return [
+              note.documentType ===
+              "credit_note"
+                ? "إشعار دائن"
+                : "إشعار مدين",
+              note.invoiceCode ||
+                note.invoiceNumber ||
+                "",
+              getInvoiceDateInRiyadh(note),
+              note.clientName || "",
+              note.serviceName || "",
+              note.correctionReason || "",
+              (
+                sign *
+                Number(
+                  note.totalIncludingVat || 0
+                )
+              ).toFixed(2),
+              (
+                sign *
+                Number(note.vatAmount || 0)
+              ).toFixed(2),
+              note.originalInvoiceId || "",
+            ];
+          }),
+      ];
+
+      zip.file(
+        `05-الإشعارات-${reportPeriodLabel}.csv`,
+        "\uFEFF" + createGovernmentCsv(noteRows)
+      );
+
+      const zipBlob =
+        await zip.generateAsync({
+          type: "blob",
+        });
+
+      const link =
+        document.createElement("a");
+
+      link.href =
+        URL.createObjectURL(zipBlob);
+
+      link.download =
+        `Paradise-حزمة-التقارير-الحكومية-${reportPeriodLabel}.zip`;
+
+      link.click();
+
+      URL.revokeObjectURL(link.href);
+    };
+
+  return withGreeting(
+    <div
+      className="page-container"
+      style={{
+        padding: "26px",
+        direction: "rtl",
+      }}
+    >
+      <div
+        style={{
+          maxWidth: "1280px",
+          margin: "0 auto",
+        }}
+      >
+        <div
+          style={{
+            background:
+              "linear-gradient(145deg, rgba(255,253,248,0.98), rgba(246,238,229,0.96))",
+            border:
+              "1px solid rgba(214,199,184,0.88)",
+            borderRadius: "30px",
+            padding: "26px",
+            boxShadow:
+              "0 24px 55px rgba(75,46,31,0.12)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent:
+                "space-between",
+              alignItems: "center",
+              gap: "18px",
+              flexWrap: "wrap",
+              marginBottom: "24px",
+            }}
+          >
+            <div>
+              <h1
+                style={{
+                  margin: 0,
+                  color: "#4b2e1f",
+                  fontSize: "28px",
+                  fontWeight: "900",
+                }}
+              >
+                التقارير الحكومية
+              </h1>
+
+              <p
+                style={{
+                  margin: "8px 0 0",
+                  color: "#8a7a68",
+                  fontSize: "14px",
+                  fontWeight: "700",
+                  lineHeight: 1.8,
+                }}
+              >
+                مركز موحد لتقارير الضريبة والفواتير والمشتريات والمطابقة.
+                الدخل الرسمي يعتمد على الفواتير فقط.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={
+                downloadGovernmentAuditPackage
+              }
+              disabled={governmentReportsLoading}
+              style={{
+                ...buttonStyle,
+                background:
+                  governmentReportsLoading
+                    ? "#c9b8a8"
+                    : "linear-gradient(135deg, #7d6049, #a9886e)",
+                color: "white",
+                padding: "14px 22px",
+                borderRadius: "18px",
+                boxShadow:
+                  "0 14px 30px rgba(75,46,31,0.20)",
+                opacity:
+                  governmentReportsLoading
+                    ? 0.75
+                    : 1,
+                cursor:
+                  governmentReportsLoading
+                    ? "not-allowed"
+                    : "pointer",
+              }}
+            >
+              {governmentReportsLoading
+                ? "جاري تجهيز البيانات..."
+                : "تصدير حزمة تدقيق كاملة"}
+            </button>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(190px, 1fr))",
+              gap: "14px",
+              marginBottom: "22px",
+            }}
+          >
+            <label
+              style={{
+                background: "#fffaf3",
+                border:
+                  "1px solid rgba(214,199,184,0.8)",
+                borderRadius: "18px",
+                padding: "14px",
+                color: "#5a4030",
+                fontWeight: "900",
+              }}
+            >
+              من تاريخ
+              <input
+                type="date"
+                min="2024-01-01"
+                value={governmentReportsFromDate}
+                onChange={(event) =>
+                  setGovernmentReportsFromDate(
+                    event.target.value
+                  )
+                }
+                style={{
+                  width: "100%",
+                  marginTop: "10px",
+                  border:
+                    "1px solid rgba(214,199,184,0.9)",
+                  borderRadius: "14px",
+                  padding: "11px",
+                  background: "white",
+                  color: "#4b2e1f",
+                  fontWeight: "900",
+                  outline: "none",
+                }}
+              />
+            </label>
+
+            <label
+              style={{
+                background: "#fffaf3",
+                border:
+                  "1px solid rgba(214,199,184,0.8)",
+                borderRadius: "18px",
+                padding: "14px",
+                color: "#5a4030",
+                fontWeight: "900",
+              }}
+            >
+              إلى تاريخ
+              <input
+                type="date"
+                min="2024-01-01"
+                value={governmentReportsToDate}
+                onChange={(event) =>
+                  setGovernmentReportsToDate(
+                    event.target.value
+                  )
+                }
+                style={{
+                  width: "100%",
+                  marginTop: "10px",
+                  border:
+                    "1px solid rgba(214,199,184,0.9)",
+                  borderRadius: "14px",
+                  padding: "11px",
+                  background: "white",
+                  color: "#4b2e1f",
+                  fontWeight: "900",
+                  outline: "none",
+                }}
+              />
+            </label>
+
+            <div
+              style={{
+                background:
+                  "linear-gradient(135deg, #f7efe6, #efe2d5)",
+                border:
+                  "1px solid rgba(214,199,184,0.8)",
+                borderRadius: "18px",
+                padding: "14px",
+                color: "#5a4030",
+                fontWeight: "900",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "center",
+                gap: "6px",
+              }}
+            >
+              <span>مصدر الدخل الرسمي</span>
+              <strong
+                style={{
+                  color: "#4b2e1f",
+                  fontSize: "17px",
+                }}
+              >
+                الفواتير فقط
+              </strong>
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(190px, 1fr))",
+              gap: "14px",
+              marginBottom: "24px",
+            }}
+          >
+            {governmentReportCards.map(
+              (card) => (
+                <div
+                  key={card.title}
+                  style={{
+                    background:
+                      "linear-gradient(145deg, #fffdf8, #f7efe8)",
+                    border:
+                      "1px solid rgba(214,199,184,0.78)",
+                    borderRadius: "22px",
+                    padding: "18px",
+                    boxShadow:
+                      "0 12px 28px rgba(75,46,31,0.07)",
+                  }}
+                >
+                  <div
+                    style={{
+                      color: "#8a7a68",
+                      fontSize: "13px",
+                      fontWeight: "900",
+                      marginBottom: "9px",
+                    }}
+                  >
+                    {card.title}
+                  </div>
+
+                  <div
+                    style={{
+                      color: "#4b2e1f",
+                      fontSize: "20px",
+                      fontWeight: "900",
+                    }}
+                  >
+                    {card.value}
+                  </div>
+
+                  <div
+                    style={{
+                      color: "#9b8a79",
+                      fontSize: "12px",
+                      fontWeight: "800",
+                      marginTop: "8px",
+                    }}
+                  >
+                    {card.note}
+                  </div>
+                </div>
+              )
+            )}
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              gap: "10px",
+              flexWrap: "wrap",
+              marginBottom: "22px",
+            }}
+          >
+            {governmentReportTabs.map(
+              (tab) => {
+                const isActive =
+                  tab.id ===
+                  governmentReportsActiveTab;
+
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() =>
+                      setGovernmentReportsActiveTab(
+                        tab.id
+                      )
+                    }
+                    style={{
+                      ...buttonStyle,
+                      background: isActive
+                        ? "linear-gradient(135deg, #7d6049, #a9886e)"
+                        : "#f3e8df",
+                      color: isActive
+                        ? "white"
+                        : "#4b2e1f",
+                      padding: "12px 16px",
+                      borderRadius: "16px",
+                      boxShadow: isActive
+                        ? "0 12px 26px rgba(75,46,31,0.18)"
+                        : "none",
+                    }}
+                  >
+                    {tab.title}
+                  </button>
+                );
+              }
+            )}
+          </div>
+
+          <div
+            style={{
+              background: "#fffaf3",
+              border:
+                "1px solid rgba(214,199,184,0.86)",
+              borderRadius: "24px",
+              padding: "22px",
+              minHeight: "230px",
+            }}
+          >
+            <h2
+              style={{
+                margin: "0 0 8px",
+                color: "#4b2e1f",
+                fontSize: "22px",
+                fontWeight: "900",
+              }}
+            >
+              {activeGovernmentReportTab.title}
+            </h2>
+
+            <p
+              style={{
+                margin: "0 0 18px",
+                color: "#8a7a68",
+                fontSize: "14px",
+                fontWeight: "800",
+                lineHeight: 1.8,
+              }}
+            >
+              {activeGovernmentReportTab.description}
+            </p>
+
+            {governmentReportsError && (
+              <div
+                style={{
+                  background: "#fff0ec",
+                  border:
+                    "1px solid rgba(180,90,70,0.35)",
+                  borderRadius: "18px",
+                  padding: "14px 16px",
+                  color: "#8a3d2f",
+                  fontWeight: "900",
+                  marginBottom: "16px",
+                }}
+              >
+                {governmentReportsError}
+              </div>
+            )}
+
+            {governmentReportsActiveTab === "vat" ? (
+              <div
+                style={{
+                  overflowX: "auto",
+                  borderRadius: "18px",
+                  border:
+                    "1px solid rgba(214,199,184,0.72)",
+                  background: "white",
+                }}
+              >
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "collapse",
+                    minWidth: "720px",
+                    textAlign: "center",
+                  }}
+                >
+                  <thead>
+                    <tr
+                      style={{
+                        background:
+                          "linear-gradient(135deg, #7d6049, #a9886e)",
+                        color: "white",
+                      }}
+                    >
+                      <th
+                        style={{
+                          padding: "14px",
+                          fontWeight: "900",
+                        }}
+                      >
+                        البند
+                      </th>
+
+                      <th
+                        style={{
+                          padding: "14px",
+                          fontWeight: "900",
+                        }}
+                      >
+                        المصدر
+                      </th>
+
+                      <th
+                        style={{
+                          padding: "14px",
+                          fontWeight: "900",
+                        }}
+                      >
+                        المبلغ
+                      </th>
+
+                      <th
+                        style={{
+                          padding: "14px",
+                          fontWeight: "900",
+                        }}
+                      >
+                        ملاحظة
+                      </th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {[
+                      [
+                        "إجمالي المبيعات شامل الضريبة",
+                        "الفواتير الصادرة",
+                        formatGovernmentCurrency(
+                          governmentSalesIncludingVat
+                        ),
+                        "لا يدخل جدول المواعيد في هذا الرقم",
+                      ],
+                      [
+                        "إجمالي المبيعات بدون الضريبة",
+                        "الفواتير الصادرة",
+                        formatGovernmentCurrency(
+                          governmentSalesExcludingVat
+                        ),
+                        "حسب subtotal_excluding_vat",
+                      ],
+                      [
+                        "ضريبة المخرجات",
+                        "الفواتير الصادرة",
+                        formatGovernmentCurrency(
+                          governmentOutputVat
+                        ),
+                        "ضريبة المبيعات المستحقة",
+                      ],
+                      [
+                        "المشتريات الضريبية المؤهلة",
+                        "purchases عليها صح",
+                        formatGovernmentCurrency(
+                          governmentEligiblePurchasesIncludingVat
+                        ),
+                        "vat_invoice = true فقط",
+                      ],
+                      [
+                        "ضريبة المدخلات",
+                        "purchases عليها صح",
+                        formatGovernmentCurrency(
+                          governmentInputVat
+                        ),
+                        "الضريبة القابلة للخصم",
+                      ],
+                      [
+                        "صافي الضريبة المستحقة",
+                        "المخرجات - المدخلات",
+                        formatGovernmentCurrency(
+                          governmentNetVatDue
+                        ),
+                        "المبلغ المتوقع سداده",
+                      ],
+                    ].map(
+                      (row, index) => (
+                        <tr
+                          key={row[0]}
+                          style={{
+                            background:
+                              index % 2 === 0
+                                ? "#fffdf8"
+                                : "#f8f0e8",
+                          }}
+                        >
+                          <td
+                            style={{
+                              padding: "14px",
+                              borderBottom:
+                                "1px solid rgba(214,199,184,0.55)",
+                              color: "#4b2e1f",
+                              fontWeight: "900",
+                            }}
+                          >
+                            {row[0]}
+                          </td>
+
+                          <td
+                            style={{
+                              padding: "14px",
+                              borderBottom:
+                                "1px solid rgba(214,199,184,0.55)",
+                              color: "#6f6259",
+                              fontWeight: "800",
+                            }}
+                          >
+                            {row[1]}
+                          </td>
+
+                          <td
+                            style={{
+                              padding: "14px",
+                              borderBottom:
+                                "1px solid rgba(214,199,184,0.55)",
+                              color: "#4b2e1f",
+                              fontWeight: "900",
+                              direction: "ltr",
+                            }}
+                          >
+                            {governmentReportsLoading
+                              ? "جاري التحميل..."
+                              : row[2]}
+                          </td>
+
+                          <td
+                            style={{
+                              padding: "14px",
+                              borderBottom:
+                                "1px solid rgba(214,199,184,0.55)",
+                              color: "#8a7a68",
+                              fontWeight: "800",
+                            }}
+                          >
+                            {row[3]}
+                          </td>
+                        </tr>
+                      )
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            ) : governmentReportsActiveTab ===
+              "invoices" ? (
+              (() => {
+                const governmentInvoiceRows =
+                  issuedGovernmentInvoices.filter(
+                    (invoice) =>
+                      String(
+                        invoice.documentType || ""
+                      ) === "invoice"
+                  );
+
+                const visibleGovernmentInvoiceRows =
+                  governmentInvoiceRows.slice(
+                    0,
+                    governmentReportsInvoicesVisibleCount
+                  );
+
+                return (
+                  <div>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent:
+                          "space-between",
+                        alignItems: "center",
+                        gap: "12px",
+                        flexWrap: "wrap",
+                        marginBottom: "14px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          color: "#5a4030",
+                          fontWeight: "900",
+                        }}
+                      >
+                        عدد الفواتير في الفترة:{" "}
+                        {formatGovernmentCount(
+                          governmentInvoiceRows.length
+                        )}
+                      </div>
+
+                      <div
+                        style={{
+                          color: "#8a7a68",
+                          fontWeight: "800",
+                          fontSize: "13px",
+                        }}
+                      >
+                        المصدر الرسمي: invoices فقط
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        overflowX: "auto",
+                        borderRadius: "18px",
+                        border:
+                          "1px solid rgba(214,199,184,0.72)",
+                        background: "white",
+                      }}
+                    >
+                      <table
+                        style={{
+                          width: "100%",
+                          borderCollapse:
+                            "collapse",
+                          minWidth: "1120px",
+                          textAlign: "center",
+                        }}
+                      >
+                        <thead>
+                          <tr
+                            style={{
+                              background:
+                                "linear-gradient(135deg, #7d6049, #a9886e)",
+                              color: "white",
+                            }}
+                          >
+                            {[
+                              "رقم الفاتورة",
+                              "تاريخ الإصدار",
+                              "العميلة",
+                              "الجوال",
+                              "الخدمة",
+                              "طريقة الدفع",
+                              "شامل الضريبة",
+                              "بدون الضريبة",
+                              "الضريبة",
+                            ].map((title) => (
+                              <th
+                                key={title}
+                                style={{
+                                  padding: "13px",
+                                  fontWeight: "900",
+                                  whiteSpace:
+                                    "nowrap",
+                                }}
+                              >
+                                {title}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+
+                        <tbody>
+                          {visibleGovernmentInvoiceRows.length >
+                          0 ? (
+                            visibleGovernmentInvoiceRows.map(
+                              (
+                                invoice,
+                                index
+                              ) => {
+                                const invoiceDate =
+                                  getInvoiceDateInRiyadh(
+                                    invoice
+                                  );
+
+                                return (
+                                  <tr
+                                    key={
+                                      invoice.id
+                                    }
+                                    style={{
+                                      background:
+                                        index % 2 ===
+                                        0
+                                          ? "#fffdf8"
+                                          : "#f8f0e8",
+                                    }}
+                                  >
+                                    <td
+                                      style={{
+                                        padding:
+                                          "12px",
+                                        borderBottom:
+                                          "1px solid rgba(214,199,184,0.55)",
+                                        color:
+                                          "#4b2e1f",
+                                        fontWeight:
+                                          "900",
+                                        direction:
+                                          "ltr",
+                                      }}
+                                    >
+                                      {invoice.invoiceCode ||
+                                        invoice.invoiceNumber ||
+                                        "-"}
+                                    </td>
+
+                                    <td
+                                      style={{
+                                        padding:
+                                          "12px",
+                                        borderBottom:
+                                          "1px solid rgba(214,199,184,0.55)",
+                                        color:
+                                          "#5a4030",
+                                        fontWeight:
+                                          "800",
+                                        direction:
+                                          "ltr",
+                                      }}
+                                    >
+                                      {formatPurchasePageDate(
+                                        invoiceDate
+                                      )}
+                                    </td>
+
+                                    <td
+                                      style={{
+                                        padding:
+                                          "12px",
+                                        borderBottom:
+                                          "1px solid rgba(214,199,184,0.55)",
+                                        color:
+                                          "#4b2e1f",
+                                        fontWeight:
+                                          "900",
+                                      }}
+                                    >
+                                      {invoice.clientName ||
+                                        "-"}
+                                    </td>
+
+                                    <td
+                                      style={{
+                                        padding:
+                                          "12px",
+                                        borderBottom:
+                                          "1px solid rgba(214,199,184,0.55)",
+                                        color:
+                                          "#6f6259",
+                                        fontWeight:
+                                          "800",
+                                        direction:
+                                          "ltr",
+                                      }}
+                                    >
+                                      {invoice.clientPhone ||
+                                        "-"}
+                                    </td>
+
+                                    <td
+                                      style={{
+                                        padding:
+                                          "12px",
+                                        borderBottom:
+                                          "1px solid rgba(214,199,184,0.55)",
+                                        color:
+                                          "#6f6259",
+                                        fontWeight:
+                                          "800",
+                                      }}
+                                    >
+                                      {invoice.serviceName ||
+                                        "-"}
+                                    </td>
+
+                                    <td
+                                      style={{
+                                        padding:
+                                          "12px",
+                                        borderBottom:
+                                          "1px solid rgba(214,199,184,0.55)",
+                                        color:
+                                          "#6f6259",
+                                        fontWeight:
+                                          "800",
+                                      }}
+                                    >
+                                      {invoice.paymentMethod ||
+                                        "-"}
+                                    </td>
+
+                                    <td
+                                      style={{
+                                        padding:
+                                          "12px",
+                                        borderBottom:
+                                          "1px solid rgba(214,199,184,0.55)",
+                                        color:
+                                          "#4b2e1f",
+                                        fontWeight:
+                                          "900",
+                                        direction:
+                                          "ltr",
+                                      }}
+                                    >
+                                      {formatGovernmentCurrency(
+                                        invoice.totalIncludingVat
+                                      )}
+                                    </td>
+
+                                    <td
+                                      style={{
+                                        padding:
+                                          "12px",
+                                        borderBottom:
+                                          "1px solid rgba(214,199,184,0.55)",
+                                        color:
+                                          "#4b2e1f",
+                                        fontWeight:
+                                          "900",
+                                        direction:
+                                          "ltr",
+                                      }}
+                                    >
+                                      {formatGovernmentCurrency(
+                                        invoice.subtotalExcludingVat
+                                      )}
+                                    </td>
+
+                                    <td
+                                      style={{
+                                        padding:
+                                          "12px",
+                                        borderBottom:
+                                          "1px solid rgba(214,199,184,0.55)",
+                                        color:
+                                          "#4b2e1f",
+                                        fontWeight:
+                                          "900",
+                                        direction:
+                                          "ltr",
+                                      }}
+                                    >
+                                      {formatGovernmentCurrency(
+                                        invoice.vatAmount
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              }
+                            )
+                          ) : (
+                            <tr>
+                              <td
+                                colSpan={9}
+                                style={{
+                                  padding: "22px",
+                                  color: "#8a7a68",
+                                  fontWeight: "900",
+                                }}
+                              >
+                                لا توجد فواتير في هذه الفترة.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {governmentInvoiceRows.length >
+                      governmentReportsInvoicesVisibleCount && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setGovernmentReportsInvoicesVisibleCount(
+                            (previousCount) =>
+                              previousCount + 80
+                          )
+                        }
+                        style={{
+                          ...buttonStyle,
+                          marginTop: "16px",
+                          background:
+                            "linear-gradient(135deg, #7d6049, #a9886e)",
+                          color: "white",
+                          borderRadius: "16px",
+                          padding: "12px 18px",
+                        }}
+                      >
+                        عرض المزيد
+                      </button>
+                    )}
+                  </div>
+                );
+              })()
+            ) : governmentReportsActiveTab ===
+              "purchases" ? (
+              (() => {
+                const governmentPurchaseRows =
+                  governmentReportPurchases;
+
+                const visibleGovernmentPurchaseRows =
+                  governmentPurchaseRows.slice(
+                    0,
+                    governmentReportsPurchasesVisibleCount
+                  );
+
+                const taxPurchaseCount =
+                  governmentPurchaseRows.filter(
+                    (purchase) =>
+                      Boolean(
+                        purchase.vatInvoice
+                      )
+                  ).length;
+
+                const nonTaxPurchaseCount =
+                  governmentPurchaseRows.length -
+                  taxPurchaseCount;
+
+                return (
+                  <div>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent:
+                          "space-between",
+                        alignItems: "center",
+                        gap: "12px",
+                        flexWrap: "wrap",
+                        marginBottom: "14px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          color: "#5a4030",
+                          fontWeight: "900",
+                        }}
+                      >
+                        المشتريات الضريبية:{" "}
+                        {formatGovernmentCount(
+                          taxPurchaseCount
+                        )}{" "}
+                        / إجمالي المشتريات:{" "}
+                        {formatGovernmentCount(
+                          governmentPurchaseRows.length
+                        )}
+                      </div>
+
+                      <div
+                        style={{
+                          color: "#8a7a68",
+                          fontWeight: "800",
+                          fontSize: "13px",
+                        }}
+                      >
+                        لا تدخل في VAT إلا المشتريات المحددة عليها صح
+                      </div>
+                    </div>
+
+                    {nonTaxPurchaseCount > 0 && (
+                      <div
+                        style={{
+                          background: "#fff7e8",
+                          border:
+                            "1px solid rgba(194,137,62,0.28)",
+                          borderRadius: "16px",
+                          padding: "13px 15px",
+                          color: "#7d6049",
+                          fontWeight: "900",
+                          marginBottom: "14px",
+                          lineHeight: 1.8,
+                        }}
+                      >
+                        يوجد{" "}
+                        {formatGovernmentCount(
+                          nonTaxPurchaseCount
+                        )}{" "}
+                        مشتريات بدون فاتورة ضريبية. تظهر هنا للمراجعة، لكنها لا تدخل في ضريبة المدخلات.
+                      </div>
+                    )}
+
+                    <div
+                      style={{
+                        overflowX: "auto",
+                        borderRadius: "18px",
+                        border:
+                          "1px solid rgba(214,199,184,0.72)",
+                        background: "white",
+                      }}
+                    >
+                      <table
+                        style={{
+                          width: "100%",
+                          borderCollapse:
+                            "collapse",
+                          minWidth: "980px",
+                          textAlign: "center",
+                        }}
+                      >
+                        <thead>
+                          <tr
+                            style={{
+                              background:
+                                "linear-gradient(135deg, #7d6049, #a9886e)",
+                              color: "white",
+                            }}
+                          >
+                            {[
+                              "التاريخ",
+                              "المنتج",
+                              "المورد",
+                              "الكمية",
+                              "الإجمالي",
+                              "الضريبة",
+                              "سعر الوحدة",
+                              "يدخل في VAT",
+                            ].map((title) => (
+                              <th
+                                key={title}
+                                style={{
+                                  padding: "13px",
+                                  fontWeight: "900",
+                                  whiteSpace:
+                                    "nowrap",
+                                }}
+                              >
+                                {title}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+
+                        <tbody>
+                          {visibleGovernmentPurchaseRows.length >
+                          0 ? (
+                            visibleGovernmentPurchaseRows.map(
+                              (
+                                purchase,
+                                index
+                              ) => {
+                                const purchaseVatAmount =
+                                  getGovernmentPurchaseVatAmount(
+                                    purchase
+                                  );
+
+                                return (
+                                  <tr
+                                    key={
+                                      purchase.id
+                                    }
+                                    style={{
+                                      background:
+                                        index % 2 ===
+                                        0
+                                          ? "#fffdf8"
+                                          : "#f8f0e8",
+                                      opacity:
+                                        purchase.vatInvoice
+                                          ? 1
+                                          : 0.72,
+                                    }}
+                                  >
+                                    <td
+                                      style={{
+                                        padding:
+                                          "12px",
+                                        borderBottom:
+                                          "1px solid rgba(214,199,184,0.55)",
+                                        color:
+                                          "#5a4030",
+                                        fontWeight:
+                                          "800",
+                                        direction:
+                                          "ltr",
+                                      }}
+                                    >
+                                      {formatPurchasePageDate(
+                                        purchase.purchaseDate
+                                      )}
+                                    </td>
+
+                                    <td
+                                      style={{
+                                        padding:
+                                          "12px",
+                                        borderBottom:
+                                          "1px solid rgba(214,199,184,0.55)",
+                                        color:
+                                          "#4b2e1f",
+                                        fontWeight:
+                                          "900",
+                                      }}
+                                    >
+                                      {purchase.productName ||
+                                        "-"}
+                                    </td>
+
+                                    <td
+                                      style={{
+                                        padding:
+                                          "12px",
+                                        borderBottom:
+                                          "1px solid rgba(214,199,184,0.55)",
+                                        color:
+                                          "#6f6259",
+                                        fontWeight:
+                                          "800",
+                                      }}
+                                    >
+                                      {purchase.supplierName ||
+                                        "-"}
+                                    </td>
+
+                                    <td
+                                      style={{
+                                        padding:
+                                          "12px",
+                                        borderBottom:
+                                          "1px solid rgba(214,199,184,0.55)",
+                                        color:
+                                          "#6f6259",
+                                        fontWeight:
+                                          "800",
+                                        direction:
+                                          "ltr",
+                                      }}
+                                    >
+                                      {formatPurchaseQuantity(
+                                        purchase.quantity
+                                      )}
+                                    </td>
+
+                                    <td
+                                      style={{
+                                        padding:
+                                          "12px",
+                                        borderBottom:
+                                          "1px solid rgba(214,199,184,0.55)",
+                                        color:
+                                          "#4b2e1f",
+                                        fontWeight:
+                                          "900",
+                                        direction:
+                                          "ltr",
+                                      }}
+                                    >
+                                      {formatGovernmentCurrency(
+                                        purchase.totalPrice
+                                      )}
+                                    </td>
+
+                                    <td
+                                      style={{
+                                        padding:
+                                          "12px",
+                                        borderBottom:
+                                          "1px solid rgba(214,199,184,0.55)",
+                                        color:
+                                          purchase.vatInvoice
+                                            ? "#4b2e1f"
+                                            : "#a39a91",
+                                        fontWeight:
+                                          "900",
+                                        direction:
+                                          "ltr",
+                                      }}
+                                    >
+                                      {purchase.vatInvoice
+                                        ? formatGovernmentCurrency(
+                                            purchaseVatAmount
+                                          )
+                                        : "غير محتسبة"}
+                                    </td>
+
+                                    <td
+                                      style={{
+                                        padding:
+                                          "12px",
+                                        borderBottom:
+                                          "1px solid rgba(214,199,184,0.55)",
+                                        color:
+                                          "#4b2e1f",
+                                        fontWeight:
+                                          "900",
+                                        direction:
+                                          "ltr",
+                                      }}
+                                    >
+                                      {formatGovernmentCurrency(
+                                        purchase.unitPrice ||
+                                          calculatePurchaseUnitPrice(
+                                            purchase.totalPrice,
+                                            purchase.quantity
+                                          )
+                                      )}
+                                    </td>
+
+                                    <td
+                                      style={{
+                                        padding:
+                                          "12px",
+                                        borderBottom:
+                                          "1px solid rgba(214,199,184,0.55)",
+                                        fontWeight:
+                                          "900",
+                                      }}
+                                    >
+                                      <span
+                                        style={{
+                                          display:
+                                            "inline-flex",
+                                          alignItems:
+                                            "center",
+                                          justifyContent:
+                                            "center",
+                                          minWidth:
+                                            "74px",
+                                          padding:
+                                            "7px 10px",
+                                          borderRadius:
+                                            "999px",
+                                          background:
+                                            purchase.vatInvoice
+                                              ? "#e7f5df"
+                                              : "#f0e5dc",
+                                          color:
+                                            purchase.vatInvoice
+                                              ? "#3f6f2f"
+                                              : "#8a7a68",
+                                          border:
+                                            purchase.vatInvoice
+                                              ? "1px solid rgba(63,111,47,0.22)"
+                                              : "1px solid rgba(138,122,104,0.22)",
+                                        }}
+                                      >
+                                        {purchase.vatInvoice
+                                          ? "نعم"
+                                          : "لا"}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                );
+                              }
+                            )
+                          ) : (
+                            <tr>
+                              <td
+                                colSpan={8}
+                                style={{
+                                  padding: "22px",
+                                  color: "#8a7a68",
+                                  fontWeight: "900",
+                                }}
+                              >
+                                لا توجد مشتريات في هذه الفترة.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {governmentPurchaseRows.length >
+                      governmentReportsPurchasesVisibleCount && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setGovernmentReportsPurchasesVisibleCount(
+                            (previousCount) =>
+                              previousCount + 80
+                          )
+                        }
+                        style={{
+                          ...buttonStyle,
+                          marginTop: "16px",
+                          background:
+                            "linear-gradient(135deg, #7d6049, #a9886e)",
+                          color: "white",
+                          borderRadius: "16px",
+                          padding: "12px 18px",
+                        }}
+                      >
+                        عرض المزيد
+                      </button>
+                    )}
+                  </div>
+                );
+              })()
+            ) : governmentReportsActiveTab ===
+              "payments" ? (
+              (() => {
+                const normalizeGovernmentPaymentMethod =
+                  (paymentMethod) => {
+                    const cleanPaymentMethod =
+                      String(
+                        paymentMethod || ""
+                      )
+                        .trim()
+                        .toLowerCase()
+                        .replace(/\s+/g, "_");
+
+                    if (
+                      cleanPaymentMethod ===
+                      "cash"
+                    ) {
+                      return "Cash";
+                    }
+
+                    if (
+                      cleanPaymentMethod ===
+                      "bank_transfer"
+                    ) {
+                      return "Bank Transfer";
+                    }
+
+                    if (
+                      cleanPaymentMethod ===
+                      "debit"
+                    ) {
+                      return "Debit";
+                    }
+
+                    if (
+                      cleanPaymentMethod ===
+                      "credit"
+                    ) {
+                      return "Credit";
+                    }
+
+                    if (
+                      cleanPaymentMethod ===
+                      "tabby"
+                    ) {
+                      return "Tabby";
+                    }
+
+                    if (
+                      cleanPaymentMethod ===
+                      "tamara"
+                    ) {
+                      return "Tamara";
+                    }
+
+                    if (
+                      cleanPaymentMethod ===
+                      "split_payment"
+                    ) {
+                      return "Split Payment";
+                    }
+
+                    return "غير محدد";
+                  };
+
+                const paymentSummaryMap =
+                  new Map();
+
+                issuedGovernmentInvoices
+                  .filter(
+                    (invoice) =>
+                      String(
+                        invoice.documentType || ""
+                      ) === "invoice"
+                  )
+                  .forEach((invoice) => {
+                    const paymentLabel =
+                      normalizeGovernmentPaymentMethod(
+                        invoice.paymentMethod
+                      );
+
+                    const currentSummary =
+                      paymentSummaryMap.get(
+                        paymentLabel
+                      ) || {
+                        paymentMethod:
+                          paymentLabel,
+                        invoicesCount: 0,
+                        totalIncludingVat: 0,
+                        subtotalExcludingVat: 0,
+                        vatAmount: 0,
+                      };
+
+                    currentSummary.invoicesCount +=
+                      1;
+
+                    currentSummary.totalIncludingVat +=
+                      Number(
+                        invoice.totalIncludingVat || 0
+                      );
+
+                    currentSummary.subtotalExcludingVat +=
+                      Number(
+                        invoice.subtotalExcludingVat || 0
+                      );
+
+                    currentSummary.vatAmount +=
+                      Number(
+                        invoice.vatAmount || 0
+                      );
+
+                    paymentSummaryMap.set(
+                      paymentLabel,
+                      currentSummary
+                    );
+                  });
+
+                const governmentPaymentRows =
+                  Array.from(
+                    paymentSummaryMap.values()
+                  )
+                    .map((summary) => ({
+                      ...summary,
+                      totalIncludingVat:
+                        Number(
+                          summary.totalIncludingVat.toFixed(
+                            2
+                          )
+                        ),
+                      subtotalExcludingVat:
+                        Number(
+                          summary.subtotalExcludingVat.toFixed(
+                            2
+                          )
+                        ),
+                      vatAmount:
+                        Number(
+                          summary.vatAmount.toFixed(
+                            2
+                          )
+                        ),
+                    }))
+                    .sort(
+                      (
+                        firstPayment,
+                        secondPayment
+                      ) =>
+                        secondPayment.totalIncludingVat -
+                        firstPayment.totalIncludingVat
+                    );
+
+                return (
+                  <div>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent:
+                          "space-between",
+                        alignItems: "center",
+                        gap: "12px",
+                        flexWrap: "wrap",
+                        marginBottom: "14px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          color: "#5a4030",
+                          fontWeight: "900",
+                        }}
+                      >
+                        طرق الدفع في الفترة:{" "}
+                        {formatGovernmentCount(
+                          governmentPaymentRows.length
+                        )}
+                      </div>
+
+                      <div
+                        style={{
+                          color: "#8a7a68",
+                          fontWeight: "800",
+                          fontSize: "13px",
+                        }}
+                      >
+                        يتم توحيد Cash/cash و Bank Transfer/bank_transfer للعرض فقط
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        overflowX: "auto",
+                        borderRadius: "18px",
+                        border:
+                          "1px solid rgba(214,199,184,0.72)",
+                        background: "white",
+                      }}
+                    >
+                      <table
+                        style={{
+                          width: "100%",
+                          borderCollapse:
+                            "collapse",
+                          minWidth: "860px",
+                          textAlign: "center",
+                        }}
+                      >
+                        <thead>
+                          <tr
+                            style={{
+                              background:
+                                "linear-gradient(135deg, #7d6049, #a9886e)",
+                              color: "white",
+                            }}
+                          >
+                            {[
+                              "طريقة الدفع",
+                              "عدد الفواتير",
+                              "شامل الضريبة",
+                              "بدون الضريبة",
+                              "الضريبة",
+                            ].map((title) => (
+                              <th
+                                key={title}
+                                style={{
+                                  padding: "13px",
+                                  fontWeight: "900",
+                                  whiteSpace:
+                                    "nowrap",
+                                }}
+                              >
+                                {title}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+
+                        <tbody>
+                          {governmentPaymentRows.length >
+                          0 ? (
+                            governmentPaymentRows.map(
+                              (
+                                payment,
+                                index
+                              ) => (
+                                <tr
+                                  key={
+                                    payment.paymentMethod
+                                  }
+                                  style={{
+                                    background:
+                                      index % 2 ===
+                                      0
+                                        ? "#fffdf8"
+                                        : "#f8f0e8",
+                                  }}
+                                >
+                                  <td
+                                    style={{
+                                      padding:
+                                        "13px",
+                                      borderBottom:
+                                        "1px solid rgba(214,199,184,0.55)",
+                                      color:
+                                        "#4b2e1f",
+                                      fontWeight:
+                                        "900",
+                                    }}
+                                  >
+                                    {
+                                      payment.paymentMethod
+                                    }
+                                  </td>
+
+                                  <td
+                                    style={{
+                                      padding:
+                                        "13px",
+                                      borderBottom:
+                                        "1px solid rgba(214,199,184,0.55)",
+                                      color:
+                                        "#6f6259",
+                                      fontWeight:
+                                        "900",
+                                      direction:
+                                        "ltr",
+                                    }}
+                                  >
+                                    {formatGovernmentCount(
+                                      payment.invoicesCount
+                                    )}
+                                  </td>
+
+                                  <td
+                                    style={{
+                                      padding:
+                                        "13px",
+                                      borderBottom:
+                                        "1px solid rgba(214,199,184,0.55)",
+                                      color:
+                                        "#4b2e1f",
+                                      fontWeight:
+                                        "900",
+                                      direction:
+                                        "ltr",
+                                    }}
+                                  >
+                                    {formatGovernmentCurrency(
+                                      payment.totalIncludingVat
+                                    )}
+                                  </td>
+
+                                  <td
+                                    style={{
+                                      padding:
+                                        "13px",
+                                      borderBottom:
+                                        "1px solid rgba(214,199,184,0.55)",
+                                      color:
+                                        "#4b2e1f",
+                                      fontWeight:
+                                        "900",
+                                      direction:
+                                        "ltr",
+                                    }}
+                                  >
+                                    {formatGovernmentCurrency(
+                                      payment.subtotalExcludingVat
+                                    )}
+                                  </td>
+
+                                  <td
+                                    style={{
+                                      padding:
+                                        "13px",
+                                      borderBottom:
+                                        "1px solid rgba(214,199,184,0.55)",
+                                      color:
+                                        "#4b2e1f",
+                                      fontWeight:
+                                        "900",
+                                      direction:
+                                        "ltr",
+                                    }}
+                                  >
+                                    {formatGovernmentCurrency(
+                                      payment.vatAmount
+                                    )}
+                                  </td>
+                                </tr>
+                              )
+                            )
+                          ) : (
+                            <tr>
+                              <td
+                                colSpan={5}
+                                style={{
+                                  padding: "22px",
+                                  color: "#8a7a68",
+                                  fontWeight: "900",
+                                }}
+                              >
+                                لا توجد فواتير في هذه الفترة.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: "14px",
+                        background: "#fff7e8",
+                        border:
+                          "1px solid rgba(194,137,62,0.28)",
+                        borderRadius: "16px",
+                        padding: "13px 15px",
+                        color: "#7d6049",
+                        fontWeight: "900",
+                        lineHeight: 1.8,
+                      }}
+                    >
+                      ملاحظة: Split Payment يظهر كسطر مستقل حاليًا، لأن تفاصيل تقسيمه بين كاش وتحويل غير محفوظة داخل الفاتورة.
+                    </div>
+                  </div>
+                );
+              })()
+            ) : governmentReportsActiveTab ===
+              "notes" ? (
+              (() => {
+                const governmentNoteRows =
+                  issuedGovernmentInvoices.filter(
+                    (invoice) =>
+                      [
+                        "credit_note",
+                        "debit_note",
+                      ].includes(
+                        String(
+                          invoice.documentType || ""
+                        )
+                      )
+                  );
+
+                const getGovernmentNoteTypeLabel =
+                  (documentType) => {
+                    if (
+                      String(documentType || "") ===
+                      "credit_note"
+                    ) {
+                      return "إشعار دائن";
+                    }
+
+                    if (
+                      String(documentType || "") ===
+                      "debit_note"
+                    ) {
+                      return "إشعار مدين";
+                    }
+
+                    return "إشعار";
+                  };
+
+                return (
+                  <div>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent:
+                          "space-between",
+                        alignItems: "center",
+                        gap: "12px",
+                        flexWrap: "wrap",
+                        marginBottom: "14px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          color: "#5a4030",
+                          fontWeight: "900",
+                        }}
+                      >
+                        عدد الإشعارات في الفترة:{" "}
+                        {formatGovernmentCount(
+                          governmentNoteRows.length
+                        )}
+                      </div>
+
+                      <div
+                        style={{
+                          color: "#8a7a68",
+                          fontWeight: "800",
+                          fontSize: "13px",
+                        }}
+                      >
+                        الإشعارات مرتبطة بالفواتير الأصلية عند توفرها
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        overflowX: "auto",
+                        borderRadius: "18px",
+                        border:
+                          "1px solid rgba(214,199,184,0.72)",
+                        background: "white",
+                      }}
+                    >
+                      <table
+                        style={{
+                          width: "100%",
+                          borderCollapse:
+                            "collapse",
+                          minWidth: "1040px",
+                          textAlign: "center",
+                        }}
+                      >
+                        <thead>
+                          <tr
+                            style={{
+                              background:
+                                "linear-gradient(135deg, #7d6049, #a9886e)",
+                              color: "white",
+                            }}
+                          >
+                            {[
+                              "نوع الإشعار",
+                              "رقم المستند",
+                              "تاريخ الإصدار",
+                              "العميلة",
+                              "الخدمة",
+                              "السبب",
+                              "الإجمالي",
+                              "الضريبة",
+                              "الفاتورة الأصلية",
+                            ].map((title) => (
+                              <th
+                                key={title}
+                                style={{
+                                  padding: "13px",
+                                  fontWeight: "900",
+                                  whiteSpace:
+                                    "nowrap",
+                                }}
+                              >
+                                {title}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+
+                        <tbody>
+                          {governmentNoteRows.length >
+                          0 ? (
+                            governmentNoteRows.map(
+                              (
+                                note,
+                                index
+                              ) => {
+                                const noteDate =
+                                  getInvoiceDateInRiyadh(
+                                    note
+                                  );
+
+                                const noteSign =
+                                  getGovernmentDocumentSign(
+                                    note.documentType
+                                  );
+
+                                return (
+                                  <tr
+                                    key={note.id}
+                                    style={{
+                                      background:
+                                        index % 2 ===
+                                        0
+                                          ? "#fffdf8"
+                                          : "#f8f0e8",
+                                    }}
+                                  >
+                                    <td
+                                      style={{
+                                        padding:
+                                          "12px",
+                                        borderBottom:
+                                          "1px solid rgba(214,199,184,0.55)",
+                                        color:
+                                          "#4b2e1f",
+                                        fontWeight:
+                                          "900",
+                                      }}
+                                    >
+                                      {getGovernmentNoteTypeLabel(
+                                        note.documentType
+                                      )}
+                                    </td>
+
+                                    <td
+                                      style={{
+                                        padding:
+                                          "12px",
+                                        borderBottom:
+                                          "1px solid rgba(214,199,184,0.55)",
+                                        color:
+                                          "#4b2e1f",
+                                        fontWeight:
+                                          "900",
+                                        direction:
+                                          "ltr",
+                                      }}
+                                    >
+                                      {note.invoiceCode ||
+                                        note.invoiceNumber ||
+                                        "-"}
+                                    </td>
+
+                                    <td
+                                      style={{
+                                        padding:
+                                          "12px",
+                                        borderBottom:
+                                          "1px solid rgba(214,199,184,0.55)",
+                                        color:
+                                          "#5a4030",
+                                        fontWeight:
+                                          "800",
+                                        direction:
+                                          "ltr",
+                                      }}
+                                    >
+                                      {formatPurchasePageDate(
+                                        noteDate
+                                      )}
+                                    </td>
+
+                                    <td
+                                      style={{
+                                        padding:
+                                          "12px",
+                                        borderBottom:
+                                          "1px solid rgba(214,199,184,0.55)",
+                                        color:
+                                          "#4b2e1f",
+                                        fontWeight:
+                                          "900",
+                                      }}
+                                    >
+                                      {note.clientName ||
+                                        "-"}
+                                    </td>
+
+                                    <td
+                                      style={{
+                                        padding:
+                                          "12px",
+                                        borderBottom:
+                                          "1px solid rgba(214,199,184,0.55)",
+                                        color:
+                                          "#6f6259",
+                                        fontWeight:
+                                          "800",
+                                      }}
+                                    >
+                                      {note.serviceName ||
+                                        "-"}
+                                    </td>
+
+                                    <td
+                                      style={{
+                                        padding:
+                                          "12px",
+                                        borderBottom:
+                                          "1px solid rgba(214,199,184,0.55)",
+                                        color:
+                                          "#6f6259",
+                                        fontWeight:
+                                          "800",
+                                      }}
+                                    >
+                                      {note.correctionReason ||
+                                        "-"}
+                                    </td>
+
+                                    <td
+                                      style={{
+                                        padding:
+                                          "12px",
+                                        borderBottom:
+                                          "1px solid rgba(214,199,184,0.55)",
+                                        color:
+                                          noteSign < 0
+                                            ? "#8a3d2f"
+                                            : "#4b2e1f",
+                                        fontWeight:
+                                          "900",
+                                        direction:
+                                          "ltr",
+                                      }}
+                                    >
+                                      {formatGovernmentCurrency(
+                                        noteSign *
+                                          Number(
+                                            note.totalIncludingVat ||
+                                              0
+                                          )
+                                      )}
+                                    </td>
+
+                                    <td
+                                      style={{
+                                        padding:
+                                          "12px",
+                                        borderBottom:
+                                          "1px solid rgba(214,199,184,0.55)",
+                                        color:
+                                          noteSign < 0
+                                            ? "#8a3d2f"
+                                            : "#4b2e1f",
+                                        fontWeight:
+                                          "900",
+                                        direction:
+                                          "ltr",
+                                      }}
+                                    >
+                                      {formatGovernmentCurrency(
+                                        noteSign *
+                                          Number(
+                                            note.vatAmount ||
+                                              0
+                                          )
+                                      )}
+                                    </td>
+
+                                    <td
+                                      style={{
+                                        padding:
+                                          "12px",
+                                        borderBottom:
+                                          "1px solid rgba(214,199,184,0.55)",
+                                        color:
+                                          "#6f6259",
+                                        fontWeight:
+                                          "800",
+                                        direction:
+                                          "ltr",
+                                      }}
+                                    >
+                                      {note.originalInvoiceId ||
+                                        "-"}
+                                    </td>
+                                  </tr>
+                                );
+                              }
+                            )
+                          ) : (
+                            <tr>
+                              <td
+                                colSpan={9}
+                                style={{
+                                  padding: "24px",
+                                  color: "#8a7a68",
+                                  fontWeight: "900",
+                                  lineHeight: 1.8,
+                                }}
+                              >
+                                لا توجد إشعارات دائنة أو مدينة في هذه الفترة.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: "14px",
+                        background: "#fff7e8",
+                        border:
+                          "1px solid rgba(194,137,62,0.28)",
+                        borderRadius: "16px",
+                        padding: "13px 15px",
+                        color: "#7d6049",
+                        fontWeight: "900",
+                        lineHeight: 1.8,
+                      }}
+                    >
+                      حاليًا إذا ما عندك إشعارات، هذا طبيعي. عند إضافة إشعار دائن أو مدين لاحقًا سيظهر هنا تلقائيًا حسب الفترة.
+                    </div>
+                  </div>
+                );
+              })()
+            ) : (
+              <div
+                style={{
+                  background:
+                    "linear-gradient(135deg, #f7efe6, #efe2d5)",
+                  border:
+                    "1px dashed rgba(125,96,73,0.35)",
+                  borderRadius: "20px",
+                  padding: "22px",
+                  color: "#5a4030",
+                  fontWeight: "900",
+                  lineHeight: 1.9,
+                }}
+              >
+                هذا التبويب جاهز. سنبني جدوله في الخطوة التالية بدون تعديل أي بيانات.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 if (screen === "invoices") {
     const normalizedInvoiceSearch = String(invoicesSearch || "")
