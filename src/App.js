@@ -48437,6 +48437,32 @@ if (screen === "potentialClients") {
 
               scale:
                 captureScale,
+
+              onclone:
+                (clonedDocument) => {
+                  const clonedGiftCardCanvas =
+                    clonedDocument.querySelector(
+                      ".paradise-gift-card-canvas"
+                    );
+
+                  if (!clonedGiftCardCanvas) {
+                    return;
+                  }
+
+                  Array.from(
+                    clonedGiftCardCanvas.children
+                  ).forEach(
+                    (child) => {
+                      if (
+                        child.tagName !==
+                        "IMG"
+                      ) {
+                        child.style.visibility =
+                          "hidden";
+                      }
+                    }
+                  );
+                },
             }
           );
 
@@ -48469,6 +48495,511 @@ if (screen === "potentialClients") {
           899,
           1600
         );
+
+        const giftCardCanvasWidth =
+          899;
+
+        const giftCardCanvasHeight =
+          1600;
+
+        const giftCardPreviewBaseWidth =
+          540;
+
+        const normalizeGiftCardCanvasText =
+          (
+            textValue,
+            preserveLines = false
+          ) => {
+            const normalizedText =
+              String(
+                textValue || ""
+              )
+                .replace(
+                  /\r\n/g,
+                  "\n"
+                )
+                .replace(
+                  /[\u00A0\u2007\u202F]/g,
+                  " "
+                )
+                .replace(
+                  /[\u200B-\u200D\u2060]/g,
+                  ""
+                );
+
+            if (preserveLines) {
+              return normalizedText
+                .split("\n")
+                .map((line) =>
+                  line
+                    .replace(
+                      /[ \t]+/g,
+                      " "
+                    )
+                    .trim()
+                )
+                .join("\n")
+                .trim();
+            }
+
+            return normalizedText
+              .replace(
+                /[ \t\r\n]+/g,
+                " "
+              )
+              .trim();
+          };
+
+        const getGiftCardCanvasFontData =
+          (textKey) => {
+            const textSettings =
+              giftCardTextSettings[
+                textKey
+              ];
+
+            const textFontData =
+              giftCardFonts.find(
+                (font) =>
+                  font.id ===
+                  textSettings.fontId
+              ) || giftCardFonts[0];
+
+            const canvasFontSize =
+              Number(
+                textSettings.fontSize ||
+                  24
+              ) *
+              (
+                giftCardCanvasWidth /
+                giftCardPreviewBaseWidth
+              );
+
+            const canvasFontWeight =
+              Number(
+                textSettings.fontWeight ||
+                  400
+              );
+
+            return {
+              textSettings,
+              textFontData,
+              canvasFontSize,
+              canvasFontWeight,
+              canvasFontFamily:
+                textFontData.font ||
+                "Arial",
+            };
+          };
+
+        const isGiftCardNumberWord =
+          (word) =>
+            /^[0-9\u0660-\u0669\u06F0-\u06F9]+([.,:/-][0-9\u0660-\u0669\u06F0-\u06F9]+)*$/.test(
+              word
+            );
+
+        const isGiftCardLatinWord =
+          (word) =>
+            /[A-Za-z]/.test(word) &&
+            !/[\u0600-\u06FF]/.test(
+              word
+            );
+
+        const measureStableRtlCanvasLine =
+          (
+            words,
+            spaceWidth
+          ) =>
+            words.reduce(
+              (
+                totalWidth,
+                word,
+                wordIndex
+              ) =>
+                totalWidth +
+                finalContext.measureText(
+                  word
+                ).width +
+                (
+                  wordIndex <
+                  words.length - 1
+                    ? spaceWidth
+                    : 0
+                ),
+              0
+            );
+
+        const drawGiftCardCanvasLine =
+          ({
+            text,
+            x,
+            y,
+            maxWidth,
+            fontFamily,
+            fontWeight,
+            fontSize,
+            lineDirection,
+          }) => {
+            const cleanText =
+              normalizeGiftCardCanvasText(
+                text
+              );
+
+            if (!cleanText) {
+              return;
+            }
+
+            finalContext.save();
+
+            let activeFontSize =
+              fontSize;
+
+            const setCanvasFont =
+              () => {
+                finalContext.font =
+                  `${fontWeight} ${activeFontSize}px ${fontFamily}`;
+              };
+
+            finalContext.fillStyle =
+              "#8b654d";
+
+            finalContext.textBaseline =
+              "middle";
+
+            setCanvasFont();
+
+            const hasArabicLetters =
+              /[\u0600-\u06FF]/.test(
+                cleanText
+              );
+
+            if (
+              lineDirection === "rtl" &&
+              hasArabicLetters
+            ) {
+              const words =
+                cleanText
+                  .split(/\s+/)
+                  .filter(Boolean);
+
+              if (!words.length) {
+                finalContext.restore();
+                return;
+              }
+
+              let spaceWidth =
+                activeFontSize * 0.2;
+
+              let totalWidth =
+                measureStableRtlCanvasLine(
+                  words,
+                  spaceWidth
+                );
+
+              while (
+                totalWidth > maxWidth &&
+                activeFontSize > 9
+              ) {
+                activeFontSize -= 1;
+                setCanvasFont();
+                spaceWidth =
+                  activeFontSize * 0.2;
+                totalWidth =
+                  measureStableRtlCanvasLine(
+                    words,
+                    spaceWidth
+                  );
+              }
+
+              let currentRight =
+                x + totalWidth / 2;
+
+              words.forEach((word) => {
+                const wordWidth =
+                  finalContext.measureText(
+                    word
+                  ).width;
+
+                finalContext.direction =
+                  isGiftCardNumberWord(
+                    word
+                  ) ||
+                  isGiftCardLatinWord(word)
+                    ? "ltr"
+                    : "rtl";
+
+                finalContext.textAlign =
+                  "right";
+
+                finalContext.fillText(
+                  word,
+                  currentRight,
+                  y
+                );
+
+                currentRight -=
+                  wordWidth + spaceWidth;
+              });
+
+              finalContext.restore();
+              return;
+            }
+
+            finalContext.direction =
+              lineDirection;
+
+            finalContext.textAlign =
+              "center";
+
+            while (
+              finalContext.measureText(
+                cleanText
+              ).width > maxWidth &&
+              activeFontSize > 9
+            ) {
+              activeFontSize -= 1;
+              setCanvasFont();
+            }
+
+            finalContext.fillText(
+              cleanText,
+              x,
+              y
+            );
+
+            finalContext.restore();
+          };
+
+        const wrapGiftCardCanvasText =
+          ({
+            text,
+            maxWidth,
+            fontFamily,
+            fontWeight,
+            fontSize,
+          }) => {
+            finalContext.save();
+
+            finalContext.font =
+              `${fontWeight} ${fontSize}px ${fontFamily}`;
+
+            const paragraphs =
+              normalizeGiftCardCanvasText(
+                text,
+                true
+              ).split("\n");
+
+            const wrappedLines = [];
+
+            paragraphs.forEach(
+              (paragraph) => {
+                const words =
+                  paragraph
+                    .split(/\s+/)
+                    .filter(Boolean);
+
+                if (!words.length) {
+                  wrappedLines.push("");
+                  return;
+                }
+
+                let currentLine = "";
+
+                words.forEach((word) => {
+                  const testLine =
+                    currentLine
+                      ? `${currentLine} ${word}`
+                      : word;
+
+                  if (
+                    finalContext.measureText(
+                      testLine
+                    ).width <= maxWidth ||
+                    !currentLine
+                  ) {
+                    currentLine = testLine;
+                  } else {
+                    wrappedLines.push(
+                      currentLine
+                    );
+                    currentLine = word;
+                  }
+                });
+
+                if (currentLine) {
+                  wrappedLines.push(
+                    currentLine
+                  );
+                }
+              }
+            );
+
+            finalContext.restore();
+
+            return wrappedLines;
+          };
+
+        const drawGiftCardCanvasText =
+          (
+            textKey,
+            textValue
+          ) => {
+            const {
+              textSettings,
+              textFontData,
+              canvasFontSize,
+              canvasFontWeight,
+              canvasFontFamily,
+            } =
+              getGiftCardCanvasFontData(
+                textKey
+              );
+
+            const rawText =
+              String(
+                textValue || ""
+              ).trim();
+
+            const textToDraw =
+              rawText ||
+              giftCardTextPlaceholders[
+                textKey
+              ];
+
+            const textDirection =
+              selectedGiftCardTemplate
+                .language === "en"
+                ? "ltr"
+                : "rtl";
+
+            const x =
+              (
+                Number(
+                  textSettings.left ||
+                    50
+                ) /
+                100
+              ) *
+              giftCardCanvasWidth;
+
+            const y =
+              (
+                Number(
+                  textSettings.top ||
+                    50
+                ) /
+                100
+              ) *
+              giftCardCanvasHeight;
+
+            const maxWidth =
+              (
+                Number(
+                  textSettings.width ||
+                    60
+                ) /
+                100
+              ) *
+              giftCardCanvasWidth;
+
+            if (textKey === "message") {
+              const messageLines =
+                wrapGiftCardCanvasText({
+                  text: textToDraw,
+                  maxWidth,
+                  fontFamily:
+                    canvasFontFamily,
+                  fontWeight:
+                    canvasFontWeight,
+                  fontSize:
+                    canvasFontSize,
+                });
+
+              const lineHeight =
+                canvasFontSize *
+                Number(
+                  textSettings.lineHeight ||
+                    1.35
+                );
+
+              const firstLineY =
+                y -
+                (
+                  (
+                    messageLines.length -
+                    1
+                  ) *
+                  lineHeight
+                ) /
+                  2;
+
+              messageLines.forEach(
+                (
+                  line,
+                  lineIndex
+                ) => {
+                  drawGiftCardCanvasLine({
+                    text: line,
+                    x,
+                    y:
+                      firstLineY +
+                      lineIndex *
+                        lineHeight,
+                    maxWidth,
+                    fontFamily:
+                      canvasFontFamily,
+                    fontWeight:
+                      canvasFontWeight,
+                    fontSize:
+                      canvasFontSize,
+                    lineDirection:
+                      textDirection,
+                  });
+                }
+              );
+
+              return;
+            }
+
+            drawGiftCardCanvasLine({
+              text: textToDraw,
+              x,
+              y,
+              maxWidth,
+              fontFamily:
+                canvasFontFamily,
+              fontWeight:
+                canvasFontWeight,
+              fontSize:
+                canvasFontSize,
+              lineDirection:
+                textDirection,
+            });
+          };
+
+        drawGiftCardCanvasText(
+          "recipient",
+          giftCardRecipient
+        );
+
+        drawGiftCardCanvasText(
+          "giver",
+          giftCardGiver
+        );
+
+        drawGiftCardCanvasText(
+          "service",
+          giftCardService
+        );
+
+        if (
+          selectedGiftCardTemplate
+            .customMessageEnabled
+        ) {
+          drawGiftCardCanvasText(
+            "message",
+            giftCardMessage
+          );
+        }
 
         const safeRecipientName =
           giftCardRecipient
