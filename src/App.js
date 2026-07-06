@@ -67,6 +67,14 @@ import giftGeneralArabic from "./gift-cards/general-ar.jpeg";
 import giftGeneralEnglish from "./gift-cards/general-en.jpeg";
 import giftGeneralCustom from "./gift-cards/general-custom.jpeg";
 
+/* كروت الإهداء — الإهداء العام الفارغ */
+import giftGeneralBlankArabic from "./gift-cards/general-blank-ar.jpeg";
+import giftGeneralBlankEnglish from "./gift-cards/general-blank-en.jpeg";
+
+/* كروت الإهداء — الإهداء الكلاسيك */
+import giftClassicCleanArabic from "./gift-cards/classic-clean-ar.jpeg";
+import giftClassicCleanEnglish from "./gift-cards/classic-clean-en.jpeg";
+
 /* كروت الإهداء — المولود الجديد */
 import giftNewbornArabic from "./gift-cards/newborn-ar.jpeg";
 import giftNewbornEnglish from "./gift-cards/newborn-en.jpeg";
@@ -2827,7 +2835,9 @@ function fetchSharedClientLists() {
     ["bride", "العروس"],
     ["eid", "العيد"],
     ["birthday", "عيد الميلاد"],
-    ["general", "إهداء عام"],
+    ["general", "إهداء قلب"],
+    ["general-blank", "إهداء عام"],
+    ["classic-clean", "إهداء كلاسيك"],
     ["newborn", "مولود جديد"],
   ].map(([id, title]) => ({ id, title }));
 
@@ -2850,14 +2860,46 @@ function fetchSharedClientLists() {
     ["birthday-ar", "birthday", "عيد ميلاد — عربي", "عربي", "ar", giftBirthdayArabic, false],
     ["birthday-en", "birthday", "Birthday — English", "English", "en", giftBirthdayEnglish, false],
     ["birthday-custom", "birthday", "عيد ميلاد — نص مخصص", "نص مخصص", "ar", giftBirthdayCustom, true, { top: 84, left: 34, width: 58 }],
-    ["general-ar", "general", "إهداء عام — عربي", "عربي", "ar", giftGeneralArabic, false],
+    ["general-ar", "general", "إهداء قلب — عربي", "عربي", "ar", giftGeneralArabic, false],
     ["general-en", "general", "General Gift — English", "English", "en", giftGeneralEnglish, false],
-    ["general-custom", "general", "إهداء عام — نص مخصص", "نص مخصص", "ar", giftGeneralCustom, true, { top: 82.5, left: 50, width: 78 }],
+    ["general-custom", "general", "إهداء قلب — نص مخصص", "نص مخصص", "ar", giftGeneralCustom, true, { top: 82.5, left: 50, width: 78 }],
+    [
+      "general-blank-ar",
+      "general-blank",
+      "إهداء عام — عربي",
+      "عربي",
+      "ar",
+      giftGeneralBlankArabic,
+      false,
+      null,
+      {
+        recipient: { top: 40.9, left: 50, width: 67 },
+        giver: { top: 59.4, left: 50, width: 67 },
+        service: { top: 77.9, left: 50, width: 67 },
+      },
+    ],
+    [
+      "general-blank-en",
+      "general-blank",
+      "General Gift — English",
+      "English",
+      "en",
+      giftGeneralBlankEnglish,
+      false,
+      null,
+      {
+        recipient: { top: 40.9, left: 50, width: 67 },
+        giver: { top: 59.4, left: 50, width: 67 },
+        service: { top: 77.9, left: 50, width: 67 },
+      },
+    ],
+    ["classic-clean-ar", "classic-clean", "إهداء كلاسيك — عربي", "عربي", "ar", giftClassicCleanArabic, true, { top: 84, left: 50, width: 76 }],
+    ["classic-clean-en", "classic-clean", "Classic Gift — English", "English", "en", giftClassicCleanEnglish, true, { top: 84, left: 50, width: 76 }],
     ["newborn-ar", "newborn", "مولود جديد — عربي", "عربي", "ar", giftNewbornArabic, false],
     ["newborn-en", "newborn", "New Baby — English", "English", "en", giftNewbornEnglish, false],
     ["newborn-custom", "newborn", "مولود جديد — نص مخصص", "نص مخصص", "ar", giftNewbornCustom, true, { top: 84, left: 34, width: 58 }],
   ].map(
-    ([id, category, title, variant, language, image, customMessageEnabled, messagePosition]) => ({
+    ([id, category, title, variant, language, image, customMessageEnabled, messagePosition, textPositions]) => ({
       id,
       category,
       title,
@@ -2866,10 +2908,15 @@ function fetchSharedClientLists() {
       image,
       customMessageEnabled,
       messagePosition: messagePosition || null,
+      textPositions: textPositions || null,
     })
   );
 
-  const createDefaultGiftCardTextSettings = (language = "ar", messagePosition = {}) => {
+  const createDefaultGiftCardTextSettings = (
+    language = "ar",
+    messagePosition = {},
+    textPositions = {}
+  ) => {
     const isEnglish = language === "en";
     const defaultFontId = giftCardFonts.some(
       (font) =>
@@ -2889,27 +2936,27 @@ function fetchSharedClientLists() {
 
     return {
       recipient: {
-        top: 38.65,
-        left: 50.5,
-        width: 61,
+        top: Number(textPositions.recipient?.top || 38.65),
+        left: Number(textPositions.recipient?.left || 50.5),
+        width: Number(textPositions.recipient?.width || 61),
         fontSize: isEnglish ? 27 : 30,
         fontWeight: isEnglish ? 700 : 500,
         fontId: defaultFontId,
         lineHeight: 1.05,
       },
       giver: {
-        top: 53.45,
-        left: 50.5,
-        width: 61,
+        top: Number(textPositions.giver?.top || 53.45),
+        left: Number(textPositions.giver?.left || 50.5),
+        width: Number(textPositions.giver?.width || 61),
         fontSize: isEnglish ? 27 : 30,
         fontWeight: isEnglish ? 700 : 500,
         fontId: defaultFontId,
         lineHeight: 1.05,
       },
       service: {
-        top: 68.25,
-        left: 50.5,
-        width: 61,
+        top: Number(textPositions.service?.top || 68.25),
+        left: Number(textPositions.service?.left || 50.5),
+        width: Number(textPositions.service?.width || 61),
         fontSize: isEnglish ? 23 : 26,
         fontWeight: isEnglish ? 700 : 500,
         fontId: defaultFontId,
@@ -47892,7 +47939,8 @@ if (screen === "potentialClients") {
     setGiftCardTextSettings(
       createDefaultGiftCardTextSettings(
         template.language,
-        template.messagePosition || {}
+        template.messagePosition || {},
+        template.textPositions || {}
       )
     );
 
