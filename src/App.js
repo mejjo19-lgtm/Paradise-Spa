@@ -11981,6 +11981,77 @@ const getScheduleClientBadges = (
         ? `${scheduleRowId}:additional:${additionalClientIdentity}`
         : `${scheduleRowId}:primary:${primaryClientIdentity}`;
 
+    const invoiceIssueDate =
+      String(
+        appointmentDate || ""
+      ).slice(0, 10);
+
+    const todayInvoiceDate =
+      getCurrentLocalDate();
+
+    if (!invoiceIssueDate) {
+      alert(
+        "تعذر تحديد تاريخ إصدار الفاتورة."
+      );
+
+      return {
+        success: false,
+        invoice: null,
+        completedRow: null,
+      };
+    }
+
+    if (
+      invoiceIssueDate >
+      todayInvoiceDate
+    ) {
+      alert(
+        "لا يمكن إصدار فاتورة بتاريخ مستقبلي."
+      );
+
+      return {
+        success: false,
+        invoice: null,
+        completedRow: null,
+      };
+    }
+
+    const [
+      issueYear,
+      issueMonth,
+      issueDay,
+    ] = invoiceIssueDate.split("-");
+
+    const formattedIssueDate =
+      issueYear &&
+      issueMonth &&
+      issueDay
+        ? `${issueDay}-${issueMonth}-${issueYear}`
+        : invoiceIssueDate;
+
+    const confirmedIssueDate =
+      window.confirm(
+        [
+          `سيتم إصدار الفاتورة بتاريخ ${formattedIssueDate}`,
+          "",
+          `العميلة: ${clientName || "-"}`,
+          `الخدمة: ${serviceName || "-"}`,
+          `الإجمالي: ${invoiceTotal.toFixed(
+            2
+          )} ر.س`,
+          "",
+          "هل أنت متأكد؟",
+        ].join("\n")
+      );
+
+    if (!confirmedIssueDate) {
+      return {
+        success: false,
+        invoice: null,
+        completedRow: null,
+      };
+    }
+
     const existingSaveTimer =
       scheduleRowSaveTimersRef
         .current[
@@ -12014,7 +12085,7 @@ const getScheduleClientBadges = (
         data,
         error,
       } = await supabase.rpc(
-        "issue_paradise_invoice_safe",
+        "issue_paradise_invoice_safe_with_issue_date",
         {
           p_source_service_key:
             sourceServiceKey,
@@ -12071,6 +12142,9 @@ const getScheduleClientBadges = (
           p_updated_by:
             sharedDataDeviceIdRef
               .current,
+
+          p_invoice_issue_date:
+            invoiceIssueDate,
         }
       );
 
@@ -32063,19 +32137,21 @@ const welcomeBoardNameStyle = {
               </button>
             )}
 
-            <div
+            <label
               className="paradise-topbar-date"
+              title="تاريخ العمل وإصدار الفاتورة"
               style={{
                 background:
                   "linear-gradient(135deg, #fffaf3, #f3e8df)",
                 border:
                   "1px solid rgba(214,199,184,0.95)",
                 borderRadius: "20px",
-                padding: "0 14px",
+                padding: "0 12px",
                 height: "44px",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
+                gap: "8px",
                 boxShadow:
                   "0 12px 28px rgba(75,46,31,0.10)",
                 color: "#6f6259",
@@ -32083,10 +32159,63 @@ const welcomeBoardNameStyle = {
                 textAlign: "center",
                 pointerEvents: "auto",
                 whiteSpace: "nowrap",
+                cursor: "pointer",
               }}
             >
-              {formatShortArabicDate(todayDate)}
-            </div>
+              <span
+                style={{
+                  fontSize: "12px",
+                  color: "#8a7a68",
+                  fontWeight: "900",
+                }}
+              >
+                تاريخ العمل
+              </span>
+
+              <input
+                type="date"
+                value={selectedScheduleDate || todayDate}
+                max={todayDate}
+                onChange={(event) => {
+                  const nextDate =
+                    String(
+                      event.target.value || ""
+                    ).slice(0, 10);
+
+                  if (!nextDate) {
+                    return;
+                  }
+
+                  if (nextDate > todayDate) {
+                    alert(
+                      "لا يمكن اختيار تاريخ مستقبلي من الأعلى لإصدار الفواتير."
+                    );
+
+                    return;
+                  }
+
+                  setSelectedScheduleDate(
+                    nextDate
+                  );
+
+                  if (screen !== "appointments") {
+                    goToScreen(
+                      "appointments"
+                    );
+                  }
+                }}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  color: "#4b2e1f",
+                  fontWeight: "900",
+                  fontSize: "13px",
+                  outline: "none",
+                  cursor: "pointer",
+                  width: "132px",
+                }}
+              />
+            </label>
 
             <div
               className="paradise-topbar-account"
@@ -46793,7 +46922,7 @@ marginRight: "auto",
                         whiteSpace: "normal",
                       }}
                     >
-                      الموظفة
+                      التواصل مع
                     </th>
 
                     <th
