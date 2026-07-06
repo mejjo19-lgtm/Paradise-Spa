@@ -2934,11 +2934,51 @@ function fetchSharedClientLists() {
   const [giftCardGiver, setGiftCardGiver] = useState("");
   const [giftCardService, setGiftCardService] = useState("");
   const [giftCardMessage, setGiftCardMessage] = useState("");
+  const giftCardTextSettingsStorageKey =
+    "paradise-gift-card-text-settings-v1";
+
   const [selectedGiftCardTextKey, setSelectedGiftCardTextKey] = useState("recipient");
-  const [giftCardTextSettings, setGiftCardTextSettings] = useState(() =>
-    createDefaultGiftCardTextSettings("ar")
-  );
+
+  const [giftCardTextSettings, setGiftCardTextSettings] = useState(() => {
+    try {
+      const savedSettings =
+        localStorage.getItem(
+          giftCardTextSettingsStorageKey
+        );
+
+      if (savedSettings) {
+        const parsedSettings =
+          JSON.parse(savedSettings);
+
+        if (
+          parsedSettings &&
+          typeof parsedSettings === "object"
+        ) {
+          return {
+            ...createDefaultGiftCardTextSettings("ar"),
+            ...parsedSettings,
+          };
+        }
+      }
+    } catch {
+      // إذا كانت البيانات المحفوظة غير صالحة، نرجع للوضع الافتراضي.
+    }
+
+    return createDefaultGiftCardTextSettings("ar");
+  });
+
   const [giftCardIsSaving, setGiftCardIsSaving] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        giftCardTextSettingsStorageKey,
+        JSON.stringify(giftCardTextSettings)
+      );
+    } catch {
+      // لا نوقف النظام إذا فشل الحفظ المحلي.
+    }
+  }, [giftCardTextSettings]);
 
   const [scheduleData, setScheduleData] = useState({});
 
@@ -48572,6 +48612,20 @@ if (screen === "potentialClients") {
             showEditor
               ? "4px 5px"
               : "1px 3px",
+
+          minHeight:
+            textKey === "message"
+              ? "auto"
+              : "4.8%",
+
+          display:
+            "flex",
+
+          alignItems:
+            "center",
+
+          justifyContent:
+            "center",
 
           color:
             cleanValue
