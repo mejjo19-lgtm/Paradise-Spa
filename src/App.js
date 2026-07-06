@@ -2244,6 +2244,10 @@ const normalizeClientRecord = (client) => ({
   last_order_at: client.last_order_at || "",
   last_activity_at: client.last_activity_at || "",
   last_contacted_at: client.last_contacted_at || "",
+  last_contacted_by_name:
+    client.last_contacted_by_name || "",
+  last_contacted_by_auth_user_id:
+    client.last_contacted_by_auth_user_id || "",
   referrals: Array.isArray(client.referrals)
     ? client.referrals
     : [],
@@ -2306,7 +2310,7 @@ async function fetchClientsWithSupabaseClient() {
     const { data, error } = await supabase
       .from("clients")
       .select(
-        "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at"
+        "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id"
       )
       .order("id", { ascending: false })
       .range(from, to);
@@ -2349,7 +2353,7 @@ async function fetchClientsWithRestApi() {
 
   while (hasMore) {
     const response = await fetch(
-      `${supabaseUrl}/rest/v1/clients?select=id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at&order=id.desc&limit=${pageSize}&offset=${offset}`,
+      `${supabaseUrl}/rest/v1/clients?select=id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id&order=id.desc&limit=${pageSize}&offset=${offset}`,
       {
         headers: {
           apikey: supabaseKey,
@@ -6612,7 +6616,7 @@ goToScreen("clientProfile");
     } = await supabase
       .from("clients")
       .select(
-        "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at"
+        "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id"
       )
       .eq(
         "id",
@@ -6892,7 +6896,7 @@ goToScreen("clientProfile");
     .from("clients")
     .update({ visits: newVisits })
     .eq("id", id)
-    .select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at")
+    .select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id")
     .single();
 
   if (error) {
@@ -6917,7 +6921,7 @@ goToScreen("clientProfile");
     .from("clients")
     .update({ visits: newVisits })
     .eq("id", id)
-    .select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at")
+    .select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id")
     .single();
 
   if (error) {
@@ -6965,7 +6969,7 @@ const updateClientLastActivity = async (id) => {
       .from("clients")
       .update({ frame: frameValue })
       .eq("id", id)
-      .select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at")
+      .select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id")
       .single();
 
     if (error) {
@@ -7036,7 +7040,7 @@ const updateClientLastActivity = async (id) => {
           nextExcludeValue,
       })
       .eq("id", id)
-      .select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at")
+      .select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id")
       .single();
 
     if (error) {
@@ -12734,7 +12738,7 @@ const getScheduleClientBadges = (
             matchedClient.id
           )
           .select(
-            "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at"
+            "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id"
           )
           .single();
 
@@ -16475,7 +16479,7 @@ const handleScheduleRowAction = (rowIndex, action) => {
             matchedClientForOrder.id
           )
           .select(
-            "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at"
+            "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id"
           )
           .single();
 
@@ -21159,6 +21163,16 @@ const leavingTime = addMinutesToDisplayTime(
       const contactedAt =
         new Date().toISOString();
 
+      const contactedByName =
+        String(
+          loggedInUser || ""
+        ).trim() || "مستخدم";
+
+      const contactedByAuthUserId =
+        String(
+          loggedInAuthUserId || ""
+        ).trim() || null;
+
       const {
         data: updatedClient,
         error,
@@ -21167,12 +21181,16 @@ const leavingTime = addMinutesToDisplayTime(
         .update({
           last_contacted_at:
             contactedAt,
+          last_contacted_by_name:
+            contactedByName,
+          last_contacted_by_auth_user_id:
+            contactedByAuthUserId,
           last_activity_at:
             contactedAt,
         })
         .eq("id", client.id)
         .select(
-          "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at"
+          "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id"
         )
         .single();
 
@@ -46696,13 +46714,14 @@ marginRight: "auto",
                 }}
               >
                 <colgroup>
-                  <col style={{ width: "16%" }} />
-                  <col style={{ width: "14%" }} />
-                  <col style={{ width: "12%" }} />
-                  <col style={{ width: "11%" }} />
-                  <col style={{ width: "14%" }} />
                   <col style={{ width: "15%" }} />
-                  <col style={{ width: "18%" }} />
+                  <col style={{ width: "13%" }} />
+                  <col style={{ width: "10%" }} />
+                  <col style={{ width: "10%" }} />
+                  <col style={{ width: "13%" }} />
+                  <col style={{ width: "12%" }} />
+                  <col style={{ width: "12%" }} />
+                  <col style={{ width: "15%" }} />
                 </colgroup>
 
                 <thead>
@@ -46765,6 +46784,16 @@ marginRight: "auto",
                       }}
                     >
                       آخر تواصل
+                    </th>
+
+                    <th
+                      style={{
+                        ...inactiveHeaderCellStyle,
+                        padding: "10px 5px",
+                        whiteSpace: "normal",
+                      }}
+                    >
+                      الموظفة
                     </th>
 
                     <th
@@ -46903,6 +46932,23 @@ marginRight: "auto",
                                   client.last_contacted_at
                                 )
                               : "لم يتم التواصل"}
+                          </td>
+
+                          <td
+                            style={{
+                              ...inactiveCellStyle,
+                              padding: "9px 4px",
+                              whiteSpace: "normal",
+                              overflowWrap: "anywhere",
+                              fontWeight: "800",
+                              color: "#4b2e1f",
+                            }}
+                          >
+                            {client.last_contacted_by_name
+                              ? client.last_contacted_by_name
+                              : client.last_contacted_at
+                              ? "غير مسجل"
+                              : "-"}
                           </td>
 
                           <td
