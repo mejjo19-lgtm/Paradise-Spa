@@ -20526,10 +20526,6 @@ const leavingTime = addMinutesToDisplayTime(
           "appointments",
           "جدول المواعيد",
         ],
-        [
-          "availableAppointments",
-          "المواعيد المتاحة",
-        ],
       ],
     },
     {
@@ -20588,6 +20584,10 @@ const leavingTime = addMinutesToDisplayTime(
       id: "design",
       title: "التصاميم",
       items: [
+        [
+          "availableAppointments",
+          "المواعيد المتاحة",
+        ],
         [
           "giftCards",
           "كروت الإهداء",
