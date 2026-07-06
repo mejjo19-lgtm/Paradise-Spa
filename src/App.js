@@ -48559,12 +48559,198 @@ if (screen === "potentialClients") {
         textKey
       ];
 
+    const renderedDisplayValue =
+      textKey === "message"
+        ? String(
+            displayValue || ""
+          )
+            .replace(
+              /\r\n/g,
+              "\n"
+            )
+            .replace(
+              /[\u00A0\u2007\u202F]/g,
+              " "
+            )
+            .replace(
+              /[\u200B-\u200D\u2060]/g,
+              ""
+            )
+        : String(
+            displayValue || ""
+          )
+            .replace(
+              /[\u00A0\u2007\u202F]/g,
+              " "
+            )
+            .replace(
+              /[\u200B-\u200D\u2060]/g,
+              ""
+            )
+            .replace(
+              /[ \t\r\n]+/g,
+              " "
+            )
+            .trim();
+
     const fontData =
       giftCardFonts.find(
         (font) =>
           font.id ===
           settings.fontId
       ) || giftCardFonts[0];
+
+    const textDirection =
+      selectedGiftCardTemplate
+        .language === "en"
+        ? "ltr"
+        : "rtl";
+
+    const shouldUseFixedAmiriSpacing =
+      textKey !== "message" &&
+      textDirection === "rtl" &&
+      String(
+        fontData.font || ""
+      ).includes(
+        "GiftCardArabicAmiri"
+      ) &&
+      /[\u0600-\u06FF]/.test(
+        renderedDisplayValue
+      );
+
+    const renderGiftCardTextContent =
+      () => {
+        if (
+          !shouldUseFixedAmiriSpacing
+        ) {
+          return renderedDisplayValue;
+        }
+
+        const words =
+          renderedDisplayValue
+            .split(/\s+/)
+            .filter(Boolean);
+
+        if (words.length <= 1) {
+          return renderedDisplayValue;
+        }
+
+        const fixedSpaceItems = [];
+
+        words.forEach(
+          (
+            word,
+            wordIndex
+          ) => {
+            const isNumberWord =
+              /^[0-9\u0660-\u0669\u06F0-\u06F9]+([.,:/-][0-9\u0660-\u0669\u06F0-\u06F9]+)*$/.test(
+                word
+              );
+
+            const isLatinWord =
+              /[A-Za-z]/.test(
+                word
+              ) &&
+              !/[\u0600-\u06FF]/.test(
+                word
+              );
+
+            fixedSpaceItems.push(
+              <span
+                key={`gift-card-amiri-word-${textKey}-${wordIndex}`}
+                dir={
+                  isNumberWord ||
+                  isLatinWord
+                    ? "ltr"
+                    : "rtl"
+                }
+                style={{
+                  display:
+                    "inline-block",
+
+                  flex:
+                    "0 0 auto",
+
+                  whiteSpace:
+                    "nowrap",
+
+                  unicodeBidi:
+                    "isolate",
+                }}
+              >
+                {word}
+              </span>
+            );
+
+            if (
+              wordIndex <
+              words.length - 1
+            ) {
+              fixedSpaceItems.push(
+                <span
+                  key={`gift-card-amiri-space-${textKey}-${wordIndex}`}
+                  aria-hidden="true"
+                  style={{
+                    display:
+                      "inline-block",
+
+                    flex:
+                      "0 0 0.2em",
+
+                    width:
+                      "0.2em",
+
+                    minWidth:
+                      "0.2em",
+
+                    maxWidth:
+                      "0.2em",
+
+                    whiteSpace:
+                      "nowrap",
+                  }}
+                />
+              );
+            }
+          }
+        );
+
+        return (
+          <span
+            dir="ltr"
+            style={{
+              display:
+                "inline-flex",
+
+              flexDirection:
+                "row-reverse",
+
+              alignItems:
+                "baseline",
+
+              justifyContent:
+                "center",
+
+              width:
+                "100%",
+
+              direction:
+                "ltr",
+
+              unicodeBidi:
+                "isolate",
+
+              whiteSpace:
+                "nowrap",
+
+              gap:
+                0,
+            }}
+          >
+            {fixedSpaceItems}
+          </span>
+        );
+      };
 
     const isSelected =
       selectedGiftCardTextKey ===
@@ -48587,6 +48773,7 @@ if (screen === "potentialClients") {
     return (
       <div
         key={textKey}
+        dir={textDirection}
         onClick={() =>
           setSelectedGiftCardTextKey(
             textKey
@@ -48631,10 +48818,7 @@ if (screen === "potentialClients") {
             settings.lineHeight,
 
           direction:
-            selectedGiftCardTemplate
-              .language === "en"
-              ? "ltr"
-              : "rtl",
+            textDirection,
 
           textAlign:
             "center",
@@ -48642,10 +48826,26 @@ if (screen === "potentialClients") {
           whiteSpace:
             textKey === "message"
               ? "pre-wrap"
+              : "nowrap",
+
+          wordBreak:
+            textKey === "message"
+              ? "break-word"
               : "normal",
 
           overflowWrap:
-            "anywhere",
+            textKey === "message"
+              ? "break-word"
+              : "normal",
+
+          unicodeBidi:
+            "isolate",
+
+          letterSpacing:
+            "normal",
+
+          wordSpacing:
+            "normal",
 
           cursor:
             giftCardIsSaving
@@ -48675,7 +48875,7 @@ if (screen === "potentialClients") {
             "none",
         }}
       >
-        {displayValue}
+        {renderGiftCardTextContent()}
 
         {showEditor && (
           <span
