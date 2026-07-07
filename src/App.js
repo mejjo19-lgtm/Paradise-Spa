@@ -38191,8 +38191,8 @@ if (screen === "governmentReports") {
             invoice.invoiceNumber || "",
             invoice.invoiceCode || "",
             getInvoiceDateInRiyadh(invoice),
-            invoice.clientName || "",
-            invoice.clientPhone || "",
+            "",
+            "",
             invoice.serviceName || "",
             invoice.paymentMethod || "",
             Number(
@@ -38408,7 +38408,7 @@ if (screen === "governmentReports") {
                 note.invoiceNumber ||
                 "",
               getInvoiceDateInRiyadh(note),
-              note.clientName || "",
+              "",
               note.serviceName || "",
               note.correctionReason || "",
               (
@@ -39165,8 +39165,7 @@ if (screen === "governmentReports") {
                                           "900",
                                       }}
                                     >
-                                      {invoice.clientName ||
-                                        "-"}
+                                      {"-"}
                                     </td>
 
                                     <td
@@ -39183,8 +39182,7 @@ if (screen === "governmentReports") {
                                           "ltr",
                                       }}
                                     >
-                                      {invoice.clientPhone ||
-                                        "-"}
+                                      {"-"}
                                     </td>
 
                                     <td
@@ -40299,8 +40297,7 @@ if (screen === "governmentReports") {
                                           "900",
                                       }}
                                     >
-                                      {note.clientName ||
-                                        "-"}
+                                      {"-"}
                                     </td>
 
                                     <td
@@ -40483,8 +40480,8 @@ if (screen === "invoices") {
         [
           invoice.invoiceCode,
           invoice.invoiceNumber,
-          invoice.clientName,
-          invoice.clientPhone,
+          "",
+          "",
           invoice.serviceName,
           invoice.paymentMethod,
         ].some((value) =>
@@ -42004,9 +42001,7 @@ if (screen === "invoices") {
         "-";
 
       const whatsappMessage = [
-        `مرحباً ${
-          invoice.clientName || ""
-        } 💗`,
+        `مرحباً💗`,
         "",
         `هذه تفاصيل ${documentName} من Paradise Home Spa:`,
         `رقم المستند: ${invoiceCode}`,
@@ -43134,8 +43129,7 @@ if (screen === "invoices") {
                                 850,
                             }}
                           >
-                            {invoice.clientName ||
-                              "-"}
+                            {"-"}
                           </td>
 
                           <td
@@ -43147,8 +43141,7 @@ if (screen === "invoices") {
                               direction: "ltr",
                             }}
                           >
-                            {invoice.clientPhone ||
-                              "-"}
+                            {"-"}
                           </td>
 
                           <td
