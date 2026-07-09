@@ -2725,6 +2725,18 @@ function fetchSharedClientLists() {
     setSelectedScheduleDate,
   ] = useState(todayDate);
 
+  /*
+    تاريخ إصدار الفاتورة مستقل عن
+    تاريخ جدول المواعيد.
+
+    selectedScheduleDate = يوم الخدمة/الموعد.
+    selectedInvoiceIssueDate = يوم إصدار الفاتورة/الدفع.
+  */
+  const [
+    selectedInvoiceIssueDate,
+    setSelectedInvoiceIssueDate,
+  ] = useState(todayDate);
+
   // بداية نافذة الأيام الثلاثة في صفحة المواعيد الرئيسية
   // 0 = اليوم، 1 = غدًا، -1 = أمس
   const [
@@ -4574,10 +4586,22 @@ useEffect(() => {
   useEffect(() => {
     const updateTodayDate = () => {
       const newToday = getCurrentLocalDate();
+
       setCurrentDate((previousDate) => {
         if (previousDate !== newToday) {
-          setSelectedScheduleDate(newToday);
+          setSelectedInvoiceIssueDate(
+            (previousIssueDate) =>
+              !previousIssueDate ||
+              previousIssueDate === previousDate
+                ? newToday
+                : previousIssueDate
+          );
+
+          setSelectedScheduleDate(
+            newToday
+          );
         }
+
         return newToday;
       });
     };
@@ -12300,7 +12324,10 @@ const getScheduleClientBadges = (
 
     const invoiceIssueDate =
       String(
-        appointmentDate || ""
+        selectedInvoiceIssueDate ||
+          todayDate ||
+          getCurrentLocalDate() ||
+          ""
       ).slice(0, 10);
 
     const todayInvoiceDate =
@@ -32490,7 +32517,7 @@ const welcomeBoardNameStyle = {
               <input
                 className="paradise-topbar-date-input"
                 type="date"
-                value={selectedScheduleDate || todayDate}
+                value={selectedInvoiceIssueDate || todayDate}
                 max={todayDate}
                 onChange={(event) => {
                   const nextDate =
@@ -32510,15 +32537,9 @@ const welcomeBoardNameStyle = {
                     return;
                   }
 
-                  setSelectedScheduleDate(
+                  setSelectedInvoiceIssueDate(
                     nextDate
                   );
-
-                  if (screen !== "appointments") {
-                    goToScreen(
-                      "appointments"
-                    );
-                  }
                 }}
                 style={{
                   border: "none",
