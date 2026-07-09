@@ -1510,6 +1510,11 @@ const [scheduleUndoStack, setScheduleUndoStack] = useState([]);
 const [scheduleRedoStack, setScheduleRedoStack] = useState([]);
 const [additionalClientModal, setAdditionalClientModal] = useState(null);
 
+const [
+  splitPaymentModal,
+  setSplitPaymentModal,
+] = useState(null);
+
 // نافذة اختيار العميلة عند وجود رقم جوال مكرر
 const [duplicateClientModal, setDuplicateClientModal] = useState(null);
 const [duplicateClientSearch, setDuplicateClientSearch] = useState("");
@@ -7670,7 +7675,7 @@ const stepScheduleOrder = (rowIndex, currentOrder, direction) => {
 
   updateScheduleRow(rowIndex, "order", nextOrder);
 };
-  const paymentOptions = ["", "Cash", "Debit", "Credit", "Bank Transfer", "Tabby", "Tamara"];
+  const paymentOptions = ["", "Cash", "Debit", "Credit", "Bank Transfer", "Split Payment", "Tabby", "Tamara"];
   const serviceOptions = [
     "",
     
@@ -7719,6 +7724,7 @@ const stepScheduleOrder = (rowIndex, currentOrder, direction) => {
     transportation: "",
     serviceAmount: "",
     paymentMethod: "",
+    paymentBreakdown: [],
     cashReceivedBy: "",
     status: "",
     sendTo: "",
@@ -8695,6 +8701,647 @@ const loadIncomeExpenseReportDataRange =
     const number = matchedValue ? Number(matchedValue[0]) : 0;
     return Number.isFinite(number) ? number : 0;
   };
+
+  const getSchedulePaymentTotal = (
+    paymentRow = {}
+  ) => {
+    if (
+      nonRevenueStatuses.includes(
+        paymentRow.status
+      )
+    ) {
+      return 0;
+    }
+
+    return Number(
+      (
+        parseAmount(
+          paymentRow.serviceAmount
+        ) +
+        parseAmount(
+          paymentRow.transportation
+        )
+      ).toFixed(2)
+    );
+  };
+
+  const getSplitPaymentBreakdownTotal = (
+    paymentBreakdown
+  ) =>
+    (Array.isArray(paymentBreakdown)
+      ? paymentBreakdown
+      : []
+    ).reduce(
+      (total, paymentEntry) =>
+        total +
+        parseAmount(
+          paymentEntry?.amount
+        ),
+      0
+    );
+
+  const normalizePaymentBreakdownDraft = (
+    paymentBreakdown
+  ) =>
+    (Array.isArray(paymentBreakdown)
+      ? paymentBreakdown
+      : []
+    ).map((paymentEntry) => ({
+      method:
+        String(
+          paymentEntry?.method || ""
+        ).trim(),
+
+      amount:
+        String(
+          paymentEntry?.amount ?? ""
+        ).trim(),
+    }));
+
+  const createDefaultSplitPaymentBreakdown =
+    (paymentTotal = 0) => {
+      const safePaymentTotal =
+        Number(
+          Number(
+            paymentTotal || 0
+          ).toFixed(2)
+        );
+
+      return [
+        {
+          method: "Bank Transfer",
+          amount:
+            safePaymentTotal > 0
+              ? String(safePaymentTotal)
+              : "",
+        },
+        {
+          method: "Cash",
+          amount: "",
+        },
+      ];
+    };
+
+  const openSplitPaymentEditor = ({
+    targetType = "primary",
+    rowIndex,
+    extraClientIndex = null,
+    paymentRow = {},
+  }) => {
+    const paymentTotal =
+      getSchedulePaymentTotal(
+        paymentRow
+      );
+
+    if (
+      !Number.isFinite(
+        paymentTotal
+      ) ||
+      paymentTotal <= 0
+    ) {
+      alert(
+        "أدخلي مبلغ الخدمة أو التوصيل قبل اختيار Split Payment."
+      );
+
+      return;
+    }
+
+    const currentBreakdown =
+      normalizePaymentBreakdownDraft(
+        paymentRow.paymentBreakdown
+      ).filter(
+        (paymentEntry) =>
+          paymentEntry.method ||
+          paymentEntry.amount
+      );
+
+    setSplitPaymentModal({
+      targetType,
+      rowIndex,
+      extraClientIndex,
+      paymentTotal,
+
+      draft:
+        currentBreakdown.length > 0
+          ? currentBreakdown
+          : createDefaultSplitPaymentBreakdown(
+              paymentTotal
+            ),
+
+      error: "",
+    });
+  };
+
+  const saveSplitPaymentBreakdown =
+    () => {
+      if (!splitPaymentModal) {
+        return;
+      }
+
+      if (
+        !ensureSystemWritable() ||
+        !canEditData
+      ) {
+        return;
+      }
+
+      const rowIndex =
+        Number(
+          splitPaymentModal.rowIndex
+        );
+
+      const extraClientIndex =
+        Number(
+          splitPaymentModal.extraClientIndex
+        );
+
+      if (
+        !Number.isInteger(rowIndex) ||
+        rowIndex < 0
+      ) {
+        setSplitPaymentModal(
+          (previousModal) => ({
+            ...previousModal,
+            error:
+              "تعذر تحديد صف الموعد.",
+          })
+        );
+
+        return;
+      }
+
+      const paymentTotal =
+        Number(
+          Number(
+            splitPaymentModal.paymentTotal ||
+              0
+          ).toFixed(2)
+        );
+
+      const cleanEntries =
+        normalizePaymentBreakdownDraft(
+          splitPaymentModal.draft
+        )
+          .map((paymentEntry) => ({
+            method:
+              String(
+                paymentEntry.method || ""
+              ).trim(),
+
+            amount:
+              Number(
+                parseAmount(
+                  paymentEntry.amount
+                ).toFixed(2)
+              ),
+          }))
+          .filter(
+            (paymentEntry) =>
+              paymentEntry.method ||
+              paymentEntry.amount > 0
+          );
+
+      if (cleanEntries.length < 2) {
+        setSplitPaymentModal(
+          (previousModal) => ({
+            ...previousModal,
+            error:
+              "Split Payment يحتاج دفعتين على الأقل.",
+          })
+        );
+
+        return;
+      }
+
+      const invalidEntry =
+        cleanEntries.find(
+          (paymentEntry) =>
+            !paymentEntry.method ||
+            paymentEntry.method ===
+              "Split Payment" ||
+            !Number.isFinite(
+              paymentEntry.amount
+            ) ||
+            paymentEntry.amount <= 0
+        );
+
+      if (invalidEntry) {
+        setSplitPaymentModal(
+          (previousModal) => ({
+            ...previousModal,
+            error:
+              "كل دفعة لازم يكون لها طريقة دفع ومبلغ أكبر من صفر.",
+          })
+        );
+
+        return;
+      }
+
+      const breakdownTotal =
+        Number(
+          cleanEntries
+            .reduce(
+              (
+                total,
+                paymentEntry
+              ) =>
+                total +
+                paymentEntry.amount,
+              0
+            )
+            .toFixed(2)
+        );
+
+      if (
+        Math.abs(
+          breakdownTotal -
+            paymentTotal
+        ) > 0.01
+      ) {
+        setSplitPaymentModal(
+          (previousModal) => ({
+            ...previousModal,
+            error: `مجموع الدفعات ${breakdownTotal.toFixed(
+              2
+            )} ولا يساوي الإجمالي ${paymentTotal.toFixed(
+              2
+            )}.`,
+          })
+        );
+
+        return;
+      }
+
+      const currentDayData =
+        scheduleData[
+          selectedScheduleDate
+        ] || {};
+
+      const currentRows =
+        currentDayData.rows ||
+        timeSlots.map(
+          createEmptyAppointmentRow
+        );
+
+      const currentRow =
+        currentRows[rowIndex] ||
+        createEmptyAppointmentRow(
+          timeSlots[rowIndex] || ""
+        );
+
+      let nextRow =
+        currentRow;
+
+      if (
+        splitPaymentModal.targetType ===
+        "additional"
+      ) {
+        if (
+          !Number.isInteger(
+            extraClientIndex
+          ) ||
+          extraClientIndex < 0
+        ) {
+          setSplitPaymentModal(
+            (previousModal) => ({
+              ...previousModal,
+              error:
+                "تعذر تحديد العميلة الإضافية.",
+            })
+          );
+
+          return;
+        }
+
+        const extraClients =
+          getAdditionalClientsForRow(
+            currentRow
+          );
+
+        if (
+          !extraClients[
+            extraClientIndex
+          ]
+        ) {
+          setSplitPaymentModal(
+            (previousModal) => ({
+              ...previousModal,
+              error:
+                "تعذر العثور على العميلة الإضافية.",
+            })
+          );
+
+          return;
+        }
+
+        const nextExtraClients =
+          extraClients.map(
+            (
+              extraClient,
+              index
+            ) =>
+              index ===
+              extraClientIndex
+                ? {
+                    ...extraClient,
+
+                    paymentMethod:
+                      "Split Payment",
+
+                    paymentBreakdown:
+                      cleanEntries,
+                  }
+                : extraClient
+          );
+
+        nextRow = {
+          ...currentRow,
+
+          additionalClients:
+            nextExtraClients,
+        };
+      } else {
+        nextRow = {
+          ...currentRow,
+
+          paymentMethod:
+            "Split Payment",
+
+          paymentBreakdown:
+            cleanEntries,
+        };
+      }
+
+      const nextRows =
+        currentRows.map(
+          (scheduleRow, index) =>
+            index === rowIndex
+              ? nextRow
+              : scheduleRow
+        );
+
+      setScheduleData(
+        (previousScheduleData) => ({
+          ...previousScheduleData,
+
+          [selectedScheduleDate]: {
+            ...currentDayData,
+
+            rows: nextRows,
+          },
+        })
+      );
+
+      queueScheduleRowSave(
+        selectedScheduleDate,
+        rowIndex,
+        nextRow,
+        currentDayData.cellStyles || {}
+      );
+
+      setSplitPaymentModal(null);
+    };
+
+  const handleSchedulePaymentMethodChange = (
+    rowIndex,
+    nextPaymentMethod
+  ) => {
+    const cleanPaymentMethod =
+      String(
+        nextPaymentMethod || ""
+      ).trim();
+
+    const currentDayData =
+      scheduleData[selectedScheduleDate] || {};
+
+    const currentRows =
+      currentDayData.rows ||
+      timeSlots.map(
+        createEmptyAppointmentRow
+      );
+
+    const currentRow =
+      currentRows[rowIndex] ||
+      createEmptyAppointmentRow(
+        timeSlots[rowIndex] || ""
+      );
+
+    if (
+      cleanPaymentMethod ===
+      "Split Payment"
+    ) {
+      openSplitPaymentEditor({
+        targetType: "primary",
+        rowIndex,
+        paymentRow: currentRow,
+      });
+
+      return;
+    }
+
+    if (
+      Array.isArray(
+        currentRow.paymentBreakdown
+      ) &&
+      currentRow.paymentBreakdown.length > 0
+    ) {
+      if (
+        !ensureSystemWritable() ||
+        !canEditData
+      ) {
+        return;
+      }
+
+      scheduleLastEditRef.current =
+        Date.now();
+
+      const nextRow = {
+        ...currentRow,
+
+        paymentMethod:
+          cleanPaymentMethod,
+
+        paymentBreakdown: [],
+      };
+
+      const nextRows =
+        currentRows.map(
+          (scheduleRow, index) =>
+            index === rowIndex
+              ? nextRow
+              : scheduleRow
+        );
+
+      setScheduleData(
+        (previousScheduleData) => ({
+          ...previousScheduleData,
+
+          [selectedScheduleDate]: {
+            ...currentDayData,
+
+            rows: nextRows,
+          },
+        })
+      );
+
+      queueScheduleRowSave(
+        selectedScheduleDate,
+        rowIndex,
+        nextRow,
+        currentDayData.cellStyles || {}
+      );
+
+      return;
+    }
+
+    updateScheduleRow(
+      rowIndex,
+      "paymentMethod",
+      cleanPaymentMethod
+    );
+  };
+
+  const handleAdditionalClientPaymentMethodChange =
+    (
+      rowIndex,
+      extraClientIndex,
+      nextPaymentMethod
+    ) => {
+      const cleanPaymentMethod =
+        String(
+          nextPaymentMethod || ""
+        ).trim();
+
+      const currentDayData =
+        scheduleData[selectedScheduleDate] || {};
+
+      const currentRows =
+        currentDayData.rows ||
+        timeSlots.map(
+          createEmptyAppointmentRow
+        );
+
+      const currentRow =
+        currentRows[rowIndex] ||
+        createEmptyAppointmentRow(
+          timeSlots[rowIndex] || ""
+        );
+
+      const extraClients =
+        getAdditionalClientsForRow(
+          currentRow
+        );
+
+      const currentExtraClient =
+        extraClients[
+          extraClientIndex
+        ];
+
+      if (!currentExtraClient) {
+        return;
+      }
+
+      if (
+        cleanPaymentMethod ===
+        "Split Payment"
+      ) {
+        openSplitPaymentEditor({
+          targetType: "additional",
+          rowIndex,
+          extraClientIndex,
+
+          paymentRow: {
+            ...currentExtraClient,
+
+            status:
+              currentExtraClient.status ||
+              currentRow.status ||
+              "",
+          },
+        });
+
+        return;
+      }
+
+      if (
+        Array.isArray(
+          currentExtraClient.paymentBreakdown
+        ) &&
+        currentExtraClient.paymentBreakdown.length > 0
+      ) {
+        if (
+          !ensureSystemWritable() ||
+          !canEditData
+        ) {
+          return;
+        }
+
+        scheduleLastEditRef.current =
+          Date.now();
+
+        const nextExtraClients =
+          extraClients.map(
+            (
+              extraClient,
+              index
+            ) =>
+              index ===
+              extraClientIndex
+                ? {
+                    ...extraClient,
+
+                    paymentMethod:
+                      cleanPaymentMethod,
+
+                    paymentBreakdown: [],
+                  }
+                : extraClient
+          );
+
+        const nextRow = {
+          ...currentRow,
+
+          additionalClients:
+            nextExtraClients,
+        };
+
+        const nextRows =
+          currentRows.map(
+            (scheduleRow, index) =>
+              index === rowIndex
+                ? nextRow
+                : scheduleRow
+          );
+
+        setScheduleData(
+          (previousScheduleData) => ({
+            ...previousScheduleData,
+
+            [selectedScheduleDate]: {
+              ...currentDayData,
+
+              rows: nextRows,
+            },
+          })
+        );
+
+        queueScheduleRowSave(
+          selectedScheduleDate,
+          rowIndex,
+          nextRow,
+          currentDayData.cellStyles || {}
+        );
+
+        return;
+      }
+
+      updateAdditionalClientField(
+        rowIndex,
+        extraClientIndex,
+        "paymentMethod",
+        cleanPaymentMethod
+      );
+    };
 
   const getLegacyTherapistCommissionField = (
     therapistName
@@ -12257,6 +12904,126 @@ const getScheduleClientBadges = (
       };
     }
 
+    const splitPaymentIsSelected =
+      paymentMethod ===
+      "Split Payment";
+
+    let validatedPaymentBreakdown =
+      Array.isArray(
+        invoiceClient.paymentBreakdown
+      )
+        ? invoiceClient.paymentBreakdown
+        : [];
+
+    if (splitPaymentIsSelected) {
+      const cleanPaymentBreakdown =
+        normalizePaymentBreakdownDraft(
+          invoiceClient.paymentBreakdown
+        )
+          .map((paymentEntry) => ({
+            method:
+              String(
+                paymentEntry.method || ""
+              ).trim(),
+
+            amount:
+              Number(
+                parseAmount(
+                  paymentEntry.amount
+                ).toFixed(2)
+              ),
+          }))
+          .filter(
+            (paymentEntry) =>
+              paymentEntry.method ||
+              paymentEntry.amount > 0
+          );
+
+      if (
+        cleanPaymentBreakdown.length < 2
+      ) {
+        alert(
+          "لا يمكن إصدار الفاتورة. Split Payment يحتاج دفعتين على الأقل."
+        );
+
+        return {
+          success: false,
+          invoice: null,
+          completedRow: null,
+        };
+      }
+
+      const invalidSplitPaymentEntry =
+        cleanPaymentBreakdown.find(
+          (paymentEntry) =>
+            !paymentEntry.method ||
+            paymentEntry.method ===
+              "Split Payment" ||
+            !Number.isFinite(
+              paymentEntry.amount
+            ) ||
+            paymentEntry.amount <= 0
+        );
+
+      if (invalidSplitPaymentEntry) {
+        alert(
+          "لا يمكن إصدار الفاتورة. تأكدي أن كل دفعة لها طريقة دفع ومبلغ أكبر من صفر."
+        );
+
+        return {
+          success: false,
+          invoice: null,
+          completedRow: null,
+        };
+      }
+
+      const splitPaymentTotal =
+        Number(
+          cleanPaymentBreakdown
+            .reduce(
+              (
+                total,
+                paymentEntry
+              ) =>
+                total +
+                paymentEntry.amount,
+              0
+            )
+            .toFixed(2)
+        );
+
+      const safeInvoiceTotal =
+        Number(
+          Number(
+            invoiceTotal || 0
+          ).toFixed(2)
+        );
+
+      if (
+        Math.abs(
+          splitPaymentTotal -
+            safeInvoiceTotal
+        ) > 0.01
+      ) {
+        alert(
+          `لا يمكن إصدار الفاتورة. مجموع دفعات Split Payment ${splitPaymentTotal.toFixed(
+            2
+          )} ولا يساوي إجمالي الفاتورة ${safeInvoiceTotal.toFixed(
+            2
+          )}.`
+        );
+
+        return {
+          success: false,
+          invoice: null,
+          completedRow: null,
+        };
+      }
+
+      validatedPaymentBreakdown =
+        cleanPaymentBreakdown;
+    }
+
     // إصدار الفاتورة لا يغيّر Status ولا لون الصف.
     // اكتمال الخدمة يُعرف من invoiceLinks فقط.
     const completedRowData =
@@ -12275,12 +13042,26 @@ const getScheduleClientBadges = (
                     ? {
                         ...client,
                         ...invoiceClient,
+
+                        ...(splitPaymentIsSelected
+                          ? {
+                              paymentBreakdown:
+                                validatedPaymentBreakdown,
+                            }
+                          : {}),
                       }
                     : client
               ),
           }
         : {
             ...originalRowSnapshot,
+
+            ...(splitPaymentIsSelected
+              ? {
+                  paymentBreakdown:
+                    validatedPaymentBreakdown,
+                }
+              : {}),
           };
 
     const scheduleRowId =
@@ -34287,6 +35068,496 @@ if (screen === "menu") {
             );
           })()}
 
+          {splitPaymentModal && (() => {
+            const draft =
+              normalizePaymentBreakdownDraft(
+                splitPaymentModal.draft
+              );
+
+            const paymentTotal =
+              Number(
+                splitPaymentModal.paymentTotal ||
+                  0
+              );
+
+            const draftTotal =
+              Number(
+                getSplitPaymentBreakdownTotal(
+                  draft
+                ).toFixed(2)
+              );
+
+            const remainingAmount =
+              Number(
+                (
+                  paymentTotal -
+                  draftTotal
+                ).toFixed(2)
+              );
+
+            const allowedPaymentMethods =
+              paymentOptions.filter(
+                (option) =>
+                  option &&
+                  option !==
+                    "Split Payment"
+              );
+
+            const updateSplitPaymentDraftEntry =
+              (
+                entryIndex,
+                field,
+                value
+              ) => {
+                setSplitPaymentModal(
+                  (previousModal) => {
+                    if (!previousModal) {
+                      return previousModal;
+                    }
+
+                    const previousDraft =
+                      normalizePaymentBreakdownDraft(
+                        previousModal.draft
+                      );
+
+                    const nextDraft =
+                      previousDraft.map(
+                        (
+                          paymentEntry,
+                          index
+                        ) =>
+                          index ===
+                          entryIndex
+                            ? {
+                                ...paymentEntry,
+                                [field]: value,
+                              }
+                            : paymentEntry
+                      );
+
+                    return {
+                      ...previousModal,
+
+                      draft: nextDraft,
+                      error: "",
+                    };
+                  }
+                );
+              };
+
+            const addSplitPaymentDraftEntry =
+              () => {
+                setSplitPaymentModal(
+                  (previousModal) => {
+                    if (!previousModal) {
+                      return previousModal;
+                    }
+
+                    return {
+                      ...previousModal,
+
+                      draft: [
+                        ...normalizePaymentBreakdownDraft(
+                          previousModal.draft
+                        ),
+                        {
+                          method: "",
+                          amount: "",
+                        },
+                      ],
+
+                      error: "",
+                    };
+                  }
+                );
+              };
+
+            const removeSplitPaymentDraftEntry =
+              (entryIndex) => {
+                setSplitPaymentModal(
+                  (previousModal) => {
+                    if (!previousModal) {
+                      return previousModal;
+                    }
+
+                    const nextDraft =
+                      normalizePaymentBreakdownDraft(
+                        previousModal.draft
+                      ).filter(
+                        (
+                          _paymentEntry,
+                          index
+                        ) =>
+                          index !==
+                          entryIndex
+                      );
+
+                    return {
+                      ...previousModal,
+
+                      draft: nextDraft.length
+                        ? nextDraft
+                        : [
+                            {
+                              method: "",
+                              amount: "",
+                            },
+                          ],
+
+                      error: "",
+                    };
+                  }
+                );
+              };
+
+            return createPortal(
+              <div
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  width: "100vw",
+                  height: "100dvh",
+                  zIndex: 999999,
+                  background:
+                    "rgba(75,46,31,0.32)",
+                  padding: "24px",
+                  boxSizing: "border-box",
+                  display: "grid",
+                  placeItems: "center",
+                  overflow: "hidden",
+                }}
+                onMouseDown={(event) => {
+                  if (
+                    event.target !==
+                    event.currentTarget
+                  ) {
+                    return;
+                  }
+
+                  setSplitPaymentModal(null);
+                }}
+              >
+                <div
+                  style={{
+                    width: "100%",
+                    maxWidth: "520px",
+                    maxHeight:
+                      "calc(100dvh - 48px)",
+                    overflowY: "auto",
+                    overscrollBehavior:
+                      "contain",
+                    background:
+                      "linear-gradient(145deg, #fffaf7, #f6eadf)",
+                    border:
+                      "1px solid rgba(75,46,31,0.18)",
+                    borderRadius: "22px",
+                    padding: "18px",
+                    boxShadow:
+                      "0 24px 70px rgba(75,46,31,0.28)",
+                    color: "#4b2e1f",
+                    boxSizing: "border-box",
+                  }}
+                  onMouseDown={(event) =>
+                    event.stopPropagation()
+                  }
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent:
+                        "space-between",
+                      alignItems: "center",
+                      gap: "12px",
+                      marginBottom: "14px",
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          fontSize: "20px",
+                          fontWeight: "900",
+                          color: "#4b2e1f",
+                        }}
+                      >
+                        Split Payment
+                      </div>
+
+                      <div
+                        style={{
+                          marginTop: "4px",
+                          fontSize: "13px",
+                          fontWeight: "800",
+                          color: "#7a5a43",
+                        }}
+                      >
+                        الإجمالي:{" "}
+                        {paymentTotal.toFixed(2)} SAR
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSplitPaymentModal(
+                          null
+                        )
+                      }
+                      style={{
+                        width: "34px",
+                        height: "34px",
+                        borderRadius: "50%",
+                        border:
+                          "1px solid rgba(75,46,31,0.2)",
+                        background: "#fffaf3",
+                        color: "#4b2e1f",
+                        fontSize: "22px",
+                        fontWeight: "900",
+                        cursor: "pointer",
+                        lineHeight: 1,
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: "10px",
+                    }}
+                  >
+                    {draft.map(
+                      (
+                        paymentEntry,
+                        entryIndex
+                      ) => (
+                        <div
+                          key={entryIndex}
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns:
+                              "1.2fr 1fr auto",
+                            gap: "8px",
+                            alignItems: "center",
+                          }}
+                        >
+                          <select
+                            value={
+                              paymentEntry.method ||
+                              ""
+                            }
+                            onChange={(event) =>
+                              updateSplitPaymentDraftEntry(
+                                entryIndex,
+                                "method",
+                                event.target.value
+                              )
+                            }
+                            style={{
+                              width: "100%",
+                              padding:
+                                "11px 10px",
+                              borderRadius: "12px",
+                              border:
+                                "1px solid #d6c7b8",
+                              background:
+                                "#ffffff",
+                              color: "#4b2e1f",
+                              fontWeight: "800",
+                              outline: "none",
+                              boxSizing:
+                                "border-box",
+                            }}
+                          >
+                            <option value="">
+                              Method
+                            </option>
+
+                            {allowedPaymentMethods.map(
+                              (option) => (
+                                <option
+                                  key={option}
+                                  value={option}
+                                >
+                                  {option}
+                                </option>
+                              )
+                            )}
+                          </select>
+
+                          <input
+                            value={
+                              paymentEntry.amount ||
+                              ""
+                            }
+                            onChange={(event) =>
+                              updateSplitPaymentDraftEntry(
+                                entryIndex,
+                                "amount",
+                                event.target.value
+                              )
+                            }
+                            inputMode="decimal"
+                            placeholder="Amount"
+                            style={{
+                              width: "100%",
+                              padding:
+                                "11px 10px",
+                              borderRadius: "12px",
+                              border:
+                                "1px solid #d6c7b8",
+                              background:
+                                "#ffffff",
+                              color: "#4b2e1f",
+                              fontWeight: "800",
+                              outline: "none",
+                              boxSizing:
+                                "border-box",
+                            }}
+                          />
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              removeSplitPaymentDraftEntry(
+                                entryIndex
+                              )
+                            }
+                            style={{
+                              width: "34px",
+                              height: "34px",
+                              borderRadius: "50%",
+                              border:
+                                "1px solid rgba(150,60,40,0.2)",
+                              background:
+                                "#fff2ee",
+                              color: "#9b3a2d",
+                              fontWeight: "900",
+                              cursor: "pointer",
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      )
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={
+                      addSplitPaymentDraftEntry
+                    }
+                    style={{
+                      width: "100%",
+                      marginTop: "12px",
+                      padding: "11px",
+                      borderRadius: "14px",
+                      border:
+                        "1px dashed rgba(75,46,31,0.32)",
+                      background: "#fffaf3",
+                      color: "#4b2e1f",
+                      fontWeight: "900",
+                      cursor: "pointer",
+                    }}
+                  >
+                    + Add payment
+                  </button>
+
+                  <div
+                    style={{
+                      marginTop: "14px",
+                      padding: "12px",
+                      borderRadius: "14px",
+                      background:
+                        remainingAmount === 0
+                          ? "#edf7ed"
+                          : "#fff6e8",
+                      color:
+                        remainingAmount === 0
+                          ? "#2f6b38"
+                          : "#8a5a16",
+                      fontWeight: "900",
+                      lineHeight: 1.7,
+                    }}
+                  >
+                    مجموع الدفعات:{" "}
+                    {draftTotal.toFixed(2)} SAR
+                    <br />
+                    المتبقي:{" "}
+                    {remainingAmount.toFixed(2)} SAR
+                  </div>
+
+                  {splitPaymentModal.error && (
+                    <div
+                      style={{
+                        marginTop: "12px",
+                        padding: "11px",
+                        borderRadius: "13px",
+                        background: "#fff1f0",
+                        color: "#9b2d24",
+                        fontWeight: "900",
+                        lineHeight: 1.7,
+                      }}
+                    >
+                      {splitPaymentModal.error}
+                    </div>
+                  )}
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "1fr 1fr",
+                      gap: "10px",
+                      marginTop: "16px",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSplitPaymentModal(
+                          null
+                        )
+                      }
+                      style={{
+                        padding: "12px",
+                        borderRadius: "14px",
+                        border:
+                          "1px solid rgba(75,46,31,0.18)",
+                        background: "#ffffff",
+                        color: "#4b2e1f",
+                        fontWeight: "900",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Cancel
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={
+                        saveSplitPaymentBreakdown
+                      }
+                      style={{
+                        padding: "12px",
+                        borderRadius: "14px",
+                        border: "none",
+                        background: "#4b2e1f",
+                        color: "#fffaf3",
+                        fontWeight: "900",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              </div>,
+              document.body
+            );
+          })()}
+
           {additionalClientModal && (() => {
             const modalRows = getRowsForDate(selectedScheduleDate);
             const modalRowIndex = additionalClientModal.rowIndex;
@@ -35103,7 +36374,10 @@ margin: "0 auto",
                       <select
                         value={row.paymentMethod}
                         onChange={(e) =>
-                          updateScheduleRow(index, "paymentMethod", e.target.value)
+                          handleSchedulePaymentMethodChange(
+                            index,
+                            e.target.value
+                          )
                         }
                         {...getScheduleEditableProps(index, "paymentMethod")}
                         style={getScheduleInputStyle(index, "paymentMethod")}
@@ -36137,15 +37411,14 @@ margin: "0 auto",
                                     extraClients.length
                                   )}
                                 >
-                                                                    <select
+                                  <select
                                     value={
                                       extraClient.paymentMethod || ""
                                     }
                                     onChange={(event) =>
-                                      updateAdditionalClientField(
+                                      handleAdditionalClientPaymentMethodChange(
                                         index,
                                         extraIndex,
-                                        "paymentMethod",
                                         event.target.value
                                       )
                                     }
