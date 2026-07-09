@@ -18602,29 +18602,85 @@ const normalizeOrderLabelForStats = (orderValue) =>
       "Bank Transfer": 0,
     };
 
-    activeRows.forEach((row) => {
-      const amount =
-        parseAmount(row.serviceAmount) +
-        parseAmount(row.transportation);
+    const addPaymentAmountToFinanceStats = (
+      method,
+      amount
+    ) => {
+      const cleanMethod =
+        String(method || "").trim();
 
-      const method = row.paymentMethod || "";
+      const safeAmount =
+        Number(amount || 0);
 
-      if (paymentTotals[method] !== undefined) {
-        paymentTotals[method] += amount;
+      if (
+        !Number.isFinite(safeAmount) ||
+        safeAmount <= 0
+      ) {
+        return;
       }
+
+      if (
+        paymentTotals[cleanMethod] !==
+        undefined
+      ) {
+        paymentTotals[cleanMethod] +=
+          safeAmount;
+      }
+    };
+
+    const addRowPaymentToFinanceStats = (
+      paymentRow = {}
+    ) => {
+      const paymentMethod =
+        String(
+          paymentRow.paymentMethod || ""
+        ).trim();
+
+      if (
+        paymentMethod ===
+        "Split Payment"
+      ) {
+        const paymentBreakdown =
+          Array.isArray(
+            paymentRow.paymentBreakdown
+          )
+            ? paymentRow.paymentBreakdown
+            : [];
+
+        paymentBreakdown.forEach(
+          (paymentEntry) => {
+            addPaymentAmountToFinanceStats(
+              paymentEntry.method,
+              parseAmount(
+                paymentEntry.amount
+              )
+            );
+          }
+        );
+
+        return;
+      }
+
+      const amount =
+        parseAmount(
+          paymentRow.serviceAmount
+        ) +
+        parseAmount(
+          paymentRow.transportation
+        );
+
+      addPaymentAmountToFinanceStats(
+        paymentMethod,
+        amount
+      );
+    };
+
+    activeRows.forEach((row) => {
+      addRowPaymentToFinanceStats(row);
     });
 
     activeHouseholdClients.forEach((extraClient) => {
-      const amount =
-        parseAmount(extraClient.serviceAmount) +
-        parseAmount(extraClient.transportation);
-
-      const method =
-        extraClient.paymentMethod || "";
-
-      if (paymentTotals[method] !== undefined) {
-        paymentTotals[method] += amount;
-      }
+      addRowPaymentToFinanceStats(extraClient);
     });
 
     const therapistCommissionEntries =
