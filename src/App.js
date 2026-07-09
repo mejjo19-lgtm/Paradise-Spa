@@ -56163,43 +56163,6 @@ if (screen === "potentialClients") {
                               {service.services || "-"}
                             </span>
 
-                            {service.invoiceLink?.invoiceId && (
-                              <button
-                                type="button"
-                                title="فتح الفاتورة"
-                                aria-label="فتح الفاتورة"
-                                onClick={() =>
-                                  openServiceHistoryInvoice(
-                                    service.invoiceLink
-                                  )
-                                }
-                                style={{
-                                  width: "27px",
-                                  height: "27px",
-                                  minWidth: "27px",
-                                  padding: 0,
-                                  border:
-                                    "1px solid rgba(157,117,87,0.35)",
-                                  borderRadius: "9px",
-                                  background:
-                                    "linear-gradient(145deg, #f4e6da, #d9bea7)",
-                                  color: "#4b3327",
-                                  boxShadow:
-                                    "0 5px 11px rgba(75,46,31,0.09)",
-                                  fontSize: "12px",
-                                  fontWeight: "900",
-                                  cursor: "pointer",
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  flexShrink: 0,
-                                  boxSizing: "border-box",
-                                }}
-                              >
-                                ▤
-                              </button>
-                            )}
-
                             {service.source ===
                               "manual_legacy" &&
                               !service.invoiceLink
@@ -56342,6 +56305,7 @@ if (screen === "potentialClients") {
                               display: "flex",
                               alignItems: "center",
                               justifyContent: "center",
+                              gap: "8px",
                               color: "#3f2a20",
                               fontWeight: "950",
                               fontSize: "13px",
@@ -56352,43 +56316,82 @@ if (screen === "potentialClients") {
                               direction: "ltr",
                             }}
                           >
-                            {(() => {
-                              const paymentMethod =
-                                String(
-                                  service.paymentMethod ||
-                                    ""
-                                ).trim();
+                            <span>
+                              {(() => {
+                                const paymentMethod =
+                                  String(
+                                    service.paymentMethod ||
+                                      ""
+                                  ).trim();
 
-                              const paymentMethodLabels = {
-                                cash: "Cash",
-                                Cash: "Cash",
+                                const paymentMethodLabels = {
+                                  cash: "Cash",
+                                  Cash: "Cash",
 
-                                bank_transfer:
-                                  "Bank Transfer",
-                                "Bank Transfer":
-                                  "Bank Transfer",
+                                  bank_transfer:
+                                    "Bank Transfer",
+                                  "Bank Transfer":
+                                    "Bank Transfer",
 
-                                debit: "Debit",
-                                Debit: "Debit",
+                                  debit: "Debit",
+                                  Debit: "Debit",
 
-                                credit: "Credit",
-                                Credit: "Credit",
+                                  credit: "Credit",
+                                  Credit: "Credit",
 
-                                tabby: "Tabby",
-                                Tabby: "Tabby",
+                                  tabby: "Tabby",
+                                  Tabby: "Tabby",
 
-                                tamara: "Tamara",
-                                Tamara: "Tamara",
-                              };
+                                  tamara: "Tamara",
+                                  Tamara: "Tamara",
+                                };
 
-                              return (
-                                paymentMethodLabels[
-                                  paymentMethod
-                                ] ||
-                                paymentMethod ||
-                                "-"
-                              );
-                            })()}
+                                return (
+                                  paymentMethodLabels[
+                                    paymentMethod
+                                  ] ||
+                                  paymentMethod ||
+                                  "-"
+                                );
+                              })()}
+                            </span>
+
+                            {service.invoiceLink?.invoiceId && (
+                              <button
+                                type="button"
+                                title="فتح الفاتورة"
+                                aria-label="فتح الفاتورة"
+                                onClick={() =>
+                                  openServiceHistoryInvoice(
+                                    service.invoiceLink
+                                  )
+                                }
+                                style={{
+                                  width: "27px",
+                                  height: "27px",
+                                  minWidth: "27px",
+                                  padding: 0,
+                                  border:
+                                    "1px solid rgba(157,117,87,0.35)",
+                                  borderRadius: "9px",
+                                  background:
+                                    "linear-gradient(145deg, #f4e6da, #d9bea7)",
+                                  color: "#4b3327",
+                                  boxShadow:
+                                    "0 5px 11px rgba(75,46,31,0.09)",
+                                  fontSize: "12px",
+                                  fontWeight: "900",
+                                  cursor: "pointer",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  flexShrink: 0,
+                                  boxSizing: "border-box",
+                                }}
+                              >
+                                ▤
+                              </button>
+                            )}
                           </div>
                         </div>
                       )
