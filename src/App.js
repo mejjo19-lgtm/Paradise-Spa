@@ -16321,6 +16321,43 @@ const cloneScheduleRowWithoutTime = (row) => {
   // وقت الصف لا يُنسخ؛ يبقى وقت الصف الذي سيتم اللصق داخله
   delete clonedRow.serviceTime;
 
+  /*
+    النسخ من صف مفوتر مسموح كبيانات موعد جديدة فقط.
+
+    لا ننسخ أي بيانات مالية أو دفع أو
+    روابط فاتورة حتى لا يظهر الموعد الجديد
+    كأنه مدفوع أو مفوتر.
+  */
+  delete clonedRow.transportation;
+  delete clonedRow.serviceAmount;
+  delete clonedRow.totalPrice;
+  delete clonedRow.paymentMethod;
+  delete clonedRow.cashReceivedBy;
+  delete clonedRow.invoiceLinks;
+  delete clonedRow.invoiceLink;
+  delete clonedRow.invoiceId;
+
+  if (Array.isArray(clonedRow.additionalClients)) {
+    clonedRow.additionalClients =
+      clonedRow.additionalClients.map((client) => {
+        const clonedClient = {
+          ...client,
+        };
+
+        delete clonedClient.serviceTime;
+        delete clonedClient.transportation;
+        delete clonedClient.serviceAmount;
+        delete clonedClient.totalPrice;
+        delete clonedClient.paymentMethod;
+        delete clonedClient.cashReceivedBy;
+        delete clonedClient.invoiceLinks;
+        delete clonedClient.invoiceLink;
+        delete clonedClient.invoiceId;
+
+        return clonedClient;
+      });
+  }
+
   // منع نسخ ارتباط الزيارة المنزلية إلى موعد مختلف بالخطأ
   delete clonedRow.householdGroupId;
   delete clonedRow.householdRole;
@@ -16419,18 +16456,6 @@ const handleScheduleRowAction = (rowIndex, action) => {
   }
 
   if (action === "copy") {
-    if (
-      rowHasIssuedInvoice(
-        currentRow
-      )
-    ) {
-      alert(
-        "لا يمكن نسخ صف صدرت له فاتورة نهائية. أنشئ موعدًا جديدًا وأدخل بياناته بشكل مستقل."
-      );
-
-      return;
-    }
-
     setScheduleCopiedRow(
       cloneScheduleRowWithoutTime(
         currentRow
