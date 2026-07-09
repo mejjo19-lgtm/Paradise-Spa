@@ -18242,31 +18242,87 @@ const normalizeOrderLabelForStats = (orderValue) =>
       "Bank Transfer": 0,
     };
 
+    const addPaymentAmountToReport = (
+      method,
+      amount
+    ) => {
+      const cleanMethod =
+        String(method || "").trim();
+
+      const safeAmount =
+        Number(amount || 0);
+
+      if (
+        !Number.isFinite(safeAmount) ||
+        safeAmount <= 0
+      ) {
+        return;
+      }
+
+      if (
+        paymentTotals[cleanMethod] !==
+        undefined
+      ) {
+        paymentTotals[cleanMethod] +=
+          safeAmount;
+      }
+    };
+
+    const addRowPaymentToReport = (
+      paymentRow = {}
+    ) => {
+      const paymentMethod =
+        String(
+          paymentRow.paymentMethod || ""
+        ).trim();
+
+      if (
+        paymentMethod ===
+        "Split Payment"
+      ) {
+        const paymentBreakdown =
+          Array.isArray(
+            paymentRow.paymentBreakdown
+          )
+            ? paymentRow.paymentBreakdown
+            : [];
+
+        paymentBreakdown.forEach(
+          (paymentEntry) => {
+            addPaymentAmountToReport(
+              paymentEntry.method,
+              parseAmount(
+                paymentEntry.amount
+              )
+            );
+          }
+        );
+
+        return;
+      }
+
+      const amount =
+        parseAmount(
+          paymentRow.serviceAmount
+        ) +
+        parseAmount(
+          paymentRow.transportation
+        );
+
+      addPaymentAmountToReport(
+        paymentMethod,
+        amount
+      );
+    };
+
     rows.forEach((row) => {
       if (nonRevenueStatuses.includes(row.status)) return;
 
-      const amount =
-        parseAmount(row.serviceAmount) +
-        parseAmount(row.transportation);
-
-      const method = row.paymentMethod || "";
-
-      if (paymentTotals[method] !== undefined) {
-        paymentTotals[method] += amount;
-      }
+      addRowPaymentToReport(row);
     });
 
     activeHouseholdClients.forEach((extraClient) => {
-      const amount =
-        parseAmount(extraClient.serviceAmount) +
-        parseAmount(extraClient.transportation);
-
-      const method =
-        extraClient.paymentMethod || "";
-
-      if (paymentTotals[method] !== undefined) {
-        paymentTotals[method] += amount;
-      }
+      addRowPaymentToReport(extraClient);
     });
 
     const servicesTotals = {
