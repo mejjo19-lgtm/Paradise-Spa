@@ -2092,48 +2092,130 @@ if (!cacheLoaded) {
 }, [authReady, isLoggedIn]);
 
 useEffect(() => {
-  if (!authReady || !isLoggedIn) return;
+  if (
+    !authReady ||
+    !isLoggedIn
+  ) {
+    setClientStatusRows([]);
+    setClientStatusesLoading(false);
+    setClientStatusesError("");
+
+    return undefined;
+  }
 
   fetchSharedClientLists();
 
-  const sharedListsPolling = setInterval(() => {
-    fetchSharedClientLists();
-  }, 86400000);
+  const sharedListsPolling =
+    setInterval(() => {
+      fetchSharedClientLists();
+    }, 86400000);
 
-  const referralsChannel = supabase
-    .channel("referred-clients-sync")
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "referred_clients" },
-      applyReferralChangeFromRealtime
-    )
-    .subscribe();
+  let unifiedReloadTimer =
+    null;
 
-  const potentialChannel = supabase
-    .channel("potential-clients-sync")
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "potential_clients" },
-      applyPotentialChangeFromRealtime
-    )
-    .subscribe();
+  const scheduleUnifiedStatusReload =
+    () => {
+      if (unifiedReloadTimer) {
+        clearTimeout(
+          unifiedReloadTimer
+        );
+      }
+
+      unifiedReloadTimer =
+        setTimeout(
+          () => {
+            fetchUnifiedClientStatuses();
+          },
+          250
+        );
+    };
+
+  const unifiedClientsChannel =
+    supabase
+      .channel(
+        "unified-client-status-sync"
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table:
+            "client_referral_links",
+        },
+        scheduleUnifiedStatusReload
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table:
+            "client_service_history",
+        },
+        scheduleUnifiedStatusReload
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "clients",
+        },
+        scheduleUnifiedStatusReload
+      )
+      .subscribe(
+        (status) => {
+          if (
+            status ===
+              "CHANNEL_ERROR" ||
+            status ===
+              "TIMED_OUT"
+          ) {
+            console.error(
+              "Unified client status realtime error:",
+              status
+            );
+          }
+        }
+      );
 
   const giftChannel = supabase
     .channel("gift-clients-sync")
     .on(
       "postgres_changes",
-      { event: "*", schema: "public", table: "gift_clients" },
+      {
+        event: "*",
+        schema: "public",
+        table: "gift_clients",
+      },
       applyGiftChangeFromRealtime
     )
     .subscribe();
 
   return () => {
-    clearInterval(sharedListsPolling);
-    supabase.removeChannel(referralsChannel);
-    supabase.removeChannel(potentialChannel);
-    supabase.removeChannel(giftChannel);
+    clearInterval(
+      sharedListsPolling
+    );
+
+    if (unifiedReloadTimer) {
+      clearTimeout(
+        unifiedReloadTimer
+      );
+    }
+
+    supabase.removeChannel(
+      unifiedClientsChannel
+    );
+
+    supabase.removeChannel(
+      giftChannel
+    );
   };
-}, [authReady, isLoggedIn]);
+}, [
+  authReady,
+  isLoggedIn,
+]);
 
 /*
   فتح التقويم من كامل خانة التاريخ
@@ -2239,6 +2321,16 @@ const normalizeClientRecord = (client) => ({
     client.loyalty_card_name || "",
 
   phone: client.phone || "",
+
+  /*
+    الرقم الثانوي مخصص للبحث فقط.
+
+    لا يُستخدم في ربط المواعيد أو
+    الفواتير أو واتساب أو كشف التكرار.
+  */
+  secondaryPhone:
+    client.secondary_phone || "",
+
   address: client.address || "",
   visits: Number(client.visits || 0),
   frame: Boolean(client.frame),
@@ -2254,12 +2346,9 @@ const normalizeClientRecord = (client) => ({
     client.last_contacted_by_name || "",
   last_contacted_by_auth_user_id:
     client.last_contacted_by_auth_user_id || "",
-  referrals: Array.isArray(client.referrals)
-    ? client.referrals
-    : [],
 });
 
-const CLIENTS_CACHE_KEY = "paradise-clients-cache";
+const CLIENTS_CACHE_KEY = "paradise-clients-cache-v2";
 const CLIENTS_CACHE_MAX_AGE = 30 * 60 * 1000;
 
 const loadClientsFromCache = () => {
@@ -2316,7 +2405,7 @@ async function fetchClientsWithSupabaseClient() {
     const { data, error } = await supabase
       .from("clients")
       .select(
-        "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id"
+        "id,name,arabic_name,loyalty_card_name,phone,secondary_phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id"
       )
       .order("id", { ascending: false })
       .range(from, to);
@@ -2359,7 +2448,7 @@ async function fetchClientsWithRestApi() {
 
   while (hasMore) {
     const response = await fetch(
-      `${supabaseUrl}/rest/v1/clients?select=id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id&order=id.desc&limit=${pageSize}&offset=${offset}`,
+      `${supabaseUrl}/rest/v1/clients?select=id,name,arabic_name,loyalty_card_name,phone,secondary_phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id&order=id.desc&limit=${pageSize}&offset=${offset}`,
       {
         headers: {
           apikey: supabaseKey,
@@ -2415,55 +2504,109 @@ async function fetchClients() {
     }
   }
 }
-async function fetchManualReferrals() {
-  const { data, error } = await supabase
-    .from("referred_clients")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .order("id", { ascending: false });
+const normalizeUnifiedClientStatusRecord = (
+  status
+) => ({
+  clientId:
+    Number(
+      status.client_id || 0
+    ),
+
+  isCustomer:
+    Boolean(
+      status.is_customer
+    ),
+
+  isPotential:
+    Boolean(
+      status.is_potential
+    ),
+
+  hasReferral:
+    Boolean(
+      status.has_referral
+    ),
+
+  isActiveReferral:
+    Boolean(
+      status.is_active_referral
+    ),
+
+  sourceClientId:
+    status.source_client_id ===
+      null ||
+    status.source_client_id ===
+      undefined
+      ? null
+      : Number(
+          status.source_client_id
+        ),
+
+  sourceClientName:
+    status.source_client_name || "",
+
+  referralCreatedAt:
+    status.referral_created_at || "",
+});
+
+
+async function fetchUnifiedClientStatuses() {
+  setClientStatusesLoading(
+    true
+  );
+
+  setClientStatusesError(
+    ""
+  );
+
+  const {
+    data,
+    error,
+  } = await supabase.rpc(
+    "paradise_get_unified_client_statuses"
+  );
 
   if (error) {
-    console.log(error);
-    return;
+    console.error(
+      "Unified client statuses load error:",
+      error
+    );
+
+    setClientStatusesError(
+      "تعذر تحميل تصنيف العملاء والترشيحات."
+    );
+
+    setClientStatusesLoading(
+      false
+    );
+
+    return false;
   }
 
-  setManualReferrals(
-    (data || []).map((referral) => ({
-      id: referral.id,
-      name: referral.name || "",
-      phone: referral.phone || "",
-      sourceClientId: referral.source_client_id || null,
-      sourceClientName: referral.source_client_name || "",
-      sourceClientPhone: referral.source_client_phone || "",
-      sourceReferralId: referral.source_referral_id || null,
-      createdAt: referral.created_at || "",
-      manual: true,
-    }))
+  const normalizedStatuses =
+    (data || [])
+      .map(
+        normalizeUnifiedClientStatusRecord
+      )
+      .filter(
+        (status) =>
+          Number.isInteger(
+            status.clientId
+          ) &&
+          status.clientId > 0
+      );
+
+  setClientStatusRows(
+    normalizedStatuses
   );
+
+  setClientStatusesLoading(
+    false
+  );
+
+  return normalizedStatuses;
 }
 
-async function fetchPotentialClients() {
-  const { data, error } = await supabase
-    .from("potential_clients")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .order("id", { ascending: false });
-
-  if (error) {
-    console.log(error);
-    return;
-  }
-
-  setPotentialClients(
-    (data || []).map((client) => ({
-      id: client.id,
-      name: client.name || "",
-      phone: client.phone || "",
-      status: client.status || "",
-      createdAt: client.created_at || "",
-    }))
-  );
-}
 
 async function fetchGiftClients() {
   const { data, error } = await supabase
@@ -2494,26 +2637,6 @@ async function fetchGiftClients() {
 }
 
 
-const normalizeManualReferralRecord = (referral) => ({
-  id: referral.id,
-  name: referral.name || "",
-  phone: referral.phone || "",
-  sourceClientId: referral.source_client_id || null,
-  sourceClientName: referral.source_client_name || "",
-  sourceClientPhone: referral.source_client_phone || "",
-  sourceReferralId: referral.source_referral_id || null,
-  createdAt: referral.created_at || "",
-  manual: true,
-});
-
-const normalizePotentialClientRecord = (client) => ({
-  id: client.id,
-  name: client.name || "",
-  phone: client.phone || "",
-  status: client.status || "إلغاء موعد",
-  createdAt: client.created_at || "",
-});
-
 const normalizeGiftClientRecord = (gift) => ({
   id: gift.id,
   fromName: gift.from_name || "",
@@ -2527,88 +2650,122 @@ const normalizeGiftClientRecord = (gift) => ({
   createdAt: gift.created_at || "",
 });
 
-const upsertByIdNewestFirst = (setter, nextRecord) => {
+
+const upsertByIdNewestFirst = (
+  setter,
+  nextRecord
+) => {
   setter((prev) => {
-    const exists = prev.some((item) => String(item.id) === String(nextRecord.id));
+    const exists = prev.some(
+      (item) =>
+        String(item.id) ===
+        String(nextRecord.id)
+    );
+
     const nextItems = exists
-      ? prev.map((item) => String(item.id) === String(nextRecord.id) ? nextRecord : item)
+      ? prev.map((item) =>
+          String(item.id) ===
+          String(nextRecord.id)
+            ? nextRecord
+            : item
+        )
       : [nextRecord, ...prev];
 
-    return nextItems.sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
+    return nextItems.sort(
+      (a, b) =>
+        Number(b.id || 0) -
+        Number(a.id || 0)
+    );
   });
 };
 
-const removeById = (setter, removedRecord) => {
+
+const removeById = (
+  setter,
+  removedRecord
+) => {
   if (!removedRecord?.id) return;
 
   setter((prev) =>
-    prev.filter((item) => String(item.id) !== String(removedRecord.id))
+    prev.filter(
+      (item) =>
+        String(item.id) !==
+        String(removedRecord.id)
+    )
   );
 };
 
-const applyReferralChangeFromRealtime = (payload) => {
-  if (payload.eventType === "DELETE") {
-    removeById(setManualReferrals, payload.old);
-    return;
-  }
 
-  if (payload.new) {
-    upsertByIdNewestFirst(
-      setManualReferrals,
-      normalizeManualReferralRecord(payload.new)
+const applyGiftChangeFromRealtime = (
+  payload
+) => {
+  if (
+    payload.eventType ===
+    "DELETE"
+  ) {
+    removeById(
+      setGiftClients,
+      payload.old
     );
-  }
-};
 
-const applyPotentialChangeFromRealtime = (payload) => {
-  if (payload.eventType === "DELETE") {
-    removeById(setPotentialClients, payload.old);
-    return;
-  }
-
-  if (payload.new) {
-    upsertByIdNewestFirst(
-      setPotentialClients,
-      normalizePotentialClientRecord(payload.new)
-    );
-  }
-};
-
-const applyGiftChangeFromRealtime = (payload) => {
-  if (payload.eventType === "DELETE") {
-    removeById(setGiftClients, payload.old);
     return;
   }
 
   if (payload.new) {
     upsertByIdNewestFirst(
       setGiftClients,
-      normalizeGiftClientRecord(payload.new)
+      normalizeGiftClientRecord(
+        payload.new
+      )
     );
   }
 };
 
 
 function fetchSharedClientLists() {
-  fetchManualReferrals();
-  fetchPotentialClients();
+  fetchUnifiedClientStatuses();
   fetchGiftClients();
 }
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+
+  /*
+    رقم اختياري للبحث فقط.
+
+    لا يدخل في ربط المواعيد أو الفواتير
+    أو واتساب أو منع تكرار العميلة.
+  */
+  const [
+    secondaryPhone,
+    setSecondaryPhone,
+  ] = useState("");
+
   const [address, setAddress] = useState("");
   const [search, setSearch] = useState("");
   const [clientsSearch, setClientsSearch] = useState("");
   const [clientsSortMode, setClientsSortMode] = useState("default");
   const [loyaltyVisitsFilter, setLoyaltyVisitsFilter] = useState("");
   const [referralsSearch, setReferralsSearch] = useState("");
-  const [referralsCustomerFilter, setReferralsCustomerFilter] = useState("all");
-  const [manualReferrals, setManualReferrals] = useState([]);
-  const [showReferralForm, setShowReferralForm] = useState(false);
-  const [referralName, setReferralName] = useState("");
-  const [referralPhone, setReferralPhone] = useState("");
-  const [referralSourceName, setReferralSourceName] = useState("");
-  const [referralSourcePhone, setReferralSourcePhone] = useState("");
+
+  const [
+    referralsCustomerFilter,
+    setReferralsCustomerFilter,
+  ] = useState("active");
+
+  const [
+    clientStatusRows,
+    setClientStatusRows,
+  ] = useState([]);
+
+  const [
+    clientStatusesLoading,
+    setClientStatusesLoading,
+  ] = useState(false);
+
+  const [
+    clientStatusesError,
+    setClientStatusesError,
+  ] = useState("");
   const [dashboardSearch, setDashboardSearch] = useState("");
   const [showDashboardSearchResults, setShowDashboardSearchResults] = useState(false);
   const [appointmentStaffSelections, setAppointmentStaffSelections] = useState({});
@@ -2676,13 +2833,12 @@ function fetchSharedClientLists() {
   };
 
   const [currentDate, setCurrentDate] = useState(() => getCurrentLocalDate());
-  const [potentialClients, setPotentialClients] = useState([]);
   const [potentialSearch, setPotentialSearch] = useState("");
-  const [potentialCustomerFilter, setPotentialCustomerFilter] = useState("all");
-  const [showPotentialForm, setShowPotentialForm] = useState(false);
-  const [potentialName, setPotentialName] = useState("");
-  const [potentialPhone, setPotentialPhone] = useState("");
-  const [potentialStatus, setPotentialStatus] = useState("");
+
+  const [
+    potentialCustomerFilter,
+    setPotentialCustomerFilter,
+  ] = useState("all");
 
   const [giftClients, setGiftClients] = useState([]);
   const [giftSearch, setGiftSearch] = useState("");
@@ -2700,11 +2856,6 @@ function fetchSharedClientLists() {
     cake: false,
   });
 
-  const [editingReferralId, setEditingReferralId] = useState(null);
-  const [editedReferralName, setEditedReferralName] = useState("");
-  const [editedReferralPhone, setEditedReferralPhone] = useState("");
-  const [editedReferralSourceName, setEditedReferralSourceName] = useState("");
-  const [editedReferralSourcePhone, setEditedReferralSourcePhone] = useState("");
 
   const [editingGiftId, setEditingGiftId] = useState(null);
   const [editedGiftFromName, setEditedGiftFromName] = useState("");
@@ -2718,10 +2869,7 @@ function fetchSharedClientLists() {
     cake: false,
   });
 
-  const [editingPotentialId, setEditingPotentialId] = useState(null);
-  const [editedPotentialName, setEditedPotentialName] = useState("");
-  const [editedPotentialPhone, setEditedPotentialPhone] = useState("");
-  const [editedPotentialStatus, setEditedPotentialStatus] = useState("");
+
 
   const todayDate = currentDate;
 
@@ -6350,16 +6498,80 @@ const deletePurchase = async (
   const [editingId, setEditingId] = useState(null);
   const [editedName, setEditedName] = useState("");
   const [editedPhone, setEditedPhone] = useState("");
+
+  const [
+    editedSecondaryPhone,
+    setEditedSecondaryPhone,
+  ] = useState("");
+
   const [editedAddress, setEditedAddress] = useState("");
 
-  const [profileNotes, setProfileNotes] = useState("");
+  /*
+    سجل ملاحظات العميلة الجديد.
+
+    كل ملاحظة سجل مستقل ولا يتم
+    استبدال الملاحظات السابقة.
+  */
+  const [
+    clientNoteHistory,
+    setClientNoteHistory,
+  ] = useState([]);
+
+  const [
+    clientNotesLoading,
+    setClientNotesLoading,
+  ] = useState(false);
+
+  const [
+    clientNotesError,
+    setClientNotesError,
+  ] = useState("");
+
+  const [
+    profileNoteDraft,
+    setProfileNoteDraft,
+  ] = useState("");
+
+  const [
+    profileNoteSaving,
+    setProfileNoteSaving,
+  ] = useState(false);
+
+  const [
+    profileNoteSaveError,
+    setProfileNoteSaveError,
+  ] = useState("");
+
   const [profileBlacklist, setProfileBlacklist] = useState(false);
   const [profileFrame, setProfileFrame] = useState(false);
   const [
     profileExcludeFromInactiveClients,
     setProfileExcludeFromInactiveClients,
   ] = useState(false);
-  const [profileReferrals, setProfileReferrals] = useState([]);
+  const [
+    profileReferrals,
+    setProfileReferrals,
+  ] = useState([]);
+
+  const [
+    profileReferralDraft,
+    setProfileReferralDraft,
+  ] = useState({
+    name: "",
+    primaryPhone: "",
+    secondaryPhone: "",
+    address: "",
+  });
+
+  const [
+    profileReferralSaving,
+    setProfileReferralSaving,
+  ] = useState(false);
+
+  const [
+    profileReferralError,
+    setProfileReferralError,
+  ] = useState("");
 
 
   const normalizeDigits = (value) => String(value || "").replace(/\D/g, "");
@@ -6435,6 +6647,11 @@ const deletePurchase = async (
         phone || ""
       );
 
+    const cleanSecondaryPhone =
+      formatSaudiPhoneForStorage(
+        secondaryPhone || ""
+      );
+
     const cleanAddress =
       String(
         address || ""
@@ -6460,15 +6677,42 @@ const deletePurchase = async (
       return;
     }
 
+    if (
+      cleanSecondaryPhone &&
+      normalizeDigits(
+        cleanSecondaryPhone
+      ).length < 9
+    ) {
+      alert(
+        "رقم الجوال الاختياري غير صحيح."
+      );
+
+      return;
+    }
+
+    if (
+      cleanSecondaryPhone &&
+      normalizeDigits(
+        cleanSecondaryPhone
+      ) ===
+        normalizeDigits(
+          cleanPhone
+        )
+    ) {
+      alert(
+        "رقم الجوال الاختياري مطابق للرقم الأساسي."
+      );
+
+      return;
+    }
+
     /*
-      الإضافة اليدوية تستخدم نفس الدالة
-      الآمنة المستخدمة في Send To.
+      نموذج إضافة العميلة فقط يستخدم V2
+      لحفظ الرقم الثانوي الاختياري.
 
-      نفس الاسم والجوال:
-      لا يُنشأ بروفايل مكرر.
-
-      اسم مختلف بنفس الجوال:
-      يظهر تأكيد لإنشاء بروفايل مستقل.
+      مسارات Send To داخل المواعيد لا
+      ترسل secondaryPhone وتبقى على
+      الدالة القديمة دون أي تغيير.
     */
     const safeClientResult =
       await findOrCreateClientSafely({
@@ -6480,6 +6724,9 @@ const deletePurchase = async (
 
         phone:
           cleanPhone,
+
+        secondaryPhone:
+          cleanSecondaryPhone,
 
         address:
           cleanAddress,
@@ -6503,6 +6750,7 @@ const deletePurchase = async (
 
     setName("");
     setPhone("");
+    setSecondaryPhone("");
     setAddress("");
     setShowForm(false);
     setShowGlobalClientForm(false);
@@ -6511,18 +6759,42 @@ const deletePurchase = async (
       !safeClientResult.created
     ) {
       alert(
-        "العميلة موجودة مسبقًا داخل عملائنا، لذلك لم يتم إنشاء بروفايل مكرر."
+        safeClientResult
+          .secondaryPhoneRequiresEdit
+          ? "العميلة موجودة مسبقًا داخل عملائنا. لم يتم تغيير الرقم الاختياري تلقائيًا؛ يمكن تعديله من جدول العملاء بصلاحية التعديل."
+          : "العميلة موجودة مسبقًا داخل عملائنا، لذلك لم يتم إنشاء بروفايل مكرر."
       );
     }
   };
 
   // ✏️ START EDIT CLIENT
   const startEditClient = (client) => {
-    if (!canEditData || !ensureSystemWritable()) return;
-    setEditingId(client.id);
-    setEditedName(client.name);
-    setEditedPhone(client.phone);
-    setEditedAddress(client.address || "");
+    if (
+      !canEditData ||
+      !ensureSystemWritable()
+    ) {
+      return;
+    }
+
+    setEditingId(
+      client.id
+    );
+
+    setEditedName(
+      client.name || ""
+    );
+
+    setEditedPhone(
+      client.phone || ""
+    );
+
+    setEditedSecondaryPhone(
+      client.secondaryPhone || ""
+    );
+
+    setEditedAddress(
+      client.address || ""
+    );
   };
 
   // 💾 SAVE EDIT CLIENT
@@ -6546,6 +6818,11 @@ const deletePurchase = async (
       const cleanPhone =
         formatSaudiPhoneForStorage(
           editedPhone || ""
+        );
+
+      const cleanSecondaryPhone =
+        formatSaudiPhoneForStorage(
+          editedSecondaryPhone || ""
         );
 
       const cleanAddress =
@@ -6586,19 +6863,48 @@ const deletePurchase = async (
         return;
       }
 
-      /*
-        تعديل الهوية ينفذ داخل قاعدة
-        البيانات بفحص ذرّي.
+      if (
+        cleanSecondaryPhone &&
+        normalizeDigits(
+          cleanSecondaryPhone
+        ).length < 9
+      ) {
+        alert(
+          "رقم الجوال الاختياري غير صحيح."
+        );
 
-        نفس الجوال مع اسم مختلف مسموح،
-        لكن الاسم والجوال نفسيهما في
-        بروفايل آخر غير مسموحين.
+        return;
+      }
+
+      if (
+        cleanSecondaryPhone &&
+        normalizeDigits(
+          cleanSecondaryPhone
+        ) ===
+          normalizeDigits(
+            cleanPhone
+          )
+      ) {
+        alert(
+          "رقم الجوال الاختياري مطابق للرقم الأساسي."
+        );
+
+        return;
+      }
+
+      /*
+        تعديل الهوية والرقم الثانوي ينفذ
+        داخل دالة V2 الآمنة وبصلاحية edit.
+
+        الرقم الثانوي يبقى للبحث فقط ولا
+        يدخل في كشف التكرار أو المواعيد
+        أو الفواتير أو واتساب.
       */
       const {
         data,
         error,
       } = await supabase.rpc(
-        "paradise_update_client_identity",
+        "paradise_update_client_identity_v2",
         {
           p_client_id:
             numericClientId,
@@ -6611,12 +6917,15 @@ const deletePurchase = async (
 
           p_address:
             cleanAddress,
+
+          p_secondary_phone:
+            cleanSecondaryPhone,
         }
       );
 
       if (error) {
         console.error(
-          "Safe client edit RPC error:",
+          "Safe client V2 edit RPC error:",
           error
         );
 
@@ -6632,7 +6941,7 @@ const deletePurchase = async (
         !data?.client?.id
       ) {
         console.error(
-          "Safe client edit rejected:",
+          "Safe client V2 edit rejected:",
           data
         );
 
@@ -6650,19 +6959,28 @@ const deletePurchase = async (
         );
 
       setClients(
-        (previousClients) =>
-          previousClients.map(
-            (client) =>
-              String(client.id) ===
-              String(nextClient.id)
-                ? nextClient
-                : client
-          )
+        (previousClients) => {
+          const nextClients =
+            previousClients.map(
+              (client) =>
+                String(client.id) ===
+                String(nextClient.id)
+                  ? nextClient
+                  : client
+            );
+
+          saveClientsToCache(
+            nextClients
+          );
+
+          return nextClients;
+        }
       );
 
       setEditingId(null);
       setEditedName("");
       setEditedPhone("");
+      setEditedSecondaryPhone("");
       setEditedAddress("");
     };
 
@@ -6671,6 +6989,7 @@ const deletePurchase = async (
     setEditingId(null);
     setEditedName("");
     setEditedPhone("");
+    setEditedSecondaryPhone("");
     setEditedAddress("");
   };
 
@@ -6764,153 +7083,843 @@ const deletePurchase = async (
     );
   };
 
-  const getSharedReferralsForClient = async (clientId) => {
-    const { data, error } = await supabase
-      .from("referred_clients")
-      .select("*")
-      .eq("source_client_id", String(clientId))
-      .order("created_at", { ascending: false })
-      .order("id", { ascending: false });
+  async function loadProfileReferralsForClient(
+    clientId,
+    statusRowsOverride = null
+  ) {
+    const numericClientId =
+      Number(clientId);
 
-    if (error) {
-      console.log("Profile referrals load error:", error);
+    if (
+      !Number.isInteger(
+        numericClientId
+      ) ||
+      numericClientId <= 0
+    ) {
+      setProfileReferrals([]);
+
       return [];
     }
 
-    return (data || []).map((referral) => ({
-      id: referral.source_referral_id || referral.id || Date.now(),
-      name: referral.name || "",
-      phone: referral.phone || "",
-    }));
-  };
+    const {
+      data: linkRows,
+      error: linkError,
+    } = await supabase
+      .from(
+        "client_referral_links"
+      )
+      .select(
+        [
+          "id",
+          "referred_client_id",
+          "source_client_id",
+          "created_by_auth_user_id",
+          "created_by_name",
+          "created_at",
+          "updated_at",
+        ].join(",")
+      )
+      .eq(
+        "source_client_id",
+        numericClientId
+      )
+      .order(
+        "created_at",
+        {
+          ascending: false,
+        }
+      );
 
-  const syncProfileReferralsToSharedList = async (clientId, referrals) => {
-    const sourceClient = clients.find((client) => String(client.id) === String(clientId));
-    const sourceName = sourceClient?.name || selectedClient?.name || "";
-    const sourcePhone = sourceClient?.phone || selectedClient?.phone || "";
+    if (linkError) {
+      console.error(
+        "Profile referral links load error:",
+        linkError
+      );
 
-    const { data: existingRows, error: loadError } = await supabase
-      .from("referred_clients")
-      .select("*")
-      .eq("source_client_id", String(clientId));
+      setProfileReferralError(
+        "تعذر تحميل سجل الترشيحات."
+      );
 
-    if (loadError) {
-      console.log("Profile referrals load before sync error:", loadError);
-      return false;
+      setProfileReferrals([]);
+
+      return [];
     }
 
-    const cleanReferrals = referrals
-      .filter((referral) => referral.name || referral.phone)
-      .map((referral, index) => ({
-        id: String(referral.id || `${Date.now()}-${index}`),
-        name: referral.name || "",
-        phone: formatSaudiPhoneForStorage(referral.phone || ""),
-      }));
+    const referredClientIds = [
+      ...new Set(
+        (linkRows || [])
+          .map(
+            (link) =>
+              Number(
+                link.referred_client_id
+              )
+          )
+          .filter(
+            (referredClientId) =>
+              Number.isInteger(
+                referredClientId
+              ) &&
+              referredClientId > 0
+          )
+      ),
+    ];
 
-    const existingBySourceId = new Map(
-      (existingRows || []).map((row) => [
-        String(row.source_referral_id || row.id),
-        row,
-      ])
+    if (
+      referredClientIds.length ===
+      0
+    ) {
+      setProfileReferrals([]);
+
+      return [];
+    }
+
+    const {
+      data: referredClientRows,
+      error: clientsError,
+    } = await supabase
+      .from("clients")
+      .select(
+        "id,name,arabic_name,loyalty_card_name,phone,secondary_phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id"
+      )
+      .in(
+        "id",
+        referredClientIds
+      );
+
+    if (clientsError) {
+      console.error(
+        "Profile referred clients load error:",
+        clientsError
+      );
+
+      setProfileReferralError(
+        "تعذر تحميل بروفايلات العميلات المرشحات."
+      );
+
+      setProfileReferrals([]);
+
+      return [];
+    }
+
+    const referredClientsById =
+      new Map(
+        (referredClientRows || [])
+          .map(
+            normalizeClientRecord
+          )
+          .map(
+            (referredClient) => [
+              String(
+                referredClient.id
+              ),
+
+              referredClient,
+            ]
+          )
+      );
+
+    const effectiveStatusRows =
+      Array.isArray(
+        statusRowsOverride
+      )
+        ? statusRowsOverride
+        : clientStatusRows;
+
+    const statusByClientId =
+      new Map(
+        effectiveStatusRows.map(
+          (status) => [
+            String(
+              status.clientId
+            ),
+
+            status,
+          ]
+        )
+      );
+
+    const nextReferrals =
+      (linkRows || [])
+        .map((link) => {
+          const referredClient =
+            referredClientsById.get(
+              String(
+                link.referred_client_id
+              )
+            );
+
+          if (!referredClient) {
+            return null;
+          }
+
+          const referralStatus =
+            statusByClientId.get(
+              String(
+                link.referred_client_id
+              )
+            );
+
+          return {
+            id:
+              link.id,
+
+            clientId:
+              referredClient.id,
+
+            name:
+              referredClient.name || "",
+
+            phone:
+              referredClient.phone || "",
+
+            secondaryPhone:
+              referredClient.secondaryPhone ||
+              "",
+
+            address:
+              referredClient.address || "",
+
+            sourceClientId:
+              Number(
+                link.source_client_id
+              ),
+
+            createdByName:
+              link.created_by_name || "",
+
+            createdAt:
+              link.created_at || "",
+
+            isCustomer:
+              Boolean(
+                referralStatus?.isCustomer
+              ),
+
+            isPotential:
+              referralStatus
+                ? Boolean(
+                    referralStatus.isPotential
+                  )
+                : false,
+
+            isActiveReferral:
+              referralStatus
+                ? Boolean(
+                    referralStatus.isActiveReferral
+                  )
+                : true,
+
+            client:
+              referredClient,
+          };
+        })
+        .filter(Boolean);
+
+    setProfileReferrals(
+      nextReferrals
     );
 
-    const nextSourceIds = new Set(cleanReferrals.map((referral) => referral.id));
-
-    const rowsToDelete = (existingRows || []).filter(
-      (row) => !nextSourceIds.has(String(row.source_referral_id || row.id))
+    setProfileReferralError(
+      ""
     );
 
-    if (rowsToDelete.length > 0) {
-      const { error: deleteError } = await supabase
-        .from("referred_clients")
-        .delete()
-        .in(
-          "id",
-          rowsToDelete.map((row) => row.id)
+    return nextReferrals;
+  };
+
+  useEffect(() => {
+    if (
+      !authReady ||
+      !isLoggedIn ||
+      screen !==
+        "clientProfile" ||
+      !selectedClientId
+    ) {
+      if (
+        screen !==
+        "clientProfile"
+      ) {
+        setProfileReferrals([]);
+      }
+
+      return undefined;
+    }
+
+    let effectActive =
+      true;
+
+    const refreshProfileReferrals =
+      async () => {
+        const nextReferrals =
+          await loadProfileReferralsForClient(
+            selectedClientId,
+            clientStatusRows
+          );
+
+        if (!effectActive) {
+          return;
+        }
+
+        setProfileReferrals(
+          nextReferrals
+        );
+      };
+
+    refreshProfileReferrals();
+
+    return () => {
+      effectActive =
+        false;
+    };
+  }, [
+    authReady,
+    isLoggedIn,
+    screen,
+    selectedClientId,
+    clientStatusRows,
+  ]);
+
+  const normalizeClientNoteRecord = (
+    note
+  ) => ({
+    id:
+      note.id || "",
+
+    clientId:
+      note.client_id,
+
+    noteText:
+      note.note_text || "",
+
+    createdByAuthUserId:
+      note.created_by_auth_user_id ||
+      "",
+
+    createdByName:
+      note.created_by_name || "",
+
+    source:
+      note.source || "manual",
+
+    sourceKey:
+      note.source_key || "",
+
+    createdAt:
+      note.created_at || "",
+  });
+
+
+  const sortClientNotesNewestFirst = (
+    noteRows
+  ) =>
+    [...(noteRows || [])].sort(
+      (
+        firstNote,
+        secondNote
+      ) => {
+        const dateComparison =
+          String(
+            secondNote.createdAt || ""
+          ).localeCompare(
+            String(
+              firstNote.createdAt || ""
+            )
+          );
+
+        if (dateComparison !== 0) {
+          return dateComparison;
+        }
+
+        return String(
+          secondNote.id || ""
+        ).localeCompare(
+          String(
+            firstNote.id || ""
+          )
+        );
+      }
+    );
+
+
+  const upsertClientNoteInHistory = (
+    nextNote
+  ) => {
+    if (!nextNote?.id) {
+      return;
+    }
+
+    setClientNoteHistory(
+      (previousNotes) =>
+        sortClientNotesNewestFirst([
+          ...previousNotes.filter(
+            (note) =>
+              String(note.id) !==
+              String(nextNote.id)
+          ),
+
+          nextNote,
+        ])
+    );
+  };
+
+
+  const formatClientNoteDate = (
+    value
+  ) => {
+    const noteDate =
+      new Date(
+        value || ""
+      );
+
+    if (
+      Number.isNaN(
+        noteDate.getTime()
+      )
+    ) {
+      return "التاريخ غير متوفر";
+    }
+
+    return new Intl.DateTimeFormat(
+      "ar-SA-u-ca-gregory",
+      {
+        timeZone:
+          "Asia/Riyadh",
+
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }
+    ).format(
+      noteDate
+    );
+  };
+
+
+  const openClientProfile = async (
+    client
+  ) => {
+    if (!client?.id) {
+      return;
+    }
+
+    setSelectedClientId(
+      client.id
+    );
+
+    setProfileNoteDraft(
+      ""
+    );
+
+    setProfileNoteSaveError(
+      ""
+    );
+
+    setProfileReferralDraft({
+      name: "",
+      primaryPhone: "",
+      secondaryPhone: "",
+      address: "",
+    });
+
+    setProfileReferralError(
+      ""
+    );
+
+    const {
+      data: fullClient,
+      error,
+    } = await supabase
+      .from("clients")
+      .select("*")
+      .eq(
+        "id",
+        client.id
+      )
+      .single();
+
+    if (error) {
+      console.log(
+        "Full client load error:",
+        error
+      );
+
+      return;
+    }
+
+    setProfileBlacklist(
+      fullClient?.blacklist ||
+      false
+    );
+
+    setProfileFrame(
+      fullClient?.frame ||
+      false
+    );
+
+    setProfileExcludeFromInactiveClients(
+      Boolean(
+        fullClient
+          ?.exclude_from_inactive_clients
+      )
+    );
+
+    await loadProfileReferralsForClient(
+      client.id
+    );
+
+    goToScreen(
+      "clientProfile"
+    );
+  };
+
+
+  useEffect(() => {
+    if (
+      !authReady ||
+      !isLoggedIn ||
+      screen !==
+        "clientProfile" ||
+      !selectedClientId
+    ) {
+      setClientNoteHistory(
+        []
+      );
+
+      setClientNotesLoading(
+        false
+      );
+
+      setClientNotesError(
+        ""
+      );
+
+      return undefined;
+    }
+
+    let effectActive =
+      true;
+
+
+    const loadClientNotes =
+      async () => {
+        setClientNotesLoading(
+          true
         );
 
-      if (deleteError) {
-        console.log("Profile referrals delete removed error:", deleteError);
+        setClientNotesError(
+          ""
+        );
+
+        const {
+          data,
+          error,
+        } = await supabase
+          .from(
+            "client_notes"
+          )
+          .select(
+            [
+              "id",
+              "client_id",
+              "note_text",
+              "created_by_auth_user_id",
+              "created_by_name",
+              "source",
+              "source_key",
+              "created_at",
+            ].join(",")
+          )
+          .eq(
+            "client_id",
+            selectedClientId
+          )
+          .order(
+            "created_at",
+            {
+              ascending: false,
+            }
+          )
+          .order(
+            "id",
+            {
+              ascending: false,
+            }
+          );
+
+        if (!effectActive) {
+          return;
+        }
+
+        if (error) {
+          console.error(
+            "Client notes load error:",
+            error
+          );
+
+          setClientNoteHistory(
+            []
+          );
+
+          setClientNotesError(
+            "تعذر تحميل سجل الملاحظات."
+          );
+
+          setClientNotesLoading(
+            false
+          );
+
+          return;
+        }
+
+        setClientNoteHistory(
+          sortClientNotesNewestFirst(
+            (data || []).map(
+              normalizeClientNoteRecord
+            )
+          )
+        );
+
+        setClientNotesLoading(
+          false
+        );
+      };
+
+
+    const handleClientNoteChange =
+      (payload) => {
+        const changedClientId =
+          payload?.new?.client_id ??
+          payload?.old?.client_id;
+
+        if (
+          changedClientId !==
+            null &&
+          changedClientId !==
+            undefined &&
+          String(
+            changedClientId
+          ) !==
+            String(
+              selectedClientId
+            )
+        ) {
+          return;
+        }
+
+        if (
+          payload.eventType ===
+          "DELETE"
+        ) {
+          const removedNoteId =
+            payload.old?.id;
+
+          if (!removedNoteId) {
+            return;
+          }
+
+          setClientNoteHistory(
+            (previousNotes) =>
+              previousNotes.filter(
+                (note) =>
+                  String(note.id) !==
+                  String(
+                    removedNoteId
+                  )
+              )
+          );
+
+          return;
+        }
+
+        if (payload.new) {
+          upsertClientNoteInHistory(
+            normalizeClientNoteRecord(
+              payload.new
+            )
+          );
+        }
+      };
+
+
+    const clientNotesChannel =
+      supabase
+        .channel(
+          `client-notes-sync-${selectedClientId}`
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table:
+              "client_notes",
+          },
+          handleClientNoteChange
+        )
+        .subscribe(
+          (status) => {
+            if (
+              status ===
+                "CHANNEL_ERROR" ||
+              status ===
+                "TIMED_OUT"
+            ) {
+              console.error(
+                "Client notes realtime error:",
+                status
+              );
+            }
+          }
+        );
+
+
+    loadClientNotes();
+
+
+    return () => {
+      effectActive =
+        false;
+
+      supabase.removeChannel(
+        clientNotesChannel
+      );
+    };
+  }, [
+    authReady,
+    isLoggedIn,
+    screen,
+    selectedClientId,
+  ]);
+
+
+  const saveProfileNote =
+    async () => {
+      if (
+        !ensureSystemWritable() ||
+        !canEditData ||
+        profileNoteSaving
+      ) {
         return false;
       }
-    }
 
-    for (const referral of cleanReferrals) {
-      const existingReferral = existingBySourceId.get(referral.id);
+      const numericClientId =
+        Number(
+          selectedClientId
+        );
 
-      if (existingReferral) {
-        const { error: updateError } = await supabase
-          .from("referred_clients")
-          .update({
-            name: referral.name,
-            phone: referral.phone,
-            source_client_name: sourceName,
-            source_client_phone: sourcePhone,
-            source_referral_id: referral.id,
-          })
-          .eq("id", existingReferral.id);
+      const cleanNote =
+        String(
+          profileNoteDraft ||
+          ""
+        ).trim();
 
-        if (updateError) {
-          console.log("Profile referral update error:", updateError);
-          return false;
-        }
-      } else {
-        const { error: insertError } = await supabase
-          .from("referred_clients")
-          .insert([
-            {
-              name: referral.name,
-              phone: referral.phone,
-              source_client_id: String(clientId),
-              source_client_name: sourceName,
-              source_client_phone: sourcePhone,
-              source_referral_id: referral.id,
-            },
-          ]);
+      if (
+        !Number.isInteger(
+          numericClientId
+        ) ||
+        numericClientId <= 0
+      ) {
+        setProfileNoteSaveError(
+          "تعذر تحديد بروفايل العميلة."
+        );
 
-        if (insertError) {
-          console.log("Profile referral insert error:", insertError);
-          return false;
-        }
+        return false;
       }
-    }
 
-    return true;
-  };
+      if (!cleanNote) {
+        setProfileNoteSaveError(
+          "اكتبي الملاحظة أولًا."
+        );
 
-  const openClientProfile = async (client) => {
-  setSelectedClientId(client.id);
+        return false;
+      }
 
-  const { data: fullClient, error } = await supabase
-    .from("clients")
-    .select("*")
-    .eq("id", client.id)
-    .single();
+      if (
+        cleanNote.length >
+        5000
+      ) {
+        setProfileNoteSaveError(
+          "الملاحظة طويلة جدًا. الحد الأقصى 5000 حرف."
+        );
 
-  if (error) {
-    console.log("Full client load error:", error);
-    return;
-  }
+        return false;
+      }
 
-  setProfileNotes(fullClient?.notes || "");
-  setProfileBlacklist(fullClient?.blacklist || false);
-  setProfileFrame(fullClient?.frame || false);
-  setProfileExcludeFromInactiveClients(
-    Boolean(fullClient?.exclude_from_inactive_clients)
-  );
+      setProfileNoteSaving(
+        true
+      );
 
-  const sharedReferrals = await getSharedReferralsForClient(client.id);
+      setProfileNoteSaveError(
+        ""
+      );
 
-  setProfileReferrals(
-  sharedReferrals.length > 0
-    ? sharedReferrals
-    : Array.isArray(fullClient?.referrals)
-    ? fullClient.referrals
-    : []
-);
+      try {
+        const {
+          data,
+          error,
+        } = await supabase.rpc(
+          "paradise_add_client_note",
+          {
+            p_client_id:
+              numericClientId,
 
-goToScreen("clientProfile");
-};
+            p_note_text:
+              cleanNote,
+          }
+        );
+
+        if (error) {
+          console.error(
+            "Client note RPC error:",
+            error
+          );
+
+          setProfileNoteSaveError(
+            "تعذر حفظ الملاحظة. تأكد من الاتصال وجرب مرة أخرى."
+          );
+
+          return false;
+        }
+
+        if (
+          !data?.success ||
+          !data?.note?.id
+        ) {
+          console.error(
+            "Client note RPC rejected:",
+            data
+          );
+
+          setProfileNoteSaveError(
+            data?.message ||
+            "تعذر حفظ الملاحظة."
+          );
+
+          return false;
+        }
+
+        upsertClientNoteInHistory(
+          normalizeClientNoteRecord(
+            data.note
+          )
+        );
+
+        setProfileNoteDraft(
+          ""
+        );
+
+        setProfileNoteSaveError(
+          ""
+        );
+
+        return true;
+      } finally {
+        setProfileNoteSaving(
+          false
+        );
+      }
+    };
 
   // 🎫 UPDATE LOYALTY CARD NAME
   const updateClientLoyaltyCardName = async (
@@ -6962,7 +7971,7 @@ goToScreen("clientProfile");
     } = await supabase
       .from("clients")
       .select(
-        "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id"
+        "id,name,arabic_name,loyalty_card_name,phone,secondary_phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id"
       )
       .eq(
         "id",
@@ -7045,27 +8054,41 @@ goToScreen("clientProfile");
       return false;
     }
 
+    /*
+      إذا كانت هناك ملاحظة مكتوبة ولم
+      تضغط الموظفة زر إضافتها، نحفظها
+      أولًا حتى لا تضيع عند إغلاق البروفايل.
+    */
+    if (
+      String(
+        profileNoteDraft ||
+        ""
+      ).trim()
+    ) {
+      const noteSaved =
+        await saveProfileNote();
+
+      if (!noteSaved) {
+        return false;
+      }
+    }
+
     const shouldCloseAfterSave =
       closeAfterSave !== false;
 
-    const updatedReferrals =
-      profileReferrals.filter(
-        (referral) =>
-          String(
-            referral.name || ""
-          ).trim() ||
-          String(
-            referral.phone || ""
-          ).trim()
-      );
+    /*
+      الترشيحات لا تُحفظ مع بيانات
+      البروفايل بعد الآن.
 
+      كل ترشيح يُنشأ فورًا عبر
+      paradise_create_client_referral
+      ويصبح سجلًا دائمًا مستقلًا.
+    */
     const profileUpdate = {
-      notes: profileNotes,
       blacklist: profileBlacklist,
       frame: profileFrame,
       exclude_from_inactive_clients:
         profileExcludeFromInactiveClients,
-      referrals: updatedReferrals,
     };
 
     const clientIdToSave =
@@ -7074,6 +8097,7 @@ goToScreen("clientProfile");
     const runProfileSave =
       async () => {
         const {
+          data: savedClient,
           error,
         } = await supabase
           .from("clients")
@@ -7081,7 +8105,11 @@ goToScreen("clientProfile");
           .eq(
             "id",
             clientIdToSave
-          );
+          )
+          .select(
+            "id,name,arabic_name,loyalty_card_name,phone,secondary_phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id"
+          )
+          .single();
 
         if (error) {
           console.log(
@@ -7089,89 +8117,42 @@ goToScreen("clientProfile");
             error
           );
 
-          const {
-            error: fallbackError,
-          } = await supabase
-            .from("clients")
-            .update({
-              notes:
-                profileUpdate.notes,
-
-              blacklist:
-                profileUpdate.blacklist,
-
-              frame:
-                profileUpdate.frame,
-
-              exclude_from_inactive_clients:
-                profileUpdate
-                  .exclude_from_inactive_clients,
-            })
-            .eq(
-              "id",
-              clientIdToSave
-            );
-
-          if (fallbackError) {
-            console.log(
-              "Client profile fallback save error:",
-              fallbackError
-            );
-
-            alert(
-              "لم يتم حفظ البروفايل. تأكد من اتصال الإنترنت وجرب مرة ثانية."
-            );
-
-            return false;
-          }
-        }
-
-        const referralsSaved =
-          await syncProfileReferralsToSharedList(
-            clientIdToSave,
-            updatedReferrals
-          );
-
-        if (!referralsSaved) {
           alert(
-            "تم حفظ الملاحظات، لكن لم يتم حفظ العملاء المرشحين. تأكد من الاتصال وجرب مرة ثانية."
+            "لم يتم حفظ البروفايل. تأكد من اتصال الإنترنت وجرب مرة ثانية."
           );
 
           return false;
         }
 
-        setClients(
-          (previousClients) => {
-            const nextClients =
-              previousClients.map(
-                (client) =>
-                  String(
-                    client.id
-                  ) ===
-                  String(
-                    clientIdToSave
-                  )
-                    ? {
-                        ...client,
-                        ...profileUpdate,
-                        excludeFromInactiveClients:
-                          Boolean(
-                            profileUpdate
-                              .exclude_from_inactive_clients
-                          ),
-                      }
-                    : client
-              );
-
-            saveClientsToCache(
-              nextClients
+        if (savedClient) {
+          const nextClient =
+            normalizeClientRecord(
+              savedClient
             );
 
-            return nextClients;
-          }
-        );
+          setClients(
+            (previousClients) => {
+              const nextClients =
+                previousClients.map(
+                  (client) =>
+                    String(
+                      client.id
+                    ) ===
+                    String(
+                      nextClient.id
+                    )
+                      ? nextClient
+                      : client
+                );
 
-        fetchManualReferrals();
+              saveClientsToCache(
+                nextClients
+              );
+
+              return nextClients;
+            }
+          );
+        }
 
         return true;
       };
@@ -7198,38 +8179,352 @@ goToScreen("clientProfile");
     return saved;
   };
 
-  // ➕ ADD CLIENT REFERRAL
-  const addProfileReferral = () => {
-    setProfileReferrals((prev) => [
-      {
-        id: Date.now(),
+  const updateProfileReferralDraft = (
+    field,
+    value
+  ) => {
+    setProfileReferralDraft(
+      (previousDraft) => ({
+        ...previousDraft,
+        [field]: value,
+      })
+    );
+
+    if (profileReferralError) {
+      setProfileReferralError(
+        ""
+      );
+    }
+  };
+
+
+  const resetProfileReferralDraft =
+    () => {
+      setProfileReferralDraft({
         name: "",
-        phone: "",
-      },
-      ...prev,
-    ]);
-  };
+        primaryPhone: "",
+        secondaryPhone: "",
+        address: "",
+      });
 
-  // ✏️ UPDATE CLIENT REFERRAL
-  const updateProfileReferral = (referralId, field, value) => {
-    setProfileReferrals((prev) =>
-      prev.map((referral) =>
-        referral.id === referralId
-          ? {
-              ...referral,
-              [field]: value,
+      setProfileReferralError(
+        ""
+      );
+    };
+
+
+  // ➕ ADD CLIENT REFERRAL
+  const saveProfileReferral =
+    async () => {
+      if (
+        !ensureSystemWritable() ||
+        !canAddData ||
+        profileReferralSaving
+      ) {
+        return false;
+      }
+
+      const sourceClientId =
+        Number(
+          selectedClientId
+        );
+
+      const cleanName =
+        String(
+          profileReferralDraft.name ||
+          ""
+        ).trim();
+
+      const cleanPrimaryPhone =
+        formatSaudiPhoneForStorage(
+          profileReferralDraft
+            .primaryPhone ||
+          ""
+        );
+
+      const cleanSecondaryPhone =
+        formatSaudiPhoneForStorage(
+          profileReferralDraft
+            .secondaryPhone ||
+          ""
+        );
+
+      const cleanAddress =
+        String(
+          profileReferralDraft.address ||
+          ""
+        ).trim();
+
+      if (
+        !Number.isInteger(
+          sourceClientId
+        ) ||
+        sourceClientId <= 0
+      ) {
+        setProfileReferralError(
+          "تعذر تحديد العميلة التي قامت بالترشيح."
+        );
+
+        return false;
+      }
+
+      if (!cleanName) {
+        setProfileReferralError(
+          "اكتبي اسم العميلة المرشحة."
+        );
+
+        return false;
+      }
+
+      if (
+        normalizeDigits(
+          cleanPrimaryPhone
+        ).length < 9
+      ) {
+        setProfileReferralError(
+          "اكتبي رقم جوال أساسي صحيحًا."
+        );
+
+        return false;
+      }
+
+      if (
+        cleanSecondaryPhone &&
+        normalizeDigits(
+          cleanSecondaryPhone
+        ).length < 9
+      ) {
+        setProfileReferralError(
+          "رقم الجوال الاختياري غير صحيح."
+        );
+
+        return false;
+      }
+
+      if (
+        cleanSecondaryPhone &&
+        normalizeDigits(
+          cleanSecondaryPhone
+        ) ===
+          normalizeDigits(
+            cleanPrimaryPhone
+          )
+      ) {
+        setProfileReferralError(
+          "رقم الجوال الاختياري مطابق للرقم الأساسي."
+        );
+
+        return false;
+      }
+
+      const callReferralRpc =
+        async (
+          allowSharedPhoneNew
+        ) =>
+          supabase.rpc(
+            "paradise_create_client_referral",
+            {
+              p_source_client_id:
+                sourceClientId,
+
+              p_referred_name:
+                cleanName,
+
+              p_primary_phone:
+                cleanPrimaryPhone,
+
+              p_address:
+                cleanAddress,
+
+              p_secondary_phone:
+                cleanSecondaryPhone,
+
+              p_allow_shared_phone_new:
+                Boolean(
+                  allowSharedPhoneNew
+                ),
             }
-          : referral
-      )
-    );
-  };
+          );
 
-  // ❌ REMOVE CLIENT REFERRAL
-  const removeProfileReferral = (referralId) => {
-    setProfileReferrals((prev) =>
-      prev.filter((referral) => referral.id !== referralId)
-    );
-  };
+      setProfileReferralSaving(
+        true
+      );
+
+      setProfileReferralError(
+        ""
+      );
+
+      try {
+        let {
+          data,
+          error,
+        } = await callReferralRpc(
+          false
+        );
+
+        if (
+          !error &&
+          data?.code ===
+            "shared_phone_confirmation_required"
+        ) {
+          const matchingNames =
+            Array.isArray(
+              data.matches
+            )
+              ? data.matches
+                  .map(
+                    (matchedClient) =>
+                      matchedClient.name ||
+                      "بدون اسم"
+                  )
+                  .filter(Boolean)
+                  .join("، ")
+              : "";
+
+          const createIndependentProfile =
+            window.confirm(
+              `رقم الجوال مستخدم لدى: ${
+                matchingNames ||
+                "عميلة أخرى"
+              }.\n\nهل ${cleanName} عميلة مختلفة وتريد إنشاء بروفايل مستقل لها بنفس الرقم؟`
+            );
+
+          if (
+            !createIndependentProfile
+          ) {
+            return false;
+          }
+
+          const retryResult =
+            await callReferralRpc(
+              true
+            );
+
+          data =
+            retryResult.data;
+
+          error =
+            retryResult.error;
+        }
+
+        if (error) {
+          console.error(
+            "Client referral RPC error:",
+            error
+          );
+
+          setProfileReferralError(
+            "تعذر حفظ الترشيح. تأكد من الاتصال وجرب مرة أخرى."
+          );
+
+          return false;
+        }
+
+        if (
+          !data?.success ||
+          !data?.client?.id ||
+          !data?.referral?.id
+        ) {
+          console.error(
+            "Client referral RPC rejected:",
+            data
+          );
+
+          setProfileReferralError(
+            data?.message ||
+            "تعذر حفظ العميلة المرشحة."
+          );
+
+          return false;
+        }
+
+        const nextClient =
+          normalizeClientRecord(
+            data.client
+          );
+
+        setClients(
+          (previousClients) => {
+            const exists =
+              previousClients.some(
+                (client) =>
+                  String(client.id) ===
+                  String(nextClient.id)
+              );
+
+            const nextClients =
+              exists
+                ? previousClients.map(
+                    (client) =>
+                      String(client.id) ===
+                      String(nextClient.id)
+                        ? nextClient
+                        : client
+                  )
+                : [
+                    nextClient,
+                    ...previousClients,
+                  ];
+
+            const sortedClients =
+              nextClients.sort(
+                (
+                  firstClient,
+                  secondClient
+                ) =>
+                  Number(
+                    secondClient.id ||
+                    0
+                  ) -
+                  Number(
+                    firstClient.id ||
+                    0
+                  )
+              );
+
+            saveClientsToCache(
+              sortedClients
+            );
+
+            return sortedClients;
+          }
+        );
+
+        const refreshedStatuses =
+          await fetchUnifiedClientStatuses();
+
+        await loadProfileReferralsForClient(
+          sourceClientId,
+          Array.isArray(
+            refreshedStatuses
+          )
+            ? refreshedStatuses
+            : null
+        );
+
+        resetProfileReferralDraft();
+
+        const existingProfileNotice =
+          !data.created_profile &&
+          cleanSecondaryPhone &&
+          !data.secondary_phone_applied
+            ? "\n\nالبروفايل موجود مسبقًا؛ لم يتم تغيير رقمه الثانوي تلقائيًا."
+            : "";
+
+        alert(
+          `${
+            data.message ||
+            "تم حفظ الترشيح بنجاح."
+          }${existingProfileNotice}`
+        );
+
+        return true;
+      } finally {
+        setProfileReferralSaving(
+          false
+        );
+      }
+    };
 
  const addVisit = async (id) => {
   if (!ensureSystemWritable() || !canEditData) return;
@@ -7242,7 +8537,7 @@ goToScreen("clientProfile");
     .from("clients")
     .update({ visits: newVisits })
     .eq("id", id)
-    .select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id")
+    .select("id,name,arabic_name,loyalty_card_name,phone,secondary_phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id")
     .single();
 
   if (error) {
@@ -7267,7 +8562,7 @@ goToScreen("clientProfile");
     .from("clients")
     .update({ visits: newVisits })
     .eq("id", id)
-    .select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id")
+    .select("id,name,arabic_name,loyalty_card_name,phone,secondary_phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id")
     .single();
 
   if (error) {
@@ -7315,7 +8610,7 @@ const updateClientLastActivity = async (id) => {
       .from("clients")
       .update({ frame: frameValue })
       .eq("id", id)
-      .select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id")
+      .select("id,name,arabic_name,loyalty_card_name,phone,secondary_phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id")
       .single();
 
     if (error) {
@@ -7386,7 +8681,7 @@ const updateClientLastActivity = async (id) => {
           nextExcludeValue,
       })
       .eq("id", id)
-      .select("id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id")
+      .select("id,name,arabic_name,loyalty_card_name,phone,secondary_phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id")
       .single();
 
     if (error) {
@@ -7504,7 +8799,6 @@ const updateClientLastActivity = async (id) => {
     "",
     "عملائنا",
     "عملاء الإهداء",
-    "عملاء مرشحين",
     "عملاء محتملين",
   ];
 
@@ -13937,7 +15231,7 @@ const getScheduleClientBadges = (
             matchedClient.id
           )
           .select(
-            "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id"
+            "id,name,arabic_name,loyalty_card_name,phone,secondary_phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id"
           )
           .single();
 
@@ -14861,82 +16155,66 @@ const getScheduleClientBadges = (
     giftDate = selectedScheduleDate
   ) => {
     /*
-      مسار عملائنا محمي بواسطة
-      paradise_find_or_create_client.
-
-      لذلك لا نظهر رسالة تكرار عامة:
-      - التطابق الكامل يربط البروفايل الموجود.
-      - الاسم المختلف بنفس الرقم يطلب
-        تأكيد إنشاء بروفايل مستقل.
+      الترشيحات الجديدة تُنشأ فقط من
+      بروفايل العميلة التي قامت بالترشيح
+      حتى يبقى المصدر محفوظًا بشكل صحيح.
     */
-    if (
-      targetList ===
-      "عملائنا"
-    ) {
-      return true;
-    }
-
-    let exists = false;
-
-    if (
-      targetList ===
-      "عملاء الإهداء"
-    ) {
-      exists =
-        giftClients.some(
-          (gift) =>
-            isSameNameAndPhone(
-              gift.toName,
-              gift.toPhone,
-              clientName,
-              clientPhone
-            ) &&
-            String(
-              gift.giftDate || ""
-            ).slice(
-              0,
-              10
-            ) ===
-              String(
-                giftDate || ""
-              ).slice(
-                0,
-                10
-              )
-        );
-    }
-
     if (
       targetList ===
       "عملاء مرشحين"
     ) {
-      exists =
-        manualReferrals.some(
-          (referral) =>
-            isSameNameAndPhone(
-              referral.name,
-              referral.phone,
-              clientName,
-              clientPhone
-            )
-        );
+      alert(
+        "أضيفي العميلة المرشحة من بروفايل العميلة التي قامت بالترشيح."
+      );
+
+      return false;
+    }
+
+    /*
+      عملائنا والعملاء المحتملون أصبحوا
+      بروفايلات داخل clients.
+
+      منع التكرار يتم داخل الدالة الآمنة،
+      والتصنيف المحتمل يحدث تلقائيًا.
+    */
+    if (
+      targetList ===
+        "عملائنا" ||
+      targetList ===
+        "عملاء محتملين"
+    ) {
+      return true;
     }
 
     if (
-      targetList ===
-      "عملاء محتملين"
+      targetList !==
+      "عملاء الإهداء"
     ) {
-      exists =
-        potentialClients.some(
-          (client) =>
-            isSameNameAndPhone(
-              client.name,
-              client.phone,
-              clientName,
-              clientPhone
-            )
-        );
+      return true;
     }
+
+    const exists =
+      giftClients.some(
+        (gift) =>
+          isSameNameAndPhone(
+            gift.toName,
+            gift.toPhone,
+            clientName,
+            clientPhone
+          ) &&
+          String(
+            gift.giftDate || ""
+          ).slice(
+            0,
+            10
+          ) ===
+            String(
+              giftDate || ""
+            ).slice(
+              0,
+              10
+            )
+      );
 
     if (!exists) {
       return true;
@@ -14953,6 +16231,17 @@ const getScheduleClientBadges = (
       claimedClientId = "",
       name = "",
       phone = "",
+
+      /*
+        null تعني أن المسار الحالي لا
+        يتعامل مع الرقم الثانوي، مثل
+        Send To داخل جدول المواعيد.
+
+        النص الفارغ يعني أن نموذج V2
+        استخدم الحقل لكنه تُرك اختياريًا.
+      */
+      secondaryPhone = null,
+
       address = "",
       visits = 0,
       frame = false,
@@ -14966,6 +16255,17 @@ const getScheduleClientBadges = (
         formatSaudiPhoneForStorage(
           phone || ""
         );
+
+      const shouldUseClientV2 =
+        secondaryPhone !== null &&
+        secondaryPhone !== undefined;
+
+      const cleanSecondaryPhone =
+        shouldUseClientV2
+          ? formatSaudiPhoneForStorage(
+              secondaryPhone || ""
+            )
+          : "";
 
       const numericVisits =
         Math.max(
@@ -14995,51 +16295,99 @@ const getScheduleClientBadges = (
         return null;
       }
 
+      if (
+        cleanSecondaryPhone &&
+        normalizeDigits(
+          cleanSecondaryPhone
+        ).length < 9
+      ) {
+        alert(
+          "رقم الجوال الاختياري غير صحيح."
+        );
+
+        return null;
+      }
+
+      if (
+        cleanSecondaryPhone &&
+        normalizeDigits(
+          cleanSecondaryPhone
+        ) ===
+          normalizeDigits(
+            cleanPhone
+          )
+      ) {
+        alert(
+          "رقم الجوال الاختياري مطابق للرقم الأساسي."
+        );
+
+        return null;
+      }
+
       const callSafeClientRpc =
         async (
           allowSharedPhoneNew
-        ) =>
-          supabase.rpc(
+        ) => {
+          const sharedParameters = {
+            p_claimed_client_id:
+              Number(
+                claimedClientId
+              ) > 0
+                ? Number(
+                    claimedClientId
+                  )
+                : null,
+
+            p_name:
+              cleanName,
+
+            p_phone:
+              cleanPhone,
+
+            p_address:
+              String(
+                address || ""
+              ).trim(),
+
+            p_visits:
+              Number.isFinite(
+                numericVisits
+              )
+                ? numericVisits
+                : 0,
+
+            p_frame:
+              Boolean(
+                frame
+              ),
+
+            p_allow_shared_phone_new:
+              Boolean(
+                allowSharedPhoneNew
+              ),
+          };
+
+          if (shouldUseClientV2) {
+            return supabase.rpc(
+              "paradise_find_or_create_client_v2",
+              {
+                ...sharedParameters,
+
+                p_secondary_phone:
+                  cleanSecondaryPhone,
+              }
+            );
+          }
+
+          /*
+            مسارات المواعيد الحالية تبقى
+            على الدالة القديمة دون تغيير.
+          */
+          return supabase.rpc(
             "paradise_find_or_create_client",
-            {
-              p_claimed_client_id:
-                Number(
-                  claimedClientId
-                ) > 0
-                  ? Number(
-                      claimedClientId
-                    )
-                  : null,
-
-              p_name:
-                cleanName,
-
-              p_phone:
-                cleanPhone,
-
-              p_address:
-                String(
-                  address || ""
-                ).trim(),
-
-              p_visits:
-                Number.isFinite(
-                  numericVisits
-                )
-                  ? numericVisits
-                  : 0,
-
-              p_frame:
-                Boolean(
-                  frame
-                ),
-
-              p_allow_shared_phone_new:
-                Boolean(
-                  allowSharedPhoneNew
-                ),
-            }
+            sharedParameters
           );
+        };
 
       let {
         data,
@@ -15207,6 +16555,16 @@ const getScheduleClientBadges = (
 
         code:
           data.code || "",
+
+        secondaryPhoneApplied:
+          Boolean(
+            data.secondary_phone_applied
+          ),
+
+        secondaryPhoneRequiresEdit:
+          Boolean(
+            data.secondary_phone_requires_edit
+          ),
       };
     };
 
@@ -15788,13 +17146,25 @@ const getScheduleClientBadges = (
 
     if (!confirmDuplicateBeforeSendTo(targetList, clientName, clientPhone)) return;
 
-    if (targetList === "عملائنا") {
+    if (
+      targetList ===
+        "عملائنا" ||
+      targetList ===
+        "عملاء محتملين"
+    ) {
       const visitsValue =
-        orderToVisits(
-          extraClient.order
-        );
+        targetList ===
+        "عملائنا"
+          ? orderToVisits(
+              extraClient.order
+            )
+          : 0;
 
-      if (visitsValue === null) {
+      if (
+        targetList ===
+          "عملائنا" &&
+        visitsValue === null
+      ) {
         alert(
           "اختاري رقم الخدمة للعميلة الإضافية أولاً قبل إرسالها إلى عملائنا"
         );
@@ -16115,59 +17485,7 @@ const getScheduleClientBadges = (
       return;
     }
 
-    if (targetList === "عملاء مرشحين") {
-      const duplicateReferral = manualReferrals.some((referral) =>
-      isSameNameAndPhone(referral.name, referral.phone, referralName, referralPhone)
-    );
 
-    if (duplicateReferral && !window.confirm("هذا العميل موجود مسبقاً، هل ترغب بإكمال الإضافة؟")) return;
-
-    const { error } = await supabase.from("referred_clients").insert([
-        {
-          name: clientName,
-          phone: clientPhone,
-          source_client_name: giftFromNameValue,
-          source_client_phone: giftFromPhoneValue,
-        },
-      ]);
-
-      if (error) {
-        console.log("Additional client Send To referred clients copy error:", error);
-        return;
-      }
-
-      fetchManualReferrals();
-      return;
-    }
-
-    if (targetList === "عملاء محتملين") {
-      const duplicatePotential = potentialClients.some((client) =>
-  normalizeDigits(formatSaudiPhoneForStorage(client.phone)) ===
-  normalizeDigits(formatSaudiPhoneForStorage(clientPhone))
-);
-
-if (
-  duplicatePotential &&
-  !window.confirm("هذا الرقم موجود مسبقاً في العملاء المحتملين، هل ترغب بإكمال الإضافة؟")
-) {
-  return;
-}
-
-    const { error } = await supabase.from("potential_clients").insert([
-        {
-          name: clientName,
-          phone: clientPhone,
-          status: "إلغاء موعد",
-        },
-      ]);
-
-      if (error) {
-        console.log("Additional client Send To potential clients copy error:", error);
-        return;
-      }
-
-      fetchPotentialClients();
-    }
   };
 
   const saveAdditionalClient = async () => {
@@ -16772,13 +18090,25 @@ if (
       return;
     }
 
-    if (targetList === "عملائنا") {
+    if (
+      targetList ===
+        "عملائنا" ||
+      targetList ===
+        "عملاء محتملين"
+    ) {
       const visitsValue =
-        orderToVisits(
-          row.order
-        );
+        targetList ===
+        "عملائنا"
+          ? orderToVisits(
+              row.order
+            )
+          : 0;
 
-      if (visitsValue === null) {
+      if (
+        targetList ===
+          "عملائنا" &&
+        visitsValue === null
+      ) {
         alert(
           "اختاري رقم الخدمة أولاً قبل إرسال العميلة إلى عملائنا"
         );
@@ -17060,41 +18390,7 @@ if (
       return;
     }
 
-    if (targetList === "عملاء مرشحين") {
-      const { error } = await supabase.from("referred_clients").insert([
-        {
-          name: clientName,
-          phone: clientPhone,
-          source_client_name: giftFromNameValue,
-          source_client_phone: giftFromPhoneValue,
-        },
-      ]);
 
-      if (error) {
-        console.log("Send To referred clients copy error:", error);
-        return;
-      }
-
-      fetchManualReferrals();
-      return;
-    }
-
-    if (targetList === "عملاء محتملين") {
-      const { error } = await supabase.from("potential_clients").insert([
-        {
-          name: clientName,
-          phone: clientPhone,
-          status: row.status || "إلغاء موعد",
-        },
-      ]);
-
-      if (error) {
-        console.log("Send To potential clients copy error:", error);
-        return;
-      }
-
-      fetchPotentialClients();
-    }
   };
 const cloneScheduleRowWithoutTime = (row) => {
   const clonedRow = JSON.parse(JSON.stringify(row || {}));
@@ -17703,7 +18999,7 @@ const handleScheduleRowAction = (rowIndex, action) => {
             matchedClientForOrder.id
           )
           .select(
-            "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id"
+            "id,name,arabic_name,loyalty_card_name,phone,secondary_phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id"
           )
           .single();
 
@@ -20779,7 +22075,11 @@ const sendWhatsApp = async (client) => {
     return (
       (client.name || "").toLowerCase().includes(textSearch) ||
       (client.address || "").toLowerCase().includes(textSearch) ||
-      phoneMatchesSearch(client.phone, searchValue)
+      phoneMatchesSearch(client.phone, searchValue) ||
+      phoneMatchesSearch(
+        client.secondaryPhone,
+        searchValue
+      )
     );
   };
 
@@ -20828,52 +22128,320 @@ const sendWhatsApp = async (client) => {
     return comparablePhone.length >= 9 && clientPhoneSet.has(comparablePhone);
   };
 
-  const referredClients = manualReferrals.map((referral) => ({
-    ...referral,
-    sourceClientName: referral.sourceClientName || "",
-    sourceClientPhone: referral.sourceClientPhone || "",
-    manual: true,
-  }));
+  const clientsById =
+    new Map(
+      clients.map(
+        (client) => [
+          String(client.id),
+          client,
+        ]
+      )
+    );
 
-  const referralPhoneCounts = referredClients.reduce((counts, referral) => {
-    const comparablePhone = getComparablePhone(referral.phone);
+  const unifiedStatusByClientId =
+    new Map(
+      clientStatusRows.map(
+        (status) => [
+          String(status.clientId),
+          status,
+        ]
+      )
+    );
 
-    if (comparablePhone.length >= 9) {
-      counts[comparablePhone] = (counts[comparablePhone] || 0) + 1;
+  const getUnifiedClientStatus = (
+    clientId
+  ) =>
+    unifiedStatusByClientId.get(
+      String(clientId || "")
+    ) || {
+      clientId:
+        Number(clientId || 0),
+
+      isCustomer: false,
+      isPotential: false,
+      hasReferral: false,
+      isActiveReferral: false,
+      sourceClientId: null,
+      sourceClientName: "",
+      referralCreatedAt: "",
+    };
+
+  const selectedClientUnifiedStatus =
+    selectedClient
+      ? getUnifiedClientStatus(
+          selectedClient.id
+        )
+      : null;
+
+  const referredClients =
+    clientStatusRows
+      .filter(
+        (status) =>
+          status.hasReferral
+      )
+      .map((status) => {
+        const referredClient =
+          clientsById.get(
+            String(
+              status.clientId
+            )
+          );
+
+        if (!referredClient) {
+          return null;
+        }
+
+        const sourceClient =
+          clientsById.get(
+            String(
+              status.sourceClientId ||
+              ""
+            )
+          );
+
+        return {
+          id:
+            status.clientId,
+
+          clientId:
+            status.clientId,
+
+          name:
+            referredClient.name || "",
+
+          phone:
+            referredClient.phone || "",
+
+          secondaryPhone:
+            referredClient.secondaryPhone ||
+            "",
+
+          address:
+            referredClient.address || "",
+
+          sourceClientId:
+            status.sourceClientId,
+
+          sourceClientName:
+            status.sourceClientName ||
+            sourceClient?.name ||
+            "",
+
+          sourceClientPhone:
+            sourceClient?.phone ||
+            "",
+
+          referralCreatedAt:
+            status.referralCreatedAt ||
+            "",
+
+          isCustomer:
+            status.isCustomer,
+
+          isPotential:
+            status.isPotential,
+
+          isActiveReferral:
+            status.isActiveReferral,
+
+          client:
+            referredClient,
+        };
+      })
+      .filter(Boolean)
+      .sort(
+        (
+          firstReferral,
+          secondReferral
+        ) =>
+          String(
+            secondReferral
+              .referralCreatedAt ||
+            ""
+          ).localeCompare(
+            String(
+              firstReferral
+                .referralCreatedAt ||
+              ""
+            )
+          ) ||
+          Number(
+            secondReferral.clientId ||
+            0
+          ) -
+          Number(
+            firstReferral.clientId ||
+            0
+          )
+      );
+
+  const potentialClients =
+    clientStatusRows
+      .filter(
+        (status) =>
+          status.isPotential
+      )
+      .map((status) => {
+        const potentialClient =
+          clientsById.get(
+            String(
+              status.clientId
+            )
+          );
+
+        if (!potentialClient) {
+          return null;
+        }
+
+        return {
+          ...potentialClient,
+
+          clientId:
+            status.clientId,
+
+          isCustomer:
+            status.isCustomer,
+
+          isPotential:
+            status.isPotential,
+
+          hasReferral:
+            status.hasReferral,
+
+          isActiveReferral:
+            status.isActiveReferral,
+
+          sourceClientId:
+            status.sourceClientId,
+
+          sourceClientName:
+            status.sourceClientName ||
+            "",
+
+          referralCreatedAt:
+            status.referralCreatedAt ||
+            "",
+
+          status:
+            status.isActiveReferral
+              ? "مرشحة ولم تنفذ خدمة بعد"
+              : "بروفايل بدون خدمة مكتملة",
+        };
+      })
+      .filter(Boolean)
+      .sort(
+        (
+          firstClient,
+          secondClient
+        ) =>
+          Number(
+            secondClient.id || 0
+          ) -
+          Number(
+            firstClient.id || 0
+          )
+      );
+
+  const formatUnifiedClientDate = (
+    value
+  ) => {
+    const dateValue =
+      new Date(
+        value || ""
+      );
+
+    if (
+      Number.isNaN(
+        dateValue.getTime()
+      )
+    ) {
+      return "-";
     }
 
-    return counts;
-  }, {});
+    return new Intl.DateTimeFormat(
+      "ar-SA-u-ca-gregory",
+      {
+        timeZone:
+          "Asia/Riyadh",
 
-  const getReferralDuplicateCount = (phoneValue) => {
-    const comparablePhone = getComparablePhone(phoneValue);
-
-    return comparablePhone.length >= 9 ? referralPhoneCounts[comparablePhone] || 0 : 0;
-  };
-
-  const matchesCustomerStatusFilter = (phoneValue, filterValue) => {
-    const existsInClients = isExistingClientPhone(phoneValue);
-
-    if (filterValue === "existing") return existsInClients;
-    if (filterValue === "notExisting") return !existsInClients;
-
-    return true;
-  };
-
-  const filteredReferredClients = referredClients.filter((referral) => {
-    const textSearch = String(referralsSearch || "").toLowerCase().trim();
-    const matchesSearch =
-      !textSearch ||
-      (referral.name || "").toLowerCase().includes(textSearch) ||
-      (referral.sourceClientName || "").toLowerCase().includes(textSearch) ||
-      phoneMatchesSearch(referral.phone, referralsSearch) ||
-      phoneMatchesSearch(referral.sourceClientPhone, referralsSearch);
-
-    return (
-      matchesSearch &&
-      matchesCustomerStatusFilter(referral.phone, referralsCustomerFilter)
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      }
+    ).format(
+      dateValue
     );
-  });
+  };
+
+  const filteredReferredClients =
+    referredClients.filter(
+      (referral) => {
+        const textSearch =
+          String(
+            referralsSearch || ""
+          )
+            .toLowerCase()
+            .trim();
+
+        const matchesSearch =
+          !textSearch ||
+          (
+            referral.name ||
+            ""
+          )
+            .toLowerCase()
+            .includes(
+              textSearch
+            ) ||
+          (
+            referral.address ||
+            ""
+          )
+            .toLowerCase()
+            .includes(
+              textSearch
+            ) ||
+          (
+            referral.sourceClientName ||
+            ""
+          )
+            .toLowerCase()
+            .includes(
+              textSearch
+            ) ||
+          phoneMatchesSearch(
+            referral.phone,
+            referralsSearch
+          ) ||
+          phoneMatchesSearch(
+            referral.secondaryPhone,
+            referralsSearch
+          ) ||
+          phoneMatchesSearch(
+            referral.sourceClientPhone,
+            referralsSearch
+          );
+
+        const matchesStatus =
+          referralsCustomerFilter ===
+            "all" ||
+          (
+            referralsCustomerFilter ===
+              "active" &&
+            referral.isActiveReferral
+          ) ||
+          (
+            referralsCustomerFilter ===
+              "converted" &&
+            referral.isCustomer
+          );
+
+        return (
+          matchesSearch &&
+          matchesStatus
+        );
+      }
+    );
 
 
   // 👤 CLIENT SERVICE HISTORY FROM SCHEDULE
@@ -22534,7 +24102,7 @@ const leavingTime = addMinutesToDisplayTime(
         })
         .eq("id", client.id)
         .select(
-          "id,name,arabic_name,loyalty_card_name,phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id"
+          "id,name,arabic_name,loyalty_card_name,phone,secondary_phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id"
         )
         .single();
 
@@ -22568,96 +24136,79 @@ const leavingTime = addMinutesToDisplayTime(
       }
     };
 
-  const addManualReferral = async () => {
-    if (!ensureSystemWritable() || !canAddData) return;
-    if (!referralName && !referralPhone && !referralSourceName && !referralSourcePhone) return;
+  const filteredPotentialClients =
+    potentialClients.filter(
+      (client) => {
+        const textSearch =
+          String(
+            potentialSearch || ""
+          )
+            .toLowerCase()
+            .trim();
 
-    const { error } = await supabase.from("referred_clients").insert([
-      {
-        name: referralName,
-        phone: formatSaudiPhoneForStorage(referralPhone),
-        source_client_name: referralSourceName,
-        source_client_phone: formatSaudiPhoneForStorage(referralSourcePhone),
-      },
-    ]);
+        const matchesSearch =
+          !textSearch ||
+          (
+            client.name ||
+            ""
+          )
+            .toLowerCase()
+            .includes(
+              textSearch
+            ) ||
+          (
+            client.address ||
+            ""
+          )
+            .toLowerCase()
+            .includes(
+              textSearch
+            ) ||
+          (
+            client.status ||
+            ""
+          )
+            .toLowerCase()
+            .includes(
+              textSearch
+            ) ||
+          (
+            client.sourceClientName ||
+            ""
+          )
+            .toLowerCase()
+            .includes(
+              textSearch
+            ) ||
+          phoneMatchesSearch(
+            client.phone,
+            potentialSearch
+          ) ||
+          phoneMatchesSearch(
+            client.secondaryPhone,
+            potentialSearch
+          );
 
-    if (error) {
-      console.log(error);
-      return;
-    }
+        const matchesFilter =
+          potentialCustomerFilter ===
+            "all" ||
+          (
+            potentialCustomerFilter ===
+              "referred" &&
+            client.hasReferral
+          ) ||
+          (
+            potentialCustomerFilter ===
+              "notReferred" &&
+            !client.hasReferral
+          );
 
-    fetchManualReferrals();
-    setReferralName("");
-    setReferralPhone("");
-    setReferralSourceName("");
-    setReferralSourcePhone("");
-    setShowReferralForm(false);
-  };
-
-  const addPotentialClient = async () => {
-  if (!ensureSystemWritable() || !canAddData) return;
-  if (!potentialName || !potentialPhone) return;
-
-  const cleanPotentialPhone = formatSaudiPhoneForStorage(potentialPhone);
-
-  const duplicatePotential = potentialClients.some((client) =>
-    normalizeDigits(formatSaudiPhoneForStorage(client.phone)) ===
-    normalizeDigits(cleanPotentialPhone)
-  );
-
-  if (
-    duplicatePotential &&
-    !window.confirm("هذا الرقم موجود مسبقاً في العملاء المحتملين، هل ترغب بإكمال الإضافة؟")
-  ) {
-    return;
-  }
-
-  const { error } = await supabase.from("potential_clients").insert([
-    {
-      name: potentialName,
-      phone: cleanPotentialPhone,
-      status: potentialStatus,
-    },
-  ]);
-
-  if (error) {
-    console.log(error);
-    return;
-  }
-
-  fetchPotentialClients();
-  setPotentialName("");
-  setPotentialPhone("");
-  setPotentialStatus("");
-  setShowPotentialForm(false);
-};
-
-  const filteredPotentialClients = potentialClients.filter((client) => {
-    const textSearch = String(potentialSearch || "")
-      .toLowerCase()
-      .trim();
-
-    const matchesSearch =
-      !textSearch ||
-      (client.name || "")
-        .toLowerCase()
-        .includes(textSearch) ||
-      (client.status || "")
-        .toLowerCase()
-        .includes(textSearch) ||
-      phoneMatchesSearch(
-        client.phone,
-        potentialSearch
-      );
-
-    return (
-      matchesSearch &&
-      matchesCustomerStatusFilter(
-        client.phone,
-        potentialCustomerFilter
-      )
+        return (
+          matchesSearch &&
+          matchesFilter
+        );
+      }
     );
-  });
 
   const inactiveFutureClientIdsSet =
     new Set(
@@ -23096,85 +24647,10 @@ const leavingTime = addMinutesToDisplayTime(
     setShowGiftForm(false);
   };
 
-  const getReferralEditId = (referral) =>
-    `${referral.manual ? "manual" : "profile"}-${referral.id || referral.phone || referral.name}`;
-
-  const startEditReferral = (referral) => {
-    if (!canEditData || !ensureSystemWritable()) return;
-    setEditingReferralId(getReferralEditId(referral));
-    setEditedReferralName(referral.name || "");
-    setEditedReferralPhone(referral.phone || "");
-    setEditedReferralSourceName(referral.sourceClientName || "");
-    setEditedReferralSourcePhone(referral.sourceClientPhone || "");
-  };
-
-  const cancelEditReferral = () => {
-    setEditingReferralId(null);
-    setEditedReferralName("");
-    setEditedReferralPhone("");
-    setEditedReferralSourceName("");
-    setEditedReferralSourcePhone("");
-  };
-
-  const saveEditedReferral = async (referral) => {
-    if (!ensureSystemWritable() || !canEditData) return;
-    const { error } = await supabase
-      .from("referred_clients")
-      .update({
-        name: editedReferralName,
-        phone: formatSaudiPhoneForStorage(editedReferralPhone),
-        source_client_name: editedReferralSourceName,
-        source_client_phone: formatSaudiPhoneForStorage(editedReferralSourcePhone),
-      })
-      .eq("id", referral.id);
-
-    if (error) {
-      console.log(error);
-      return;
-    }
-
-    fetchManualReferrals();
-    cancelEditReferral();
-  };
-
-  const deleteReferral = async (referral) => {
-    if (!ensureDeleteAllowed()) return;
-    const confirmDelete = window.confirm("هل أنت متأكد من حذف العميلة المرشحة؟");
-    if (!confirmDelete) return;
-
-    const { error } = await supabase
-      .from("referred_clients")
-      .delete()
-      .eq("id", referral.id);
-
-    if (error) {
-      console.log(error);
-      return;
-    }
-
-    if (referral.sourceClientId && referral.sourceReferralId) {
-      const sourceClient = clients.find((client) => client.id === referral.sourceClientId);
-      if (sourceClient) {
-        const updatedReferrals = (sourceClient.referrals || []).filter(
-          (item) => String(item.id) !== String(referral.sourceReferralId)
-        );
-        await supabase
-          .from("clients")
-          .update({ referrals: updatedReferrals })
-          .eq("id", sourceClient.id);
-        setClients((prev) =>
-          prev.map((client) =>
-            String(client.id) === String(sourceClient.id)
-              ? { ...client, referrals: updatedReferrals }
-              : client
-          )
-        );
-      }
-    }
-
-    fetchManualReferrals();
-  };
-
+  /*
+    روابط الترشيح الجديدة دائمة ولا تُعدّل
+    أو تُحذف من صفحة الترشيحات.
+  */
   const startEditGift = (gift) => {
     if (!canEditData || !ensureSystemWritable()) return;
     setEditingGiftId(gift.id);
@@ -23611,56 +25087,10 @@ const leavingTime = addMinutesToDisplayTime(
       );
     };
 
-  const startEditPotentialClient = (client) => {
-    if (!canEditData || !ensureSystemWritable()) return;
-    setEditingPotentialId(client.id);
-    setEditedPotentialName(client.name || "");
-    setEditedPotentialPhone(client.phone || "");
-    setEditedPotentialStatus(client.status || "");
-  };
-
-  const cancelEditPotentialClient = () => {
-    setEditingPotentialId(null);
-    setEditedPotentialName("");
-    setEditedPotentialPhone("");
-    setEditedPotentialStatus("");
-  };
-
-  const saveEditedPotentialClient = async (id) => {
-    if (!ensureSystemWritable() || !canEditData) return;
-    const { error } = await supabase
-      .from("potential_clients")
-      .update({
-        name: editedPotentialName,
-        phone: formatSaudiPhoneForStorage(editedPotentialPhone),
-        status: editedPotentialStatus || "إلغاء موعد",
-      })
-      .eq("id", id);
-
-    if (error) {
-      console.log(error);
-      return;
-    }
-
-    fetchPotentialClients();
-    cancelEditPotentialClient();
-  };
-
-  const deletePotentialClient = async (id) => {
-    if (!ensureDeleteAllowed()) return;
-    const confirmDelete = window.confirm("هل أنت متأكد من حذف العميلة المحتملة؟");
-    if (!confirmDelete) return;
-
-    const { error } = await supabase.from("potential_clients").delete().eq("id", id);
-
-    if (error) {
-      console.log(error);
-      return;
-    }
-
-    fetchPotentialClients();
-  };
-
+  /*
+    العملاء المحتملون تصنيف تلقائي، لذلك
+    لا توجد عمليات إضافة أو تعديل أو حذف مستقلة.
+  */
   const filteredGiftClients = giftClients.filter((gift) => {
     const textSearch = String(giftSearch || "").toLowerCase().trim();
     const matchesGiftStatus =
@@ -28320,16 +29750,17 @@ const welcomeBoardNameStyle = {
       label: "الفواتير",
     },
     {
-      tableName: "potential_clients",
-      label: "العملاء المحتملون",
+      tableName: "client_notes",
+      label: "سجل ملاحظات العملاء",
+    },
+    {
+      tableName:
+        "client_referral_links",
+      label: "روابط ترشيحات العملاء",
     },
     {
       tableName: "purchases",
       label: "المشتريات",
-    },
-    {
-      tableName: "referred_clients",
-      label: "العملاء المحالون",
     },
     {
       tableName: "schedule_rows",
@@ -32667,8 +34098,37 @@ const welcomeBoardNameStyle = {
                   boxShadow: "0 8px 18px rgba(75,46,31,0.07)",
                 }}
               >
-                <span>{client.name}</span>
-                <span>{client.phone}</span>
+                <span
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "flex-start",
+                    textAlign: "right",
+                    minWidth: 0,
+                  }}
+                >
+                  <strong>
+                    {client.name}
+                  </strong>
+
+                  <small
+                    style={{
+                      color: "#8a7a68",
+                      fontWeight: "700",
+                    }}
+                  >
+                    {client.address || "الحي غير مسجل"}
+                  </small>
+                </span>
+
+                <span
+                  style={{
+                    direction: "ltr",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {client.phone}
+                </span>
               </button>
             ))
           )}
@@ -33255,6 +34715,7 @@ const welcomeBoardNameStyle = {
       setShowGlobalClientForm(false);
       setName("");
       setPhone("");
+      setSecondaryPhone("");
       setAddress("");
     }}
     style={{
@@ -33300,10 +34761,26 @@ const welcomeBoardNameStyle = {
       />
 
       <input
-        placeholder="Phone Number"
+        placeholder="Primary Phone Number"
         value={phone}
         onChange={(e) => setPhone(e.target.value)}
         onBlur={() => setPhone(formatSaudiPhoneForStorage(phone))}
+        inputMode="tel"
+        style={inputStyle}
+      />
+
+      <input
+        placeholder="Secondary Phone (Search Only - Optional)"
+        value={secondaryPhone}
+        onChange={(e) => setSecondaryPhone(e.target.value)}
+        onBlur={() =>
+          setSecondaryPhone(
+            formatSaudiPhoneForStorage(
+              secondaryPhone
+            )
+          )
+        }
+        inputMode="tel"
         style={inputStyle}
       />
 
@@ -33335,7 +34812,13 @@ const welcomeBoardNameStyle = {
         </button>
 
         <button
-          onClick={() => setShowGlobalClientForm(false)}
+          onClick={() => {
+            setShowGlobalClientForm(false);
+            setName("");
+            setPhone("");
+            setSecondaryPhone("");
+            setAddress("");
+          }}
           style={{
             ...buttonStyle,
             backgroundColor: "#faf7f2",
@@ -38841,14 +40324,15 @@ margin: "0 auto",
             cursor: "default",
           }}
         >
-          عدد العملاء: {referredClients.length}
+          عدد الترشيحات:{" "}
+          {filteredReferredClients.length}
         </div>
 
         <div
           className="paradise-referrals-header"
           style={{
             textAlign: "center",
-            marginBottom: "36px",
+            marginBottom: "28px",
           }}
         >
           <img
@@ -38867,8 +40351,24 @@ margin: "0 auto",
               color: "#4b2e1f",
             }}
           >
-            العملاء المرشحين
+            العملاء المرشحون
           </h2>
+
+          <p
+            style={{
+              width: "min(720px, 100%)",
+              margin: "0 auto",
+              color: "#806a59",
+              fontSize: "13px",
+              fontWeight: "750",
+              lineHeight: "1.8",
+            }}
+          >
+            تتم إضافة العميلة المرشحة من
+            بروفايل العميلة التي قامت
+            بالترشيح، ويبقى مصدر الترشيح
+            محفوظًا بشكل دائم.
+          </p>
         </div>
 
         <div
@@ -38879,55 +40379,47 @@ margin: "0 auto",
             alignItems: "center",
             justifyContent: "center",
             width: "min(900px, 100%)",
-            margin: "0 auto 42px",
+            margin: "0 auto 28px",
             flexWrap: "wrap",
           }}
         >
-          <button
-            className="paradise-referrals-add-button"
-            onClick={() => setShowReferralForm(!showReferralForm)}
-            style={{
-              ...buttonStyle,
-              width: "180px",
-              backgroundColor: "#faf7f2",
-              color: "#4b2e1f",
-              border: "1px solid #d6c7b8",
-              marginBottom: 22,
-              fontSize: "15px",
-            }}
-          >
-            + Add Referral
-          </button>
-
           <input
             className="paradise-referrals-search"
-            placeholder="Search referrals..."
+            placeholder="ابحثي بالاسم أو الرقم أو الحي أو اسم العميلة المرشِّحة..."
             value={referralsSearch}
-            onChange={(e) => setReferralsSearch(e.target.value)}
+            onChange={(event) =>
+              setReferralsSearch(
+                event.target.value
+              )
+            }
             style={{
               ...inputStyle,
               flex: "0 1 600px",
               width: "100%",
               maxWidth: "600px",
-              minWidth: "300px",
-              marginBottom: 22,
+              minWidth: "280px",
               backgroundColor: "#faf7f2",
               color: "#4b2e1f",
               border: "1px solid #d6c7b8",
-              textAlign: "left",
-              direction: "ltr",
+              textAlign: "right",
+              direction: "rtl",
             }}
           />
 
           <select
             className="paradise-referrals-filter"
-            value={referralsCustomerFilter}
-            onChange={(e) => setReferralsCustomerFilter(e.target.value)}
+            value={
+              referralsCustomerFilter
+            }
+            onChange={(event) =>
+              setReferralsCustomerFilter(
+                event.target.value
+              )
+            }
             style={{
               ...inputStyle,
-              flex: "0 0 190px",
-              width: "190px",
-              marginBottom: 22,
+              flex: "0 0 210px",
+              width: "210px",
               backgroundColor: "#faf7f2",
               color: "#4b2e1f",
               border: "1px solid #d6c7b8",
@@ -38935,94 +40427,39 @@ margin: "0 auto",
               direction: "rtl",
             }}
           >
-            <option value="all">الكل</option>
-            <option value="existing">عملاء فعليين</option>
-            <option value="notExisting">غير مجربين</option>
+            <option value="all">
+              جميع الترشيحات
+            </option>
+
+            <option value="active">
+              مرشحات لم ينفذن خدمة
+            </option>
+
+            <option value="converted">
+              ترشيحات تحولت إلى عميلات
+            </option>
           </select>
         </div>
 
-        {showReferralForm && (
+        {clientStatusesError && (
           <div
-            className="paradise-referrals-form"
             style={{
-              backgroundColor: "#faf7f2",
-              padding: "18px",
-              borderRadius: "22px",
-              margin: "0 auto 24px",
-              maxWidth: "620px",
+              width: "min(900px, 100%)",
+              margin: "0 auto 18px",
+              padding: "12px 14px",
+              boxSizing: "border-box",
+              borderRadius: "14px",
+              border:
+                "1px solid rgba(166,76,61,0.20)",
+              background:
+                "rgba(166,76,61,0.08)",
+              color: "#934b3e",
+              fontSize: "12px",
+              fontWeight: "850",
+              textAlign: "center",
             }}
           >
-            <input
-              placeholder="اسم العميلة المرشحة"
-              value={referralName}
-              onChange={(e) => setReferralName(e.target.value)}
-              style={{
-                ...inputStyle,
-                width: "60%",
-                display: "block",
-                margin: "0 auto 12px",
-              }}
-            />
-
-            <input
-              placeholder="رقم جوال المرشحة"
-              value={referralPhone}
-              onChange={(e) => setReferralPhone(e.target.value)}
-              onBlur={() =>
-                setReferralPhone(
-                  formatSaudiPhoneForStorage(referralPhone)
-                )
-              }
-              style={{
-                ...inputStyle,
-                width: "60%",
-                display: "block",
-                margin: "0 auto 12px",
-              }}
-            />
-
-            <input
-              placeholder="مرشحة من"
-              value={referralSourceName}
-              onChange={(e) => setReferralSourceName(e.target.value)}
-              style={{
-                ...inputStyle,
-                width: "60%",
-                display: "block",
-                margin: "0 auto 12px",
-              }}
-            />
-
-            <input
-              placeholder="رقم العميلة"
-              value={referralSourcePhone}
-              onChange={(e) => setReferralSourcePhone(e.target.value)}
-              onBlur={() =>
-                setReferralSourcePhone(
-                  formatSaudiPhoneForStorage(referralSourcePhone)
-                )
-              }
-              style={{
-                ...inputStyle,
-                width: "60%",
-                display: "block",
-                margin: "0 auto 12px",
-              }}
-            />
-
-            <button
-              onClick={addManualReferral}
-              style={{
-                ...buttonStyle,
-                backgroundColor: "#4b2e1f",
-                color: "white",
-                width: "60%",
-                display: "block",
-                margin: "0 auto 12px",
-              }}
-            >
-              Save Referral
-            </button>
+            {clientStatusesError}
           </div>
         )}
 
@@ -39030,11 +40467,12 @@ margin: "0 auto",
           className="paradise-referrals-list"
           style={{
             width: "min(1160px, 100%)",
-            margin: "34px auto 0",
+            margin: "20px auto 0",
             overflowX: "auto",
             borderRadius: "20px",
             border: "1px solid #eadfd5",
-            background: "rgba(255,255,255,0.76)",
+            background:
+              "rgba(255,255,255,0.76)",
             boxShadow:
               "0 18px 40px rgba(75,46,31,0.08)",
           }}
@@ -39050,177 +40488,275 @@ margin: "0 auto",
             }}
           >
             <thead>
-              <tr style={{ backgroundColor: "#cbb7a4", color: "black" }}>
-                <th style={{ padding: "14px" }}>اسم المرشحة</th>
-                <th style={{ padding: "14px" }}>رقم المرشحة</th>
-                <th style={{ padding: "14px" }}>مرشحة من</th>
-                <th style={{ padding: "14px" }}>رقم العميلة</th>
-                <th style={{ padding: "14px" }}>واتساب</th>
-                <th style={{ padding: "14px" }}>تعديل</th>
-                <th style={{ padding: "14px" }}>حذف</th>
+              <tr
+                style={{
+                  backgroundColor:
+                    "#cbb7a4",
+                  color: "black",
+                }}
+              >
+                <th
+                  style={{
+                    padding: "14px",
+                  }}
+                >
+                  اسم المرشحة
+                </th>
+
+                <th
+                  style={{
+                    padding: "14px",
+                  }}
+                >
+                  رقم الجوال
+                </th>
+
+                <th
+                  style={{
+                    padding: "14px",
+                  }}
+                >
+                  الحي
+                </th>
+
+                <th
+                  style={{
+                    padding: "14px",
+                  }}
+                >
+                  مرشحة من
+                </th>
+
+                <th
+                  style={{
+                    padding: "14px",
+                  }}
+                >
+                  الحالة
+                </th>
+
+                <th
+                  style={{
+                    padding: "14px",
+                  }}
+                >
+                  تاريخ الترشيح
+                </th>
+
+                <th
+                  style={{
+                    padding: "14px",
+                  }}
+                >
+                  التواصل
+                </th>
+
+                <th
+                  style={{
+                    padding: "14px",
+                  }}
+                >
+                  البروفايل
+                </th>
               </tr>
             </thead>
 
             <tbody>
-              {filteredReferredClients.slice(0, referralsVisibleCount).map((referral) => {
-                const referralEditId = getReferralEditId(referral);
-                const isEditingReferral = editingReferralId === referralEditId;
-                const isExistingReferralClient = isExistingClientPhone(referral.phone);
-                const referralDuplicateCount = getReferralDuplicateCount(referral.phone);
-                const isRepeatedReferral = referralDuplicateCount > 1;
-                const referralRowBackground = isExistingReferralClient
-                  ? "#dbeafe"
-                  : isRepeatedReferral
-                  ? "#dcfce7"
-                  : "transparent";
-
-                return (
-                  <tr
-                    key={referralEditId}
-                    style={{
-                      borderBottom: "1px solid #eadfd5",
-                      backgroundColor: referralRowBackground,
-                    }}
-                  >
-                    <td style={{ padding: "14px", fontWeight: "bold" }}>
-                      {isEditingReferral ? (
-                        <input
-                          value={editedReferralName}
-                          onChange={(e) => setEditedReferralName(e.target.value)}
-                          style={{ ...editInputStyle, width: "110px" }}
-                        />
-                      ) : (
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            gap: "8px",
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          <span>{referral.name || "-"}</span>
-                          {referralDuplicateCount > 1 && (
-                            <span
-                              style={{
-                                backgroundColor: "#22c55e",
-                                color: "white",
-                                borderRadius: "999px",
-                                padding: "3px 8px",
-                                fontSize: "11px",
-                                fontWeight: "bold",
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              رشحها {referralDuplicateCount}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </td>
-                    <td style={{ padding: "14px" }}>
-                      {isEditingReferral ? (
-                        <input
-                          value={editedReferralPhone}
-                          onChange={(e) => setEditedReferralPhone(e.target.value)}
-                          onBlur={() => setEditedReferralPhone(formatSaudiPhoneForStorage(editedReferralPhone))}
-                          style={{ ...editInputStyle, width: "110px" }}
-                        />
-                      ) : (
-                        referral.phone || "-"
-                      )}
-                    </td>
-                    <td style={{ padding: "14px" }}>
-                      {isEditingReferral ? (
-                        <input
-                          value={editedReferralSourceName}
-                          onChange={(e) => setEditedReferralSourceName(e.target.value)}
-                          disabled={!referral.manual}
-                          style={{ ...editInputStyle, width: "110px", opacity: referral.manual ? 1 : 0.6 }}
-                        />
-                      ) : (
-                        referral.sourceClientName || "-"
-                      )}
-                    </td>
-                    <td style={{ padding: "14px" }}>
-                      {isEditingReferral ? (
-                        <input
-                          value={editedReferralSourcePhone}
-                          onChange={(e) => setEditedReferralSourcePhone(e.target.value)}
-                          onBlur={() => setEditedReferralSourcePhone(formatSaudiPhoneForStorage(editedReferralSourcePhone))}
-                          disabled={!referral.manual}
-                          style={{ ...editInputStyle, width: "110px", opacity: referral.manual ? 1 : 0.6 }}
-                        />
-                      ) : (
-                        referral.sourceClientPhone || "-"
-                      )}
-                    </td>
-                    <td style={{ padding: "14px" }}>
-                      <button
-                        onClick={() => openDirectWhatsApp(referral.phone)}
-                        style={{
-                          ...buttonStyle,
-                          background: "linear-gradient(135deg, #1f9f54, #25D366)",
-                          color: "white",
-                          padding: "9px 16px",
-                          borderRadius: "14px",
-                        }}
-                      >
-                        WhatsApp
-                      </button>
-                    </td>
-                    <td style={{ padding: "14px" }}>
-                      {isEditingReferral ? (
-                        <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
-                          <button
-                            onClick={() => saveEditedReferral(referral)}
-                            style={{ ...buttonStyle, backgroundColor: "#4b2e1f", color: "white", padding: "8px 12px" }}
-                          >
-                            Save
-                          </button>
-                          <button
-                            onClick={cancelEditReferral}
-                            style={{ ...buttonStyle, backgroundColor: "#f3e8df", color: "#4b2e1f", padding: "8px 12px" }}
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      ) : canEditData ? (
-                        <button
-                          onClick={() => startEditReferral(referral)}
-                          style={{ ...buttonStyle, backgroundColor: "#f3e8df", color: "#4b2e1f", padding: "9px 16px" }}
-                        >
-                          Edit
-                        </button>
-                      ) : null}
-                    </td>
-                    <td style={{ padding: "14px" }}>
-                      {canDeleteData && (
-                      <button
-                        onClick={() => deleteReferral(referral)}
-                        style={{ ...buttonStyle, backgroundColor: "#c3b4a1", color: "white", padding: "9px 16px" }}
-                      >
-                        Delete
-                      </button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-
-              {filteredReferredClients.length === 0 && (
+              {clientStatusesLoading &&
+              referredClients.length ===
+                0 ? (
                 <tr>
                   <td
-                    colSpan="7"
+                    colSpan="8"
                     style={{
-                      padding: "25px",
+                      padding: "28px",
                       color: "#8a7a68",
+                      fontWeight: "800",
                     }}
                   >
-                    لا توجد أرقام مرشحة حتى الآن
+                    جاري تحميل الترشيحات...
                   </td>
                 </tr>
+              ) : (
+                filteredReferredClients
+                  .slice(
+                    0,
+                    referralsVisibleCount
+                  )
+                  .map((referral) => (
+                    <tr
+                      key={
+                        referral.clientId
+                      }
+                      style={{
+                        borderBottom:
+                          "1px solid #eadfd5",
+                        backgroundColor:
+                          referral.isActiveReferral
+                            ? "rgba(255,247,235,0.72)"
+                            : "rgba(235,248,239,0.72)",
+                      }}
+                    >
+                      <td
+                        style={{
+                          padding: "14px",
+                          fontWeight: "900",
+                        }}
+                      >
+                        {referral.name ||
+                          "-"}
+                      </td>
+
+                      <td
+                        style={{
+                          padding: "14px",
+                          direction: "ltr",
+                        }}
+                      >
+                        {referral.phone ||
+                          "-"}
+                      </td>
+
+                      <td
+                        style={{
+                          padding: "14px",
+                        }}
+                      >
+                        {referral.address ||
+                          "-"}
+                      </td>
+
+                      <td
+                        style={{
+                          padding: "14px",
+                          fontWeight: "850",
+                        }}
+                      >
+                        {referral
+                          .sourceClientName ||
+                          "-"}
+                      </td>
+
+                      <td
+                        style={{
+                          padding: "14px",
+                        }}
+                      >
+                        <span
+                          style={{
+                            display:
+                              "inline-flex",
+                            alignItems:
+                              "center",
+                            justifyContent:
+                              "center",
+                            padding:
+                              "5px 10px",
+                            borderRadius:
+                              "999px",
+                            background:
+                              referral.isActiveReferral
+                                ? "rgba(188,132,78,0.14)"
+                                : "rgba(67,126,90,0.14)",
+                            color:
+                              referral.isActiveReferral
+                                ? "#8b5a2c"
+                                : "#356e4c",
+                            fontSize:
+                              "11px",
+                            fontWeight:
+                              "900",
+                            whiteSpace:
+                              "nowrap",
+                          }}
+                        >
+                          {referral.isActiveReferral
+                            ? "مرشحة نشطة"
+                            : "تحولت إلى عميلة"}
+                        </span>
+                      </td>
+
+                      <td
+                        style={{
+                          padding: "14px",
+                          whiteSpace:
+                            "nowrap",
+                        }}
+                      >
+                        {formatUnifiedClientDate(
+                          referral
+                            .referralCreatedAt
+                        )}
+                      </td>
+
+                      <td
+                        style={{
+                          padding: "14px",
+                        }}
+                      >
+                        <button
+                          onClick={() =>
+                            openDirectWhatsApp(
+                              referral.phone
+                            )
+                          }
+                          style={{
+                            ...buttonStyle,
+                            background:
+                              "linear-gradient(135deg, #1f9f54, #25D366)",
+                            color: "white",
+                            padding:
+                              "9px 14px",
+                            borderRadius:
+                              "14px",
+                          }}
+                        >
+                          WhatsApp
+                        </button>
+                      </td>
+
+                      <td
+                        style={{
+                          padding: "14px",
+                        }}
+                      >
+                        <button
+                          onClick={() =>
+                            openClientProfile(
+                              referral.client
+                            )
+                          }
+                          style={{
+                            ...buttonStyle,
+                            backgroundColor:
+                              "#f3e8df",
+                            color: "#4b2e1f",
+                            padding:
+                              "9px 14px",
+                          }}
+                        >
+                          فتح
+                        </button>
+                      </td>
+                    </tr>
+                  ))
               )}
+
+              {!clientStatusesLoading &&
+                filteredReferredClients
+                  .length === 0 && (
+                  <tr>
+                    <td
+                      colSpan="8"
+                      style={{
+                        padding: "28px",
+                        color: "#8a7a68",
+                      }}
+                    >
+                      لا توجد ترشيحات مطابقة
+                    </td>
+                  </tr>
+                )}
             </tbody>
           </table>
         </div>
@@ -51687,14 +53223,15 @@ if (screen === "potentialClients") {
             cursor: "default",
           }}
         >
-          عدد العملاء: {potentialClients.length}
+          عدد العملاء المحتملين:{" "}
+          {filteredPotentialClients.length}
         </div>
 
         <div
           className="paradise-potential-header"
           style={{
             textAlign: "center",
-            marginBottom: "36px",
+            marginBottom: "28px",
           }}
         >
           <img
@@ -51713,8 +53250,24 @@ if (screen === "potentialClients") {
               color: "#4b2e1f",
             }}
           >
-            العملاء المحتملين
+            العملاء المحتملون
           </h2>
+
+          <p
+            style={{
+              width: "min(760px, 100%)",
+              margin: "0 auto",
+              color: "#806a59",
+              fontSize: "13px",
+              fontWeight: "750",
+              lineHeight: "1.8",
+            }}
+          >
+            تظهر هنا تلقائيًا كل عميلة لديها
+            بروفايل ولم تُسجل لها خدمة مؤهلة بعد.
+            وتخرج من هذه الصفحة تلقائيًا بعد أول
+            خدمة صحيحة، دون حذف بروفايلها.
+          </p>
         </div>
 
         <div
@@ -51725,55 +53278,45 @@ if (screen === "potentialClients") {
             alignItems: "center",
             justifyContent: "center",
             width: "min(900px, 100%)",
-            margin: "0 auto 42px",
+            margin: "0 auto 28px",
             flexWrap: "wrap",
           }}
         >
-          <button
-            className="paradise-potential-add-button"
-            onClick={() => setShowPotentialForm(!showPotentialForm)}
-            style={{
-              ...buttonStyle,
-              width: "180px",
-              backgroundColor: "#faf7f2",
-              color: "#4b2e1f",
-              border: "1px solid #d6c7b8",
-              marginBottom: 22,
-              fontSize: "15px",
-            }}
-          >
-            + Add Prospect
-          </button>
-
           <input
             className="paradise-potential-search"
-            placeholder="Search prospects..."
+            placeholder="ابحثي بالاسم أو الرقم أو الحي أو اسم العميلة المرشِّحة..."
             value={potentialSearch}
-            onChange={(e) => setPotentialSearch(e.target.value)}
+            onChange={(event) =>
+              setPotentialSearch(
+                event.target.value
+              )
+            }
             style={{
               ...inputStyle,
               flex: "0 1 600px",
               width: "100%",
               maxWidth: "600px",
-              minWidth: "300px",
-              marginBottom: 22,
+              minWidth: "280px",
               backgroundColor: "#faf7f2",
               color: "#4b2e1f",
               border: "1px solid #d6c7b8",
-              textAlign: "left",
-              direction: "ltr",
+              textAlign: "right",
+              direction: "rtl",
             }}
           />
 
           <select
             className="paradise-potential-filter"
             value={potentialCustomerFilter}
-            onChange={(e) => setPotentialCustomerFilter(e.target.value)}
+            onChange={(event) =>
+              setPotentialCustomerFilter(
+                event.target.value
+              )
+            }
             style={{
               ...inputStyle,
-              flex: "0 0 190px",
-              width: "190px",
-              marginBottom: 22,
+              flex: "0 0 210px",
+              width: "210px",
               backgroundColor: "#faf7f2",
               color: "#4b2e1f",
               border: "1px solid #d6c7b8",
@@ -51781,89 +53324,52 @@ if (screen === "potentialClients") {
               direction: "rtl",
             }}
           >
-            <option value="all">الكل</option>
-            <option value="existing">عملاء فعليين</option>
-            <option value="notExisting">غير مجربين</option>
+            <option value="all">
+              جميع المحتملات
+            </option>
+
+            <option value="referred">
+              مرشحات من عميلات
+            </option>
+
+            <option value="notReferred">
+              بدون ترشيح
+            </option>
           </select>
         </div>
 
-        {showPotentialForm && (
+        {clientStatusesError && (
           <div
-            className="paradise-potential-form"
             style={{
-              backgroundColor: "#faf7f2",
-              padding: "18px",
-              borderRadius: "22px",
-              margin: "0 auto 24px",
-              maxWidth: "620px",
+              width: "min(900px, 100%)",
+              margin: "0 auto 18px",
+              padding: "12px 14px",
+              boxSizing: "border-box",
+              borderRadius: "14px",
+              border:
+                "1px solid rgba(166,76,61,0.20)",
+              background:
+                "rgba(166,76,61,0.08)",
+              color: "#934b3e",
+              fontSize: "12px",
+              fontWeight: "850",
+              textAlign: "center",
             }}
           >
-            <input
-              placeholder="الاسم"
-              value={potentialName}
-              onChange={(e) => setPotentialName(e.target.value)}
-              style={{
-                ...inputStyle,
-                width: "60%",
-                display: "block",
-                margin: "0 auto 12px",
-              }}
-            />
-            <input
-              placeholder="رقم الجوال"
-              value={potentialPhone}
-              onChange={(e) => setPotentialPhone(e.target.value)}
-              onBlur={() => setPotentialPhone(formatSaudiPhoneForStorage(potentialPhone))}
-              style={{
-                ...inputStyle,
-                width: "60%",
-                display: "block",
-                margin: "0 auto 12px",
-              }}
-            />
-            <input
-  list="potentialStatusOptions"
-  placeholder="إلغاء موعد أو استفسار"
-  value={potentialStatus}
-  onChange={(e) => setPotentialStatus(e.target.value)}
-  style={{
-    ...inputStyle,
-    width: "60%",
-    display: "block",
-    margin: "0 auto 12px",
-  }}
-/>
-
-            <button
-              onClick={addPotentialClient}
-              style={{
-                ...buttonStyle,
-                backgroundColor: "#4b2e1f",
-                color: "white",
-                width: "60%",
-                display: "block",
-                margin: "0 auto 12px",
-              }}
-            >
-              Save Potential Client
-            </button>
+            {clientStatusesError}
           </div>
         )}
-
-        <datalist id="potentialStatusOptions">
-          <option value="إلغاء موعد" />
-          <option value="إستفسار" />
-        </datalist>
 
         <div
           className="paradise-potential-list"
           style={{
             width: "min(1160px, 100%)",
-            margin: "34px auto 0",
+            margin: "20px auto 0",
             overflowX: "auto",
             borderRadius: "20px",
             border: "1px solid #eadfd5",
-            background: "rgba(255,255,255,0.76)",
+            background:
+              "rgba(255,255,255,0.76)",
             boxShadow:
               "0 18px 40px rgba(75,46,31,0.08)",
           }}
@@ -51879,125 +53385,264 @@ if (screen === "potentialClients") {
             }}
           >
             <thead>
-              <tr style={{ backgroundColor: "#cbb7a4", color: "black" }}>
-                <th style={{ padding: "14px" }}>الاسم</th>
-                <th style={{ padding: "14px" }}>رقم الجوال</th>
-                <th style={{ padding: "14px" }}>الحالة</th>
-                <th style={{ padding: "14px" }}>واتساب</th>
-                <th style={{ padding: "14px" }}>تعديل</th>
-                <th style={{ padding: "14px" }}>حذف</th>
+              <tr
+                style={{
+                  backgroundColor: "#cbb7a4",
+                  color: "black",
+                }}
+              >
+                <th
+                  style={{
+                    padding: "14px",
+                  }}
+                >
+                  الاسم
+                </th>
+
+                <th
+                  style={{
+                    padding: "14px",
+                  }}
+                >
+                  رقم الجوال
+                </th>
+
+                <th
+                  style={{
+                    padding: "14px",
+                  }}
+                >
+                  الحي
+                </th>
+
+                <th
+                  style={{
+                    padding: "14px",
+                  }}
+                >
+                  التصنيف
+                </th>
+
+                <th
+                  style={{
+                    padding: "14px",
+                  }}
+                >
+                  مرشحة من
+                </th>
+
+                <th
+                  style={{
+                    padding: "14px",
+                  }}
+                >
+                  تاريخ الترشيح
+                </th>
+
+                <th
+                  style={{
+                    padding: "14px",
+                  }}
+                >
+                  التواصل
+                </th>
+
+                <th
+                  style={{
+                    padding: "14px",
+                  }}
+                >
+                  البروفايل
+                </th>
               </tr>
             </thead>
-            <tbody>
-              {filteredPotentialClients.slice(0, potentialVisibleCount).map((client) => {
-                const isEditingPotential = editingPotentialId === client.id;
-                const isExistingPotentialClient = isExistingClientPhone(client.phone);
 
-                return (
-                  <tr
-                    key={client.id}
+            <tbody>
+              {clientStatusesLoading &&
+              potentialClients.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan="8"
                     style={{
-                      borderBottom: "1px solid #eadfd5",
-                      backgroundColor: isExistingPotentialClient ? "#dbeafe" : "transparent",
+                      padding: "28px",
+                      color: "#8a7a68",
+                      fontWeight: "800",
                     }}
                   >
-                    <td style={{ padding: "14px", fontWeight: "bold" }}>
-                      {isEditingPotential ? (
-                        <input
-                          value={editedPotentialName}
-                          onChange={(e) => setEditedPotentialName(e.target.value)}
-                          style={{ ...editInputStyle, width: "120px" }}
-                        />
-                      ) : (
-                        client.name || "-"
-                      )}
-                    </td>
-                    <td style={{ padding: "14px" }}>
-                      {isEditingPotential ? (
-                        <input
-                          value={editedPotentialPhone}
-                          onChange={(e) => setEditedPotentialPhone(e.target.value)}
-                          onBlur={() => setEditedPotentialPhone(formatSaudiPhoneForStorage(editedPotentialPhone))}
-                          style={{ ...editInputStyle, width: "120px" }}
-                        />
-                      ) : (
-                        client.phone || "-"
-                      )}
-                    </td>
-                    <td style={{ padding: "14px" }}>
-                      {isEditingPotential ? (
-                        <input
-                          list="potentialStatusOptions"
-                          value={editedPotentialStatus}
-                          onFocus={(e) => e.target.showPicker?.()}
-                          onClick={(e) => e.target.showPicker?.()}
-                          onChange={(e) => setEditedPotentialStatus(e.target.value)}
-                          style={{ ...editInputStyle, width: "130px" }}
-                        />
-                      ) : (
-                        client.status || "-"
-                      )}
-                    </td>
-                    <td style={{ padding: "14px" }}>
-                      <button
-                        onClick={() => openDirectWhatsApp(client.phone)}
-                        style={{
-                          ...buttonStyle,
-                          background: "linear-gradient(135deg, #1f9f54, #25D366)",
-                          color: "white",
-                          padding: "9px 16px",
-                          borderRadius: "14px",
-                        }}
-                      >
-                        WhatsApp
-                      </button>
-                    </td>
-                    <td style={{ padding: "14px" }}>
-                      {isEditingPotential ? (
-                        <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
-                          <button
-                            onClick={() => saveEditedPotentialClient(client.id)}
-                            style={{ ...buttonStyle, backgroundColor: "#4b2e1f", color: "white", padding: "8px 12px" }}
-                          >
-                            Save
-                          </button>
-                          <button
-                            onClick={cancelEditPotentialClient}
-                            style={{ ...buttonStyle, backgroundColor: "#f3e8df", color: "#4b2e1f", padding: "8px 12px" }}
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      ) : canEditData ? (
-                        <button
-                          onClick={() => startEditPotentialClient(client)}
-                          style={{ ...buttonStyle, backgroundColor: "#f3e8df", color: "#4b2e1f", padding: "9px 16px" }}
-                        >
-                          Edit
-                        </button>
-                      ) : null}
-                    </td>
-                    <td style={{ padding: "14px" }}>
-                      {canDeleteData && (
-                      <button
-                        onClick={() => deletePotentialClient(client.id)}
-                        style={{ ...buttonStyle, backgroundColor: "#c3b4a1", color: "white", padding: "9px 16px" }}
-                      >
-                        Delete
-                      </button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-
-              {filteredPotentialClients.length === 0 && (
-                <tr>
-                  <td colSpan="6" style={{ padding: "28px", color: "#8a7a68" }}>
-                    لا توجد بيانات عملاء محتملين حتى الآن
+                    جاري تحميل العملاء المحتملين...
                   </td>
                 </tr>
+              ) : (
+                filteredPotentialClients
+                  .slice(
+                    0,
+                    potentialVisibleCount
+                  )
+                  .map((client) => (
+                    <tr
+                      key={client.id}
+                      style={{
+                        borderBottom:
+                          "1px solid #eadfd5",
+                        backgroundColor:
+                          client.hasReferral
+                            ? "rgba(255,247,235,0.72)"
+                            : "transparent",
+                      }}
+                    >
+                      <td
+                        style={{
+                          padding: "14px",
+                          fontWeight: "900",
+                        }}
+                      >
+                        {client.name || "-"}
+                      </td>
+
+                      <td
+                        style={{
+                          padding: "14px",
+                          direction: "ltr",
+                        }}
+                      >
+                        {client.phone || "-"}
+                      </td>
+
+                      <td
+                        style={{
+                          padding: "14px",
+                        }}
+                      >
+                        {client.address || "-"}
+                      </td>
+
+                      <td
+                        style={{
+                          padding: "14px",
+                        }}
+                      >
+                        <span
+                          style={{
+                            display:
+                              "inline-flex",
+                            alignItems:
+                              "center",
+                            justifyContent:
+                              "center",
+                            padding:
+                              "5px 10px",
+                            borderRadius:
+                              "999px",
+                            background:
+                              client.hasReferral
+                                ? "rgba(188,132,78,0.14)"
+                                : "rgba(107,114,128,0.12)",
+                            color:
+                              client.hasReferral
+                                ? "#8b5a2c"
+                                : "#5f6670",
+                            fontSize: "11px",
+                            fontWeight: "900",
+                            whiteSpace:
+                              "nowrap",
+                          }}
+                        >
+                          {client.hasReferral
+                            ? "مرشحة نشطة"
+                            : "بروفايل بدون خدمة"}
+                        </span>
+                      </td>
+
+                      <td
+                        style={{
+                          padding: "14px",
+                          fontWeight: "850",
+                        }}
+                      >
+                        {client.hasReferral
+                          ? client.sourceClientName ||
+                            "عميلة أخرى"
+                          : "-"}
+                      </td>
+
+                      <td
+                        style={{
+                          padding: "14px",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {client.hasReferral
+                          ? formatUnifiedClientDate(
+                              client.referralCreatedAt
+                            )
+                          : "-"}
+                      </td>
+
+                      <td
+                        style={{
+                          padding: "14px",
+                        }}
+                      >
+                        <button
+                          onClick={() =>
+                            openDirectWhatsApp(
+                              client.phone
+                            )
+                          }
+                          style={{
+                            ...buttonStyle,
+                            background:
+                              "linear-gradient(135deg, #1f9f54, #25D366)",
+                            color: "white",
+                            padding: "9px 14px",
+                            borderRadius: "14px",
+                          }}
+                        >
+                          WhatsApp
+                        </button>
+                      </td>
+
+                      <td
+                        style={{
+                          padding: "14px",
+                        }}
+                      >
+                        <button
+                          onClick={() =>
+                            openClientProfile(
+                              client
+                            )
+                          }
+                          style={{
+                            ...buttonStyle,
+                            backgroundColor:
+                              "#f3e8df",
+                            color: "#4b2e1f",
+                            padding: "9px 14px",
+                          }}
+                        >
+                          فتح
+                        </button>
+                      </td>
+                    </tr>
+                  ))
               )}
+
+              {!clientStatusesLoading &&
+                filteredPotentialClients
+                  .length === 0 && (
+                  <tr>
+                    <td
+                      colSpan="8"
+                      style={{
+                        padding: "28px",
+                        color: "#8a7a68",
+                      }}
+                    >
+                      لا توجد عميلات محتملات مطابقة
+                    </td>
+                  </tr>
+                )}
             </tbody>
           </table>
         </div>
@@ -55433,6 +57078,71 @@ if (screen === "potentialClients") {
                     "linear-gradient(90deg, transparent, #b88e6d, transparent)",
                 }}
               />
+
+              {selectedClientUnifiedStatus && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent:
+                      "center",
+                    gap: "7px",
+                    flexWrap: "wrap",
+                    marginTop: "10px",
+                  }}
+                >
+                  {selectedClientUnifiedStatus
+                    .isPotential && (
+                    <span
+                      style={{
+                        padding:
+                          "5px 10px",
+                        borderRadius:
+                          "999px",
+                        background:
+                          "rgba(181,123,71,0.14)",
+                        color:
+                          "#86562d",
+                        border:
+                          "1px solid rgba(181,123,71,0.22)",
+                        fontSize:
+                          "9px",
+                        fontWeight:
+                          "900",
+                      }}
+                    >
+                      عميلة محتملة
+                    </span>
+                  )}
+
+                  {selectedClientUnifiedStatus
+                    .isActiveReferral && (
+                    <span
+                      style={{
+                        padding:
+                          "5px 10px",
+                        borderRadius:
+                          "999px",
+                        background:
+                          "rgba(107,78,143,0.12)",
+                        color:
+                          "#684b86",
+                        border:
+                          "1px solid rgba(107,78,143,0.20)",
+                        fontSize:
+                          "9px",
+                        fontWeight:
+                          "900",
+                      }}
+                    >
+                      مرشحة من{" "}
+                      {selectedClientUnifiedStatus
+                        .sourceClientName ||
+                        "عميلة أخرى"}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             <div
@@ -58214,10 +59924,574 @@ if (screen === "potentialClients") {
               <div
                 style={{
                   display: "flex",
-                  justifyContent: "space-between",
+                  justifyContent:
+                    "space-between",
                   alignItems: "center",
                   flexWrap: "wrap",
                   gap: "10px",
+                  paddingBottom: "12px",
+                  marginBottom: "13px",
+                  borderBottom:
+                    "1px solid rgba(177,141,112,0.26)",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "9px",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "29px",
+                      height: "29px",
+                      flex: "0 0 29px",
+                      borderRadius: "9px",
+                      background:
+                        "linear-gradient(145deg, #d1b095, #9d7355)",
+                      color: "#fffaf5",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent:
+                        "center",
+                      fontSize: "11px",
+                      fontWeight: "900",
+                    }}
+                  >
+                    +
+                  </div>
+
+                  <div
+                    style={{
+                      textAlign: "right",
+                    }}
+                  >
+                    <div
+                      style={{
+                        color: "#3f2b21",
+                        fontSize: "13px",
+                        fontWeight: "950",
+                      }}
+                    >
+                      ترشيحات هذه العميلة
+                    </div>
+
+                    <div
+                      style={{
+                        color: "#99775f",
+                        fontSize: "9px",
+                        fontWeight: "800",
+                        marginTop: "2px",
+                      }}
+                    >
+                      Permanent Referral History
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    minWidth: "30px",
+                    height: "30px",
+                    padding: "0 9px",
+                    borderRadius: "10px",
+                    background:
+                      "rgba(122,82,57,0.10)",
+                    color: "#704a34",
+                    display:
+                      "inline-flex",
+                    alignItems:
+                      "center",
+                    justifyContent:
+                      "center",
+                    fontSize: "11px",
+                    fontWeight: "950",
+                  }}
+                >
+                  {profileReferrals.length}
+                </div>
+              </div>
+
+              {canAddData && (
+                <div
+                  style={{
+                    display: "grid",
+                    gap: "9px",
+                    padding: "13px",
+                    marginBottom: "14px",
+                    borderRadius: "16px",
+                    border:
+                      "1px solid rgba(166,126,95,0.26)",
+                    background:
+                      "rgba(255,250,245,0.62)",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "repeat(auto-fit, minmax(150px, 1fr))",
+                      gap: "8px",
+                    }}
+                  >
+                    <input
+                      placeholder="اسم العميلة المرشحة"
+                      value={
+                        profileReferralDraft
+                          .name
+                      }
+                      onChange={(event) =>
+                        updateProfileReferralDraft(
+                          "name",
+                          event.target.value
+                        )
+                      }
+                      disabled={
+                        profileReferralSaving
+                      }
+                      style={{
+                        width: "100%",
+                        minWidth: 0,
+                        minHeight: "42px",
+                        padding:
+                          "10px 12px",
+                        boxSizing:
+                          "border-box",
+                        borderRadius:
+                          "13px",
+                        border:
+                          "1px solid rgba(168,129,99,0.38)",
+                        background:
+                          "linear-gradient(145deg, #fffdf9, #f8eee5)",
+                        outline: "none",
+                        color: "#432f24",
+                        fontSize: "12px",
+                        fontWeight: "850",
+                      }}
+                    />
+
+                    <input
+                      placeholder="رقم الجوال الأساسي"
+                      value={
+                        profileReferralDraft
+                          .primaryPhone
+                      }
+                      onChange={(event) =>
+                        updateProfileReferralDraft(
+                          "primaryPhone",
+                          event.target.value
+                        )
+                      }
+                      onBlur={() =>
+                        updateProfileReferralDraft(
+                          "primaryPhone",
+                          formatSaudiPhoneForStorage(
+                            profileReferralDraft
+                              .primaryPhone
+                          )
+                        )
+                      }
+                      disabled={
+                        profileReferralSaving
+                      }
+                      inputMode="tel"
+                      style={{
+                        width: "100%",
+                        minWidth: 0,
+                        minHeight: "42px",
+                        padding:
+                          "10px 12px",
+                        boxSizing:
+                          "border-box",
+                        borderRadius:
+                          "13px",
+                        border:
+                          "1px solid rgba(168,129,99,0.38)",
+                        background:
+                          "linear-gradient(145deg, #fffdf9, #f8eee5)",
+                        outline: "none",
+                        color: "#432f24",
+                        fontSize: "12px",
+                        fontWeight: "850",
+                      }}
+                    />
+
+                    <input
+                      placeholder="رقم ثانوي للبحث فقط"
+                      value={
+                        profileReferralDraft
+                          .secondaryPhone
+                      }
+                      onChange={(event) =>
+                        updateProfileReferralDraft(
+                          "secondaryPhone",
+                          event.target.value
+                        )
+                      }
+                      onBlur={() =>
+                        updateProfileReferralDraft(
+                          "secondaryPhone",
+                          formatSaudiPhoneForStorage(
+                            profileReferralDraft
+                              .secondaryPhone
+                          )
+                        )
+                      }
+                      disabled={
+                        profileReferralSaving
+                      }
+                      inputMode="tel"
+                      style={{
+                        width: "100%",
+                        minWidth: 0,
+                        minHeight: "42px",
+                        padding:
+                          "10px 12px",
+                        boxSizing:
+                          "border-box",
+                        borderRadius:
+                          "13px",
+                        border:
+                          "1px solid rgba(168,129,99,0.38)",
+                        background:
+                          "linear-gradient(145deg, #fffdf9, #f8eee5)",
+                        outline: "none",
+                        color: "#432f24",
+                        fontSize: "12px",
+                        fontWeight: "850",
+                      }}
+                    />
+
+                    <input
+                      placeholder="الحي - اختياري"
+                      value={
+                        profileReferralDraft
+                          .address
+                      }
+                      onChange={(event) =>
+                        updateProfileReferralDraft(
+                          "address",
+                          event.target.value
+                        )
+                      }
+                      disabled={
+                        profileReferralSaving
+                      }
+                      style={{
+                        width: "100%",
+                        minWidth: 0,
+                        minHeight: "42px",
+                        padding:
+                          "10px 12px",
+                        boxSizing:
+                          "border-box",
+                        borderRadius:
+                          "13px",
+                        border:
+                          "1px solid rgba(168,129,99,0.38)",
+                        background:
+                          "linear-gradient(145deg, #fffdf9, #f8eee5)",
+                        outline: "none",
+                        color: "#432f24",
+                        fontSize: "12px",
+                        fontWeight: "850",
+                      }}
+                    />
+                  </div>
+
+                  {profileReferralError && (
+                    <div
+                      style={{
+                        padding:
+                          "9px 11px",
+                        borderRadius:
+                          "11px",
+                        background:
+                          "rgba(166,76,61,0.09)",
+                        border:
+                          "1px solid rgba(166,76,61,0.18)",
+                        color: "#964c3e",
+                        fontSize: "10px",
+                        fontWeight: "850",
+                      }}
+                    >
+                      {profileReferralError}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={
+                      saveProfileReferral
+                    }
+                    disabled={
+                      profileReferralSaving ||
+                      !String(
+                        profileReferralDraft
+                          .name ||
+                        ""
+                      ).trim() ||
+                      !String(
+                        profileReferralDraft
+                          .primaryPhone ||
+                        ""
+                      ).trim()
+                    }
+                    style={{
+                      minHeight: "40px",
+                      padding:
+                        "9px 15px",
+                      borderRadius: "12px",
+                      border:
+                        "1px solid rgba(75,46,31,0.22)",
+                      background:
+                        profileReferralSaving ||
+                        !String(
+                          profileReferralDraft
+                            .name ||
+                          ""
+                        ).trim() ||
+                        !String(
+                          profileReferralDraft
+                            .primaryPhone ||
+                          ""
+                        ).trim()
+                          ? "#d9c9bc"
+                          : "linear-gradient(135deg, #4b3327, #76523d)",
+                      color: "#fffaf5",
+                      boxShadow:
+                        "0 6px 14px rgba(75,46,31,0.13)",
+                      fontSize: "10px",
+                      fontWeight: "900",
+                      cursor:
+                        profileReferralSaving
+                          ? "wait"
+                          : "pointer",
+                    }}
+                  >
+                    {profileReferralSaving
+                      ? "جاري حفظ الترشيح..."
+                      : "إضافة العميلة المرشحة"}
+                  </button>
+                </div>
+              )}
+
+              {profileReferrals.length ===
+              0 ? (
+                <div
+                  style={{
+                    minHeight: "72px",
+                    padding: "16px",
+                    boxSizing:
+                      "border-box",
+                    borderRadius: "15px",
+                    border:
+                      "1px dashed rgba(170,132,103,0.36)",
+                    background:
+                      "rgba(255,250,245,0.60)",
+                    color: "#92725a",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent:
+                      "center",
+                    textAlign: "center",
+                    fontSize: "11px",
+                    fontWeight: "850",
+                  }}
+                >
+                  لا توجد ترشيحات مسجلة من هذه العميلة
+                </div>
+              ) : (
+                <div
+                  style={{
+                    display: "grid",
+                    gap: "9px",
+                    maxHeight: "330px",
+                    overflowY: "auto",
+                    paddingLeft: "3px",
+                  }}
+                >
+                  {profileReferrals.map(
+                    (referral) => (
+                      <div
+                        key={referral.id}
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns:
+                            "1fr auto",
+                          gap: "10px",
+                          alignItems:
+                            "center",
+                          padding:
+                            "11px 12px",
+                          borderRadius:
+                            "14px",
+                          border:
+                            "1px solid rgba(141,101,74,0.22)",
+                          background:
+                            "linear-gradient(145deg, #fffdfa, #f7eee7)",
+                          boxShadow:
+                            "0 5px 14px rgba(75,46,31,0.05)",
+                        }}
+                      >
+                        <div
+                          style={{
+                            minWidth: 0,
+                            textAlign:
+                              "right",
+                          }}
+                        >
+                          <div
+                            style={{
+                              display:
+                                "flex",
+                              alignItems:
+                                "center",
+                              gap: "7px",
+                              flexWrap:
+                                "wrap",
+                              marginBottom:
+                                "5px",
+                            }}
+                          >
+                            <strong
+                              style={{
+                                color:
+                                  "#432f24",
+                                fontSize:
+                                  "11px",
+                              }}
+                            >
+                              {referral.name ||
+                                "-"}
+                            </strong>
+
+                            <span
+                              style={{
+                                padding:
+                                  "3px 8px",
+                                borderRadius:
+                                  "999px",
+                                background:
+                                  referral.isActiveReferral
+                                    ? "rgba(188,132,78,0.14)"
+                                    : "rgba(67,126,90,0.14)",
+                                color:
+                                  referral.isActiveReferral
+                                    ? "#8b5a2c"
+                                    : "#356e4c",
+                                fontSize:
+                                  "8px",
+                                fontWeight:
+                                  "900",
+                              }}
+                            >
+                              {referral.isActiveReferral
+                                ? "مرشحة نشطة"
+                                : "تحولت إلى عميلة"}
+                            </span>
+                          </div>
+
+                          <div
+                            style={{
+                              color:
+                                "#775845",
+                              fontSize:
+                                "9px",
+                              fontWeight:
+                                "800",
+                              direction:
+                                "ltr",
+                              textAlign:
+                                "right",
+                            }}
+                          >
+                            {referral.phone ||
+                              "-"}
+                          </div>
+
+                          <div
+                            style={{
+                              color:
+                                "#9a7a63",
+                              fontSize:
+                                "8px",
+                              fontWeight:
+                                "800",
+                              marginTop:
+                                "4px",
+                            }}
+                          >
+                            {referral.address ||
+                              "الحي غير مسجل"}
+                            {" · "}
+                            {formatUnifiedClientDate(
+                              referral.createdAt
+                            )}
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openClientProfile(
+                              referral.client
+                            )
+                          }
+                          style={{
+                            minHeight:
+                              "34px",
+                            padding:
+                              "6px 10px",
+                            borderRadius:
+                              "10px",
+                            border:
+                              "1px solid rgba(75,46,31,0.20)",
+                            background:
+                              "linear-gradient(145deg, #f4e6da, #dfc6b1)",
+                            color:
+                              "#5c3e2e",
+                            fontSize:
+                              "9px",
+                            fontWeight:
+                              "900",
+                            cursor:
+                              "pointer",
+                            whiteSpace:
+                              "nowrap",
+                          }}
+                        >
+                          فتح البروفايل
+                        </button>
+                      </div>
+                    )
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div
+              style={{
+                minWidth: 0,
+                padding: "18px",
+                boxSizing: "border-box",
+                borderRadius: "24px",
+                border:
+                  "1px solid rgba(177,141,112,0.34)",
+                background:
+                  "linear-gradient(145deg, rgba(255,253,249,0.97), rgba(229,211,195,0.87))",
+                boxShadow:
+                  "0 13px 30px rgba(75,46,31,0.08), inset 0 1px 0 rgba(255,255,255,0.90)",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent:
+                    "space-between",
+                  gap: "9px",
                   paddingBottom: "12px",
                   marginBottom: "13px",
                   borderBottom:
@@ -58247,7 +60521,7 @@ if (screen === "potentialClients") {
                       fontWeight: "900",
                     }}
                   >
-                    +
+                    ✎
                   </div>
 
                   <div
@@ -58262,7 +60536,7 @@ if (screen === "potentialClients") {
                         fontWeight: "950",
                       }}
                     >
-                      العملاء المرشحون
+                      سجل ملاحظات العميلة
                     </div>
 
                     <div
@@ -58273,270 +60547,384 @@ if (screen === "potentialClients") {
                         marginTop: "2px",
                       }}
                     >
-                      Referrals
+                      Append-only Notes
                     </div>
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={addProfileReferral}
-                  style={{
-                    minHeight: "32px",
-                    padding: "6px 11px",
-                    borderRadius: "11px",
-                    border:
-                      "1px solid rgba(75,46,31,0.22)",
-                    background:
-                      "linear-gradient(135deg, #4b3327, #76523d)",
-                    color: "#fffaf5",
-                    boxShadow:
-                      "0 6px 14px rgba(75,46,31,0.13)",
-                    fontSize: "10px",
-                    fontWeight: "900",
-                    cursor: "pointer",
-                  }}
-                >
-                  + إضافة رقم
-                </button>
-              </div>
-
-              {profileReferrals.length === 0 && (
                 <div
                   style={{
-                    minHeight: "72px",
-                    padding: "16px",
+                    minWidth: "30px",
+                    height: "30px",
+                    padding:
+                      "0 9px",
+                    borderRadius: "10px",
+                    background:
+                      "rgba(122,82,57,0.10)",
+                    color: "#704a34",
+                    display:
+                      "inline-flex",
+                    alignItems:
+                      "center",
+                    justifyContent:
+                      "center",
+                    fontSize: "11px",
+                    fontWeight: "950",
+                  }}
+                >
+                  {
+                    clientNoteHistory.length
+                  }
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gap: "9px",
+                  marginBottom: "15px",
+                }}
+              >
+                <textarea
+                  placeholder="اكتبي ملاحظة جديدة..."
+                  value={profileNoteDraft}
+                  onChange={(event) => {
+                    setProfileNoteDraft(
+                      event.target.value
+                    );
+
+                    if (
+                      profileNoteSaveError
+                    ) {
+                      setProfileNoteSaveError(
+                        ""
+                      );
+                    }
+                  }}
+                  disabled={
+                    !canEditData ||
+                    profileNoteSaving
+                  }
+                  maxLength={5000}
+                  style={{
+                    width: "100%",
+                    minHeight: "105px",
+                    padding: "14px",
                     boxSizing: "border-box",
                     borderRadius: "15px",
                     border:
-                      "1px dashed rgba(170,132,103,0.36)",
+                      "1px solid rgba(168,129,99,0.38)",
                     background:
-                      "rgba(255,250,245,0.60)",
-                    color: "#92725a",
+                      "linear-gradient(145deg, #fffdf9, #f8eee5)",
+                    outline: "none",
+                    color: "#432f24",
+                    fontSize: "12px",
+                    lineHeight: "1.7",
+                    fontWeight: "750",
+                    resize: "vertical",
+                    fontFamily: "Arial",
+                    direction: "rtl",
+                    textAlign: "right",
+                    boxShadow:
+                      "inset 0 2px 7px rgba(75,46,31,0.04)",
+                    opacity:
+                      !canEditData
+                        ? 0.68
+                        : 1,
+                  }}
+                />
+
+                <div
+                  style={{
                     display: "flex",
                     alignItems: "center",
-                    justifyContent: "center",
+                    justifyContent:
+                      "space-between",
+                    gap: "10px",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div
+                    style={{
+                      color: "#9a7c67",
+                      fontSize: "9px",
+                      fontWeight: "800",
+                    }}
+                  >
+                    {
+                      String(
+                        profileNoteDraft ||
+                        ""
+                      ).length
+                    }
+                    /5000
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={
+                      saveProfileNote
+                    }
+                    disabled={
+                      !canEditData ||
+                      profileNoteSaving ||
+                      !String(
+                        profileNoteDraft ||
+                        ""
+                      ).trim()
+                    }
+                    style={{
+                      minWidth: "135px",
+                      minHeight: "39px",
+                      padding:
+                        "9px 15px",
+                      borderRadius: "12px",
+                      border:
+                        "1px solid rgba(62,39,29,0.22)",
+                      background:
+                        !canEditData ||
+                        profileNoteSaving ||
+                        !String(
+                          profileNoteDraft ||
+                          ""
+                        ).trim()
+                          ? "#d9c9bc"
+                          : "linear-gradient(135deg, #432e23, #76513b)",
+                      color:
+                        "#fffaf5",
+                      fontSize: "11px",
+                      fontWeight: "950",
+                      cursor:
+                        !canEditData ||
+                        profileNoteSaving ||
+                        !String(
+                          profileNoteDraft ||
+                          ""
+                        ).trim()
+                          ? "not-allowed"
+                          : "pointer",
+                    }}
+                  >
+                    {
+                      profileNoteSaving
+                        ? "جاري الحفظ..."
+                        : "إضافة الملاحظة"
+                    }
+                  </button>
+                </div>
+
+                {profileNoteSaveError && (
+                  <div
+                    style={{
+                      padding:
+                        "9px 11px",
+                      borderRadius: "11px",
+                      background:
+                        "rgba(166,76,61,0.09)",
+                      border:
+                        "1px solid rgba(166,76,61,0.18)",
+                      color: "#964c3e",
+                      fontSize: "10px",
+                      fontWeight: "850",
+                    }}
+                  >
+                    {
+                      profileNoteSaveError
+                    }
+                  </div>
+                )}
+              </div>
+
+              <div
+                style={{
+                  height: "1px",
+                  background:
+                    "rgba(177,141,112,0.24)",
+                  marginBottom: "13px",
+                }}
+              />
+
+              {clientNotesLoading ? (
+                <div
+                  style={{
+                    padding: "18px",
                     textAlign: "center",
+                    color: "#8b6e59",
                     fontSize: "11px",
                     fontWeight: "850",
                   }}
                 >
-                  لا توجد أرقام مرشحة حتى الآن
+                  جاري تحميل الملاحظات...
                 </div>
-              )}
-
-              {profileReferrals.map(
-                (referral) => (
-                  <div
-                    className="paradise-client-profile-referral-row"
-                    key={referral.id}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns:
-                        canDeleteData
-                          ? "1fr 1fr 34px"
-                          : "1fr 1fr",
-                      gap: "8px",
-                      alignItems: "center",
-                      marginBottom: "9px",
-                      direction: "rtl",
-                    }}
-                  >
-                    <input
-                      placeholder="اسم العميلة"
-                      value={referral.name}
-                      onChange={(e) =>
-                        updateProfileReferral(
-                          referral.id,
-                          "name",
-                          e.target.value
-                        )
-                      }
-                      style={{
-                        width: "100%",
-                        minWidth: 0,
-                        minHeight: "42px",
-                        padding: "10px 12px",
-                        boxSizing: "border-box",
-                        borderRadius: "13px",
-                        border:
-                          "1px solid rgba(168,129,99,0.38)",
-                        background:
-                          "linear-gradient(145deg, #fffdf9, #f8eee5)",
-                        outline: "none",
-                        color: "#432f24",
-                        fontSize: "12px",
-                        fontWeight: "850",
-                      }}
-                    />
-
-                    <input
-                      placeholder="رقم الجوال"
-                      value={referral.phone}
-                      onChange={(e) =>
-                        updateProfileReferral(
-                          referral.id,
-                          "phone",
-                          e.target.value
-                        )
-                      }
-                      style={{
-                        width: "100%",
-                        minWidth: 0,
-                        minHeight: "42px",
-                        padding: "10px 12px",
-                        boxSizing: "border-box",
-                        borderRadius: "13px",
-                        border:
-                          "1px solid rgba(168,129,99,0.38)",
-                        background:
-                          "linear-gradient(145deg, #fffdf9, #f8eee5)",
-                        outline: "none",
-                        color: "#432f24",
-                        fontSize: "12px",
-                        fontWeight: "850",
-                      }}
-                    />
-
-                    {canDeleteData && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          removeProfileReferral(
-                            referral.id
-                          )
-                        }
-                        title="حذف الرقم"
-                        aria-label="حذف الرقم"
-                        style={{
-                          width: "34px",
-                          height: "34px",
-                          padding: 0,
-                          borderRadius: "10px",
-                          border:
-                            "1px solid rgba(141,101,74,0.28)",
-                          background:
-                            "linear-gradient(145deg, #f4e6da, #dfc6b1)",
-                          color: "#654432",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontSize: "13px",
-                          fontWeight: "900",
-                          cursor: "pointer",
-                        }}
-                      >
-                        ×
-                      </button>
-                    )}
-                  </div>
-                )
-              )}
-            </div>
-
-            <div
-              style={{
-                minWidth: 0,
-                padding: "18px",
-                boxSizing: "border-box",
-                borderRadius: "24px",
-                border:
-                  "1px solid rgba(177,141,112,0.34)",
-                background:
-                  "linear-gradient(145deg, rgba(255,253,249,0.97), rgba(229,211,195,0.87))",
-                boxShadow:
-                  "0 13px 30px rgba(75,46,31,0.08), inset 0 1px 0 rgba(255,255,255,0.90)",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "9px",
-                  paddingBottom: "12px",
-                  marginBottom: "13px",
-                  borderBottom:
-                    "1px solid rgba(177,141,112,0.26)",
-                }}
-              >
+              ) : clientNotesError ? (
                 <div
                   style={{
-                    width: "29px",
-                    height: "29px",
-                    flex: "0 0 29px",
-                    borderRadius: "9px",
+                    padding:
+                      "10px 12px",
+                    borderRadius: "12px",
                     background:
-                      "linear-gradient(145deg, #d1b095, #9d7355)",
-                    color: "#fffaf5",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: "11px",
-                    fontWeight: "900",
+                      "rgba(166,76,61,0.09)",
+                    border:
+                      "1px solid rgba(166,76,61,0.18)",
+                    color: "#964c3e",
+                    fontSize: "10px",
+                    fontWeight: "850",
                   }}
                 >
-                  ✎
+                  {clientNotesError}
                 </div>
-
+              ) : clientNoteHistory.length ===
+                0 ? (
                 <div
                   style={{
-                    textAlign: "right",
+                    padding: "18px",
+                    borderRadius: "13px",
+                    background:
+                      "rgba(255,255,255,0.45)",
+                    border:
+                      "1px dashed rgba(150,111,82,0.28)",
+                    textAlign: "center",
+                    color: "#92745e",
+                    fontSize: "10px",
+                    fontWeight: "850",
                   }}
                 >
-                  <div
-                    style={{
-                      color: "#3f2b21",
-                      fontSize: "13px",
-                      fontWeight: "950",
-                    }}
-                  >
-                    ملاحظات العميلة
-                  </div>
-
-                  <div
-                    style={{
-                      color: "#99775f",
-                      fontSize: "9px",
-                      fontWeight: "800",
-                      marginTop: "2px",
-                    }}
-                  >
-                    Private Notes
-                  </div>
+                  لا توجد ملاحظات مسجلة
                 </div>
-              </div>
+              ) : (
+                <div
+                  style={{
+                    display: "grid",
+                    gap: "10px",
+                    maxHeight: "330px",
+                    overflowY: "auto",
+                    paddingLeft: "3px",
+                  }}
+                >
+                  {clientNoteHistory.map(
+                    (note) => {
+                      const isLegacyNote =
+                        note.source ===
+                        "legacy_clients_notes";
 
-              <textarea
-                placeholder="اكتب الملاحظات هنا..."
-                value={profileNotes}
-                onChange={(e) =>
-                  setProfileNotes(
-                    e.target.value
-                  )
-                }
-                style={{
-                  width: "100%",
-                  minHeight: "148px",
-                  padding: "14px",
-                  boxSizing: "border-box",
-                  borderRadius: "15px",
-                  border:
-                    "1px solid rgba(168,129,99,0.38)",
-                  background:
-                    "linear-gradient(145deg, #fffdf9, #f8eee5)",
-                  outline: "none",
-                  color: "#432f24",
-                  fontSize: "12px",
-                  lineHeight: "1.7",
-                  fontWeight: "750",
-                  resize: "vertical",
-                  fontFamily: "Arial",
-                  direction: "rtl",
-                  textAlign: "right",
-                  boxShadow:
-                    "inset 0 2px 7px rgba(75,46,31,0.04)",
-                }}
-              />
+                      return (
+                        <div
+                          key={note.id}
+                          style={{
+                            padding:
+                              "12px 13px",
+                            borderRadius:
+                              "14px",
+                            border:
+                              isLegacyNote
+                                ? "1px solid rgba(167,126,84,0.28)"
+                                : "1px solid rgba(134,100,76,0.22)",
+                            background:
+                              isLegacyNote
+                                ? "linear-gradient(145deg, #fbf3e7, #f1e0cb)"
+                                : "linear-gradient(145deg, #fffdfa, #f7eee7)",
+                            boxShadow:
+                              "0 5px 14px rgba(75,46,31,0.05)",
+                          }}
+                        >
+                          <div
+                            style={{
+                              display:
+                                "flex",
+                              alignItems:
+                                "flex-start",
+                              justifyContent:
+                                "space-between",
+                              gap: "10px",
+                              marginBottom:
+                                "8px",
+                            }}
+                          >
+                            <div
+                              style={{
+                                color:
+                                  "#5c3e2e",
+                                fontSize:
+                                  "10px",
+                                fontWeight:
+                                  "950",
+                              }}
+                            >
+                              {isLegacyNote
+                                ? "ملاحظة مستوردة من النظام السابق"
+                                : note.createdByName ||
+                                  "موظفة"}
+                            </div>
+
+                            {!isLegacyNote && (
+                              <div
+                                style={{
+                                  color:
+                                    "#9b7b65",
+                                  fontSize:
+                                    "8px",
+                                  fontWeight:
+                                    "800",
+                                  whiteSpace:
+                                    "nowrap",
+                                }}
+                              >
+                                {formatClientNoteDate(
+                                  note.createdAt
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          <div
+                            style={{
+                              color:
+                                "#432f24",
+                              fontSize:
+                                "11px",
+                              lineHeight:
+                                "1.75",
+                              fontWeight:
+                                "750",
+                              whiteSpace:
+                                "pre-wrap",
+                              overflowWrap:
+                                "anywhere",
+                              direction:
+                                "rtl",
+                              textAlign:
+                                "right",
+                            }}
+                          >
+                            {note.noteText}
+                          </div>
+
+                          {isLegacyNote && (
+                            <div
+                              style={{
+                                marginTop:
+                                  "9px",
+                                paddingTop:
+                                  "8px",
+                                borderTop:
+                                  "1px solid rgba(167,126,84,0.18)",
+                                color:
+                                  "#9a7453",
+                                fontSize:
+                                  "8px",
+                                fontWeight:
+                                  "800",
+                              }}
+                            >
+                              التاريخ الأصلي واسم الموظفة غير متوفرين.
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -59250,12 +61638,44 @@ if (screen === "potentialClients") {
 
                         <td style={{ padding: "12px" }}>
                           <input
+                            placeholder="الرقم الأساسي"
                             value={editedPhone}
                             onChange={(e) => setEditedPhone(e.target.value)}
-                            onBlur={() => setEditedPhone(formatSaudiPhoneForStorage(editedPhone))}
+                            onBlur={() =>
+                              setEditedPhone(
+                                formatSaudiPhoneForStorage(
+                                  editedPhone
+                                )
+                              )
+                            }
+                            inputMode="tel"
                             style={{
                               ...editInputStyle,
                               width: "90%",
+                              marginBottom: "8px",
+                            }}
+                          />
+
+                          <input
+                            placeholder="رقم ثانوي للبحث فقط"
+                            value={editedSecondaryPhone}
+                            onChange={(e) =>
+                              setEditedSecondaryPhone(
+                                e.target.value
+                              )
+                            }
+                            onBlur={() =>
+                              setEditedSecondaryPhone(
+                                formatSaudiPhoneForStorage(
+                                  editedSecondaryPhone
+                                )
+                              )
+                            }
+                            inputMode="tel"
+                            style={{
+                              ...editInputStyle,
+                              width: "90%",
+                              marginBottom: 0,
                             }}
                           />
                         </td>
@@ -59581,10 +62001,26 @@ if (screen === "potentialClients") {
             />
 
             <input
-              placeholder="Phone Number"
+              placeholder="Primary Phone Number"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               onBlur={() => setPhone(formatSaudiPhoneForStorage(phone))}
+              inputMode="tel"
+              style={inputStyle}
+            />
+
+            <input
+              placeholder="Secondary Phone (Search Only - Optional)"
+              value={secondaryPhone}
+              onChange={(e) => setSecondaryPhone(e.target.value)}
+              onBlur={() =>
+                setSecondaryPhone(
+                  formatSaudiPhoneForStorage(
+                    secondaryPhone
+                  )
+                )
+              }
+              inputMode="tel"
               style={inputStyle}
             />
 
