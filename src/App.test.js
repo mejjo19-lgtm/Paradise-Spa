@@ -1,8 +1,8 @@
 import { render, screen } from '@testing-library/react';
 import App from './App';
 
-test('renders the Paradise Spa login', () => {
+test('renders learn react link', () => {
   render(<App />);
-  const loginButton = screen.getByRole('button', { name: /login/i });
-  expect(loginButton).toBeInTheDocument();
+  const linkElement = screen.getByText(/learn react/i);
+  expect(linkElement).toBeInTheDocument();
 });

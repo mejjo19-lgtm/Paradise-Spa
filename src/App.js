@@ -6573,41 +6573,6 @@ const deletePurchase = async (
     setProfileReferralError,
   ] = useState("");
 
-  const [
-    showProfileReferralModal,
-    setShowProfileReferralModal,
-  ] = useState(false);
-
-  const [
-    profileReferralSources,
-    setProfileReferralSources,
-  ] = useState([]);
-
-  const [
-    profileReferralSourcesLoading,
-    setProfileReferralSourcesLoading,
-  ] = useState(false);
-
-  const [
-    editingClientNoteId,
-    setEditingClientNoteId,
-  ] = useState(null);
-
-  const [
-    editingClientNoteDraft,
-    setEditingClientNoteDraft,
-  ] = useState("");
-
-  const [
-    clientNoteMutationId,
-    setClientNoteMutationId,
-  ] = useState(null);
-
-  const [
-    clientNoteMutationError,
-    setClientNoteMutationError,
-  ] = useState("");
-
 
   const normalizeDigits = (value) => String(value || "").replace(/\D/g, "");
 
@@ -7358,18 +7323,6 @@ const deletePurchase = async (
       ""
     );
 
-    setShowProfileReferralModal(
-      false
-    );
-
-    setEditingClientNoteId(
-      null
-    );
-
-    setEditingClientNoteDraft(
-      ""
-    );
-
     return nextReferrals;
   };
 
@@ -7386,7 +7339,6 @@ const deletePurchase = async (
         "clientProfile"
       ) {
         setProfileReferrals([]);
-        setProfileReferralSources([]);
       }
 
       return undefined;
@@ -7397,17 +7349,11 @@ const deletePurchase = async (
 
     const refreshProfileReferrals =
       async () => {
-        const [nextReferrals] =
-          await Promise.all([
-            loadProfileReferralsForClient(
-              selectedClientId,
-              clientStatusRows
-            ),
-
-            loadProfileReferralSourcesForClient(
-              selectedClientId
-            ),
-          ]);
+        const nextReferrals =
+          await loadProfileReferralsForClient(
+            selectedClientId,
+            clientStatusRows
+          );
 
         if (!effectActive) {
           return;
@@ -7431,181 +7377,6 @@ const deletePurchase = async (
     selectedClientId,
     clientStatusRows,
   ]);
-
-  async function loadProfileReferralSourcesForClient(
-    clientId
-  ) {
-    const numericClientId =
-      Number(clientId);
-
-    if (
-      !Number.isInteger(
-        numericClientId
-      ) ||
-      numericClientId <= 0
-    ) {
-      setProfileReferralSources([]);
-      setProfileReferralSourcesLoading(false);
-
-      return [];
-    }
-
-    setProfileReferralSourcesLoading(true);
-
-    try {
-      const {
-        data: linkRows,
-        error: linkError,
-      } = await supabase
-        .from(
-          "client_referral_links"
-        )
-        .select(
-          [
-            "id",
-            "referred_client_id",
-            "source_client_id",
-            "created_at",
-          ].join(",")
-        )
-        .eq(
-          "referred_client_id",
-          numericClientId
-        )
-        .order(
-          "created_at",
-          {
-            ascending: true,
-          }
-        );
-
-      if (linkError) {
-        throw linkError;
-      }
-
-      const sourceClientIds = [
-        ...new Set(
-          (linkRows || [])
-            .map(
-              (link) =>
-                Number(
-                  link.source_client_id
-                )
-            )
-            .filter(
-              (sourceClientId) =>
-                Number.isInteger(
-                  sourceClientId
-                ) &&
-                sourceClientId > 0
-            )
-        ),
-      ];
-
-      if (
-        sourceClientIds.length === 0
-      ) {
-        setProfileReferralSources([]);
-
-        return [];
-      }
-
-      const {
-        data: sourceClientRows,
-        error: sourceClientsError,
-      } = await supabase
-        .from("clients")
-        .select(
-          "id,name,arabic_name,loyalty_card_name,phone,secondary_phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id"
-        )
-        .in(
-          "id",
-          sourceClientIds
-        );
-
-      if (sourceClientsError) {
-        throw sourceClientsError;
-      }
-
-      const sourceClientsById =
-        new Map(
-          (sourceClientRows || [])
-            .map(
-              normalizeClientRecord
-            )
-            .map(
-              (sourceClient) => [
-                String(
-                  sourceClient.id
-                ),
-                sourceClient,
-              ]
-            )
-        );
-
-      const seenSourceClientIds =
-        new Set();
-
-      const nextSources =
-        (linkRows || [])
-          .map((link) => {
-            const sourceClient =
-              sourceClientsById.get(
-                String(
-                  link.source_client_id
-                )
-              );
-
-            if (
-              !sourceClient ||
-              seenSourceClientIds.has(
-                String(
-                  sourceClient.id
-                )
-              )
-            ) {
-              return null;
-            }
-
-            seenSourceClientIds.add(
-              String(
-                sourceClient.id
-              )
-            );
-
-            return {
-              id: link.id,
-              sourceClientId:
-                sourceClient.id,
-              sourceClientName:
-                sourceClient.name ||
-                "عميلة أخرى",
-              createdAt:
-                link.created_at || "",
-              client:
-                sourceClient,
-            };
-          })
-          .filter(Boolean);
-
-      setProfileReferralSources(
-        nextSources
-      );
-
-      return nextSources;
-    } catch (error) {
-      console.error(
-        "Profile referral sources load error:",
-        error
-      );
-
-      setProfileReferralSources([]);
-
-      return [];
-    } finally {
-      setProfileReferralSourcesLoading(false);
-    }
-  }
 
   const normalizeClientNoteRecord = (
     note
@@ -7744,10 +7515,6 @@ const deletePurchase = async (
       ""
     );
 
-    setClientNoteMutationError(
-      ""
-    );
-
     setProfileReferralDraft({
       name: "",
       primaryPhone: "",
@@ -7797,15 +7564,9 @@ const deletePurchase = async (
       )
     );
 
-    await Promise.all([
-      loadProfileReferralsForClient(
-        client.id
-      ),
-
-      loadProfileReferralSourcesForClient(
-        client.id
-      ),
-    ]);
+    await loadProfileReferralsForClient(
+      client.id
+    );
 
     goToScreen(
       "clientProfile"
@@ -8156,263 +7917,6 @@ const deletePurchase = async (
       } finally {
         setProfileNoteSaving(
           false
-        );
-      }
-    };
-
-  const callClientNoteMutationApi =
-    async (
-      method,
-      payload
-    ) => {
-      const {
-        data: sessionData,
-        error: sessionError,
-      } = await supabase.auth
-        .getSession();
-
-      const accessToken =
-        sessionData?.session
-          ?.access_token;
-
-      if (
-        sessionError ||
-        !accessToken
-      ) {
-        throw new Error(
-          "انتهت جلسة الدخول. سجل الدخول مرة أخرى."
-        );
-      }
-
-      const response =
-        await fetch(
-          "/api/client-notes",
-          {
-            method,
-            headers: {
-              "Content-Type":
-                "application/json",
-              Authorization:
-                `Bearer ${accessToken}`,
-            },
-            body:
-              JSON.stringify(
-                payload
-              ),
-          }
-        );
-
-      let responseData = {};
-
-      try {
-        responseData =
-          await response.json();
-      } catch {
-        responseData = {};
-      }
-
-      if (!response.ok) {
-        throw new Error(
-          responseData.error ||
-            "تعذر تنفيذ العملية."
-        );
-      }
-
-      return responseData;
-    };
-
-
-  const startEditingClientNote =
-    (note) => {
-      if (
-        !canEditData ||
-        note?.source ===
-          "legacy_clients_notes"
-      ) {
-        return;
-      }
-
-      setEditingClientNoteId(
-        note.id
-      );
-
-      setEditingClientNoteDraft(
-        note.noteText || ""
-      );
-
-      setClientNoteMutationError("");
-    };
-
-
-  const cancelEditingClientNote =
-    () => {
-      setEditingClientNoteId(
-        null
-      );
-
-      setEditingClientNoteDraft(
-        ""
-      );
-    };
-
-
-  const updateClientNote =
-    async (note) => {
-      if (
-        !ensureSystemWritable() ||
-        !canEditData ||
-        !note?.id ||
-        clientNoteMutationId
-      ) {
-        return false;
-      }
-
-      const cleanNote =
-        String(
-          editingClientNoteDraft ||
-          ""
-        ).trim();
-
-      if (!cleanNote) {
-        setClientNoteMutationError(
-          "لا يمكن حفظ ملاحظة فارغة."
-        );
-
-        return false;
-      }
-
-      if (cleanNote.length > 5000) {
-        setClientNoteMutationError(
-          "الملاحظة طويلة جدًا. الحد الأقصى 5000 حرف."
-        );
-
-        return false;
-      }
-
-      setClientNoteMutationId(
-        note.id
-      );
-
-      setClientNoteMutationError("");
-
-      try {
-        const data =
-          await callClientNoteMutationApi(
-            "PATCH",
-            {
-              noteId: note.id,
-              clientId:
-                selectedClientId,
-              noteText:
-                cleanNote,
-            }
-          );
-
-        if (!data?.note?.id) {
-          throw new Error(
-            "تعذر اعتماد تعديل الملاحظة."
-          );
-        }
-
-        upsertClientNoteInHistory(
-          normalizeClientNoteRecord(
-            data.note
-          )
-        );
-
-        cancelEditingClientNote();
-
-        return true;
-      } catch (error) {
-        console.error(
-          "Client note update error:",
-          error
-        );
-
-        setClientNoteMutationError(
-          error?.message ||
-            "تعذر تعديل الملاحظة."
-        );
-
-        return false;
-      } finally {
-        setClientNoteMutationId(
-          null
-        );
-      }
-    };
-
-
-  const deleteClientNote =
-    async (note) => {
-      if (
-        !note?.id ||
-        clientNoteMutationId ||
-        !ensureDeleteAllowed()
-      ) {
-        return false;
-      }
-
-      if (
-        !window.confirm(
-          "حذف هذه الملاحظة نهائيًا؟"
-        )
-      ) {
-        return false;
-      }
-
-      setClientNoteMutationId(
-        note.id
-      );
-
-      setClientNoteMutationError("");
-
-      try {
-        await callClientNoteMutationApi(
-          "DELETE",
-          {
-            noteId: note.id,
-            clientId:
-              selectedClientId,
-          }
-        );
-
-        setClientNoteHistory(
-          (previousNotes) =>
-            previousNotes.filter(
-              (historyNote) =>
-                String(
-                  historyNote.id
-                ) !==
-                String(note.id)
-            )
-        );
-
-        if (
-          String(
-            editingClientNoteId
-          ) ===
-          String(note.id)
-        ) {
-          cancelEditingClientNote();
-        }
-
-        return true;
-      } catch (error) {
-        console.error(
-          "Client note delete error:",
-          error
-        );
-
-        setClientNoteMutationError(
-          error?.message ||
-            "تعذر حذف الملاحظة."
-        );
-
-        return false;
-      } finally {
-        setClientNoteMutationId(
-          null
         );
       }
     };
@@ -8999,10 +8503,6 @@ const deletePurchase = async (
         );
 
         resetProfileReferralDraft();
-
-        setShowProfileReferralModal(
-          false
-        );
 
         const existingProfileNotice =
           !data.created_profile &&
@@ -22673,32 +22173,6 @@ const sendWhatsApp = async (client) => {
         )
       : null;
 
-  const selectedClientReferralSources =
-    profileReferralSources.length > 0
-      ? profileReferralSources
-      : selectedClientUnifiedStatus
-          ?.hasReferral &&
-        selectedClientUnifiedStatus
-          ?.sourceClientId
-        ? [
-            {
-              id:
-                `status-${selectedClientUnifiedStatus.sourceClientId}`,
-              sourceClientId:
-                selectedClientUnifiedStatus.sourceClientId,
-              sourceClientName:
-                selectedClientUnifiedStatus.sourceClientName ||
-                "عميلة أخرى",
-              client:
-                clientsById.get(
-                  String(
-                    selectedClientUnifiedStatus.sourceClientId
-                  )
-                ) || null,
-            },
-          ]
-        : [];
-
   const referredClients =
     clientStatusRows
       .filter(
@@ -34598,7 +34072,6 @@ const welcomeBoardNameStyle = {
             dashboardSearchResults.map((client) => (
               <button
                 key={client.id}
-                className="paradise-dashboard-search-result"
                 onClick={() => {
                   setShowDashboardSearchResults(false);
                   openClientProfile(client);
@@ -34626,33 +34099,22 @@ const welcomeBoardNameStyle = {
                 }}
               >
                 <span
-                  className="paradise-dashboard-search-result-identity"
                   style={{
                     display: "flex",
                     flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    textAlign: "center",
+                    alignItems: "flex-start",
+                    textAlign: "right",
                     minWidth: 0,
-                    flex: 1,
                   }}
                 >
-                  <strong
-                    style={{
-                      fontSize: "15px",
-                      lineHeight: "1.45",
-                    }}
-                  >
+                  <strong>
                     {client.name}
                   </strong>
 
                   <small
                     style={{
                       color: "#8a7a68",
-                      fontSize: "15px",
-                      lineHeight: "1.45",
-                      fontWeight: "800",
-                      textAlign: "center",
+                      fontWeight: "700",
                     }}
                   >
                     {client.address || "الحي غير مسجل"}
@@ -34660,13 +34122,9 @@ const welcomeBoardNameStyle = {
                 </span>
 
                 <span
-                  className="paradise-dashboard-search-result-phone"
                   style={{
                     direction: "ltr",
                     whiteSpace: "nowrap",
-                    flex: 1,
-                    textAlign: "center",
-                    fontSize: "15px",
                   }}
                 >
                   {client.phone}
@@ -57621,13 +57079,8 @@ if (screen === "potentialClients") {
                 }}
               />
 
-              {(selectedClientUnifiedStatus
-                ?.isPotential ||
-                selectedClientReferralSources.length >
-                  0 ||
-                profileReferralSourcesLoading) && (
+              {selectedClientUnifiedStatus && (
                 <div
-                  className="paradise-client-profile-statuses"
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -57662,82 +57115,32 @@ if (screen === "potentialClients") {
                     </span>
                   )}
 
-                  {selectedClientReferralSources.map(
-                    (source) => (
-                      <button
-                        key={source.id}
-                        type="button"
-                        className="paradise-referral-source-chip"
-                        title={`فتح بروفايل ${
-                          source.sourceClientName ||
-                          "العميلة المرشِّحة"
-                        }`}
-                        onClick={() => {
-                          const sourceClient =
-                            source.client ||
-                            clientsById.get(
-                              String(
-                                source.sourceClientId
-                              )
-                            );
-
-                          if (sourceClient) {
-                            openClientProfile(
-                              sourceClient
-                            );
-                          }
-                        }}
-                        style={{
-                          padding:
-                            "5px 10px",
-                          borderRadius:
-                            "999px",
-                          background:
-                            "rgba(107,78,143,0.12)",
-                          color:
-                            "#684b86",
-                          border:
-                            "1px solid rgba(107,78,143,0.20)",
-                          fontSize:
-                            "9px",
-                          fontWeight:
-                            "900",
-                          cursor:
-                            source.client ||
-                            clientsById.has(
-                              String(
-                                source.sourceClientId
-                              )
-                            )
-                              ? "pointer"
-                              : "default",
-                        }}
-                      >
-                        مرشحة من{" "}
-                        {source.sourceClientName ||
-                          "عميلة أخرى"}
-                        <span
-                          aria-hidden="true"
-                          style={{
-                            marginRight:
-                              "5px",
-                          }}
-                        >
-                          ↗
-                        </span>
-                      </button>
-                    )
+                  {selectedClientUnifiedStatus
+                    .isActiveReferral && (
+                    <span
+                      style={{
+                        padding:
+                          "5px 10px",
+                        borderRadius:
+                          "999px",
+                        background:
+                          "rgba(107,78,143,0.12)",
+                        color:
+                          "#684b86",
+                        border:
+                          "1px solid rgba(107,78,143,0.20)",
+                        fontSize:
+                          "9px",
+                        fontWeight:
+                          "900",
+                      }}
+                    >
+                      مرشحة من{" "}
+                      {selectedClientUnifiedStatus
+                        .sourceClientName ||
+                        "عميلة أخرى"}
+                    </span>
                   )}
-
-                  {profileReferralSourcesLoading &&
-                    selectedClientReferralSources.length ===
-                      0 && (
-                      <span
-                        className="paradise-referral-source-loading"
-                      >
-                        جاري تحميل المُرشِّحات...
-                      </span>
-                    )}
                 </div>
               )}
             </div>
@@ -60588,78 +59991,29 @@ if (screen === "potentialClients") {
                 </div>
 
                 <div
-                  className="paradise-referrals-header-actions"
                   style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
+                    minWidth: "30px",
+                    height: "30px",
+                    padding: "0 9px",
+                    borderRadius: "10px",
+                    background:
+                      "rgba(122,82,57,0.10)",
+                    color: "#704a34",
+                    display:
+                      "inline-flex",
+                    alignItems:
+                      "center",
+                    justifyContent:
+                      "center",
+                    fontSize: "11px",
+                    fontWeight: "950",
                   }}
                 >
-                  {canAddData && (
-                    <button
-                      type="button"
-                      className="paradise-open-referral-modal-button"
-                      onClick={() => {
-                        resetProfileReferralDraft();
-                        setShowProfileReferralModal(
-                          true
-                        );
-                      }}
-                      style={{
-                        minHeight: "36px",
-                        padding:
-                          "7px 13px",
-                        borderRadius:
-                          "12px",
-                        border:
-                          "1px solid rgba(75,46,31,0.22)",
-                        background:
-                          "linear-gradient(135deg, #9c7354, #c29b7b)",
-                        color: "#fffaf5",
-                        boxShadow:
-                          "0 7px 16px rgba(75,46,31,0.13)",
-                        fontSize:
-                          "10px",
-                        fontWeight:
-                          "900",
-                        cursor:
-                          "pointer",
-                        whiteSpace:
-                          "nowrap",
-                      }}
-                    >
-                      + إضافة ترشيح
-                    </button>
-                  )}
-
-                  <div
-                    style={{
-                      minWidth: "30px",
-                      height: "30px",
-                      padding: "0 9px",
-                      borderRadius:
-                        "10px",
-                      background:
-                        "rgba(122,82,57,0.10)",
-                      color: "#704a34",
-                      display:
-                        "inline-flex",
-                      alignItems:
-                        "center",
-                      justifyContent:
-                        "center",
-                      fontSize:
-                        "11px",
-                      fontWeight:
-                        "950",
-                    }}
-                  >
-                    {profileReferrals.length}
-                  </div>
+                  {profileReferrals.length}
                 </div>
               </div>
 
-              {false && canAddData && (
+              {canAddData && (
                 <div
                   style={{
                     display: "grid",
@@ -60962,7 +60316,6 @@ if (screen === "potentialClients") {
                     (referral) => (
                       <div
                         key={referral.id}
-                        className="paradise-profile-referral-card"
                         style={{
                           display: "grid",
                           gridTemplateColumns:
@@ -60983,7 +60336,6 @@ if (screen === "potentialClients") {
                         }}
                       >
                         <div
-                          className="paradise-profile-referral-details"
                           style={{
                             minWidth: 0,
                             textAlign:
@@ -60991,7 +60343,6 @@ if (screen === "potentialClients") {
                           }}
                         >
                           <div
-                            className="paradise-profile-referral-heading"
                             style={{
                               display:
                                 "flex",
@@ -61043,7 +60394,6 @@ if (screen === "potentialClients") {
                           </div>
 
                           <div
-                            className="paradise-profile-referral-phone"
                             style={{
                               color:
                                 "#775845",
@@ -61062,7 +60412,6 @@ if (screen === "potentialClients") {
                           </div>
 
                           <div
-                            className="paradise-profile-referral-meta"
                             style={{
                               color:
                                 "#9a7a63",
@@ -61085,7 +60434,6 @@ if (screen === "potentialClients") {
 
                         <button
                           type="button"
-                          className="paradise-profile-referral-open"
                           onClick={() =>
                             openClientProfile(
                               referral.client
@@ -61396,14 +60744,6 @@ if (screen === "potentialClients") {
                 }}
               />
 
-              {clientNoteMutationError && (
-                <div
-                  className="paradise-client-note-error"
-                >
-                  {clientNoteMutationError}
-                </div>
-              )}
-
               {clientNotesLoading ? (
                 <div
                   style={{
@@ -61470,7 +60810,6 @@ if (screen === "potentialClients") {
                       return (
                         <div
                           key={note.id}
-                          className="paradise-client-note-card"
                           style={{
                             padding:
                               "12px 13px",
@@ -61489,7 +60828,6 @@ if (screen === "potentialClients") {
                           }}
                         >
                           <div
-                            className="paradise-client-note-header"
                             style={{
                               display:
                                 "flex",
@@ -61520,177 +60858,46 @@ if (screen === "potentialClients") {
 
                             {!isLegacyNote && (
                               <div
-                                className="paradise-client-note-meta"
                                 style={{
-                                  display:
-                                    "flex",
-                                  alignItems:
-                                    "center",
-                                  justifyContent:
-                                    "flex-end",
-                                  flexWrap:
-                                    "wrap",
-                                  gap: "7px",
+                                  color:
+                                    "#9b7b65",
+                                  fontSize:
+                                    "8px",
+                                  fontWeight:
+                                    "800",
+                                  whiteSpace:
+                                    "nowrap",
                                 }}
                               >
-                                <span
-                                  className="paradise-client-note-date"
-                                  style={{
-                                    color:
-                                      "#80614d",
-                                    fontSize:
-                                      "11px",
-                                    fontWeight:
-                                      "850",
-                                    whiteSpace:
-                                      "nowrap",
-                                  }}
-                                >
-                                  {formatClientNoteDate(
-                                    note.createdAt
-                                  )}
-                                </span>
-
-                                {canEditData && (
-                                  <button
-                                    type="button"
-                                    className="paradise-note-icon-button paradise-note-edit-button"
-                                    title="تعديل الملاحظة"
-                                    aria-label="تعديل الملاحظة"
-                                    disabled={
-                                      Boolean(
-                                        clientNoteMutationId
-                                      )
-                                    }
-                                    onClick={() =>
-                                      startEditingClientNote(
-                                        note
-                                      )
-                                    }
-                                  >
-                                    ✎
-                                  </button>
-                                )}
-
-                                {canDeleteData && (
-                                  <button
-                                    type="button"
-                                    className="paradise-note-icon-button paradise-note-delete-button"
-                                    title="حذف الملاحظة"
-                                    aria-label="حذف الملاحظة"
-                                    disabled={
-                                      Boolean(
-                                        clientNoteMutationId
-                                      )
-                                    }
-                                    onClick={() =>
-                                      deleteClientNote(
-                                        note
-                                      )
-                                    }
-                                  >
-                                    ×
-                                  </button>
+                                {formatClientNoteDate(
+                                  note.createdAt
                                 )}
                               </div>
                             )}
                           </div>
 
-                          {String(
-                            editingClientNoteId
-                          ) ===
-                          String(note.id) ? (
-                            <div
-                              className="paradise-client-note-editor"
-                            >
-                              <textarea
-                                autoFocus
-                                value={
-                                  editingClientNoteDraft
-                                }
-                                onChange={(event) =>
-                                  setEditingClientNoteDraft(
-                                    event.target.value
-                                  )
-                                }
-                                maxLength={5000}
-                                disabled={
-                                  String(
-                                    clientNoteMutationId
-                                  ) ===
-                                  String(note.id)
-                                }
-                              />
-
-                              <div
-                                className="paradise-client-note-editor-actions"
-                              >
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    updateClientNote(
-                                      note
-                                    )
-                                  }
-                                  disabled={
-                                    Boolean(
-                                      clientNoteMutationId
-                                    ) ||
-                                    !String(
-                                      editingClientNoteDraft ||
-                                        ""
-                                    ).trim()
-                                  }
-                                >
-                                  {String(
-                                    clientNoteMutationId
-                                  ) ===
-                                  String(note.id)
-                                    ? "جاري الحفظ..."
-                                    : "حفظ التعديل"}
-                                </button>
-
-                                <button
-                                  type="button"
-                                  className="paradise-client-note-cancel"
-                                  onClick={
-                                    cancelEditingClientNote
-                                  }
-                                  disabled={
-                                    Boolean(
-                                      clientNoteMutationId
-                                    )
-                                  }
-                                >
-                                  إلغاء
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div
-                              className="paradise-client-note-text"
-                              style={{
-                                color:
-                                  "#432f24",
-                                fontSize:
-                                  "11px",
-                                lineHeight:
-                                  "1.75",
-                                fontWeight:
-                                  "750",
-                                whiteSpace:
-                                  "pre-wrap",
-                                overflowWrap:
-                                  "anywhere",
-                                direction:
-                                  "rtl",
-                                textAlign:
-                                  "right",
-                              }}
-                            >
-                              {note.noteText}
-                            </div>
-                          )}
+                          <div
+                            style={{
+                              color:
+                                "#432f24",
+                              fontSize:
+                                "11px",
+                              lineHeight:
+                                "1.75",
+                              fontWeight:
+                                "750",
+                              whiteSpace:
+                                "pre-wrap",
+                              overflowWrap:
+                                "anywhere",
+                              direction:
+                                "rtl",
+                              textAlign:
+                                "right",
+                            }}
+                          >
+                            {note.noteText}
+                          </div>
 
                           {isLegacyNote && (
                             <div
@@ -61766,235 +60973,6 @@ if (screen === "potentialClients") {
             </button>
           </div>
         </div>
-
-        {showProfileReferralModal &&
-          canAddData &&
-          createPortal(
-            <div
-              className="paradise-referral-modal-overlay"
-              role="presentation"
-              onMouseDown={(event) => {
-                if (
-                  event.target ===
-                    event.currentTarget &&
-                  !profileReferralSaving
-                ) {
-                  setShowProfileReferralModal(
-                    false
-                  );
-                  resetProfileReferralDraft();
-                }
-              }}
-            >
-              <form
-                className="paradise-referral-modal-card"
-                dir="rtl"
-                onSubmit={async (event) => {
-                  event.preventDefault();
-                  await saveProfileReferral();
-                }}
-              >
-                <div
-                  className="paradise-referral-modal-header"
-                >
-                  <div
-                    className="paradise-referral-modal-title-wrap"
-                  >
-                    <span
-                      className="paradise-referral-modal-icon"
-                      aria-hidden="true"
-                    >
-                      +
-                    </span>
-
-                    <div>
-                      <h3>
-                        إضافة عميلة مرشحة
-                      </h3>
-                      <p>
-                        من ترشيح {selectedClient.name}
-                      </p>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    className="paradise-referral-modal-close"
-                    aria-label="إغلاق"
-                    title="إغلاق"
-                    disabled={
-                      profileReferralSaving
-                    }
-                    onClick={() => {
-                      setShowProfileReferralModal(
-                        false
-                      );
-                      resetProfileReferralDraft();
-                    }}
-                  >
-                    ×
-                  </button>
-                </div>
-
-                <div
-                  className="paradise-referral-modal-grid"
-                >
-                  <label>
-                    <span>
-                      اسم العميلة المرشحة *
-                    </span>
-                    <input
-                      autoFocus
-                      placeholder="مثال: تهاني"
-                      value={
-                        profileReferralDraft.name
-                      }
-                      onChange={(event) =>
-                        updateProfileReferralDraft(
-                          "name",
-                          event.target.value
-                        )
-                      }
-                      disabled={
-                        profileReferralSaving
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    <span>
-                      رقم الجوال الأساسي *
-                    </span>
-                    <input
-                      placeholder="05xxxxxxxx"
-                      inputMode="tel"
-                      dir="ltr"
-                      value={
-                        profileReferralDraft.primaryPhone
-                      }
-                      onChange={(event) =>
-                        updateProfileReferralDraft(
-                          "primaryPhone",
-                          event.target.value
-                        )
-                      }
-                      onBlur={() =>
-                        updateProfileReferralDraft(
-                          "primaryPhone",
-                          formatSaudiPhoneForStorage(
-                            profileReferralDraft.primaryPhone
-                          )
-                        )
-                      }
-                      disabled={
-                        profileReferralSaving
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    <span>
-                      رقم ثانوي للبحث
-                    </span>
-                    <input
-                      placeholder="اختياري"
-                      inputMode="tel"
-                      dir="ltr"
-                      value={
-                        profileReferralDraft.secondaryPhone
-                      }
-                      onChange={(event) =>
-                        updateProfileReferralDraft(
-                          "secondaryPhone",
-                          event.target.value
-                        )
-                      }
-                      onBlur={() =>
-                        updateProfileReferralDraft(
-                          "secondaryPhone",
-                          formatSaudiPhoneForStorage(
-                            profileReferralDraft.secondaryPhone
-                          )
-                        )
-                      }
-                      disabled={
-                        profileReferralSaving
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    <span>الحي</span>
-                    <input
-                      placeholder="اختياري"
-                      value={
-                        profileReferralDraft.address
-                      }
-                      onChange={(event) =>
-                        updateProfileReferralDraft(
-                          "address",
-                          event.target.value
-                        )
-                      }
-                      disabled={
-                        profileReferralSaving
-                      }
-                    />
-                  </label>
-                </div>
-
-                {profileReferralError && (
-                  <div
-                    className="paradise-referral-modal-error"
-                    role="alert"
-                  >
-                    {profileReferralError}
-                  </div>
-                )}
-
-                <div
-                  className="paradise-referral-modal-footer"
-                >
-                  <button
-                    type="button"
-                    className="paradise-referral-modal-cancel"
-                    disabled={
-                      profileReferralSaving
-                    }
-                    onClick={() => {
-                      setShowProfileReferralModal(
-                        false
-                      );
-                      resetProfileReferralDraft();
-                    }}
-                  >
-                    إلغاء
-                  </button>
-
-                  <button
-                    type="submit"
-                    className="paradise-referral-modal-save"
-                    disabled={
-                      profileReferralSaving ||
-                      !String(
-                        profileReferralDraft.name ||
-                          ""
-                      ).trim() ||
-                      !String(
-                        profileReferralDraft.primaryPhone ||
-                          ""
-                      ).trim()
-                    }
-                  >
-                    {profileReferralSaving
-                      ? "جاري الحفظ..."
-                      : "حفظ الترشيح"}
-                  </button>
-                </div>
-              </form>
-            </div>,
-            document.body
-          )}
 
         {selectedInvoice &&
           createPortal(
