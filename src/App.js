@@ -6573,6 +6573,41 @@ const deletePurchase = async (
     setProfileReferralError,
   ] = useState("");
 
+  const [
+    showProfileReferralModal,
+    setShowProfileReferralModal,
+  ] = useState(false);
+
+  const [
+    profileReferralSources,
+    setProfileReferralSources,
+  ] = useState([]);
+
+  const [
+    profileReferralSourcesLoading,
+    setProfileReferralSourcesLoading,
+  ] = useState(false);
+
+  const [
+    editingClientNoteId,
+    setEditingClientNoteId,
+  ] = useState(null);
+
+  const [
+    editingClientNoteDraft,
+    setEditingClientNoteDraft,
+  ] = useState("");
+
+  const [
+    clientNoteMutationId,
+    setClientNoteMutationId,
+  ] = useState(null);
+
+  const [
+    clientNoteMutationError,
+    setClientNoteMutationError,
+  ] = useState("");
+
 
   const normalizeDigits = (value) => String(value || "").replace(/\D/g, "");
 
@@ -7378,6 +7413,134 @@ const deletePurchase = async (
     clientStatusRows,
   ]);
 
+  useEffect(() => {
+    if (
+      !authReady ||
+      !isLoggedIn ||
+      screen !== "clientProfile" ||
+      !selectedClientId
+    ) {
+      setProfileReferralSources([]);
+      setProfileReferralSourcesLoading(false);
+
+      return undefined;
+    }
+
+    let effectActive = true;
+
+    const loadReferralSources =
+      async () => {
+        setProfileReferralSourcesLoading(
+          true
+        );
+
+        const {
+          data: linkRows,
+          error,
+        } = await supabase
+          .from(
+            "client_referral_links"
+          )
+          .select(
+            "id,source_client_id,created_at"
+          )
+          .eq(
+            "referred_client_id",
+            selectedClientId
+          )
+          .order(
+            "created_at",
+            { ascending: true }
+          );
+
+        if (!effectActive) {
+          return;
+        }
+
+        if (error) {
+          console.error(
+            "Profile referral sources load error:",
+            error
+          );
+
+          setProfileReferralSources([]);
+          setProfileReferralSourcesLoading(
+            false
+          );
+
+          return;
+        }
+
+        const seenSourceIds =
+          new Set();
+
+        const nextSources =
+          (linkRows || [])
+            .map((link) => {
+              const sourceClient =
+                clients.find(
+                  (client) =>
+                    String(
+                      client.id
+                    ) ===
+                    String(
+                      link.source_client_id
+                    )
+                );
+
+              if (
+                !sourceClient ||
+                seenSourceIds.has(
+                  String(
+                    sourceClient.id
+                  )
+                )
+              ) {
+                return null;
+              }
+
+              seenSourceIds.add(
+                String(
+                  sourceClient.id
+                )
+              );
+
+              return {
+                id: link.id,
+                sourceClientId:
+                  sourceClient.id,
+                sourceClientName:
+                  sourceClient.name ||
+                  "عميلة أخرى",
+                createdAt:
+                  link.created_at || "",
+                client:
+                  sourceClient,
+              };
+            })
+            .filter(Boolean);
+
+        setProfileReferralSources(
+          nextSources
+        );
+        setProfileReferralSourcesLoading(
+          false
+        );
+      };
+
+    loadReferralSources();
+
+    return () => {
+      effectActive = false;
+    };
+  }, [
+    authReady,
+    isLoggedIn,
+    screen,
+    selectedClientId,
+    clients,
+  ]);
+
   const normalizeClientNoteRecord = (
     note
   ) => ({
@@ -7513,6 +7676,16 @@ const deletePurchase = async (
 
     setProfileNoteSaveError(
       ""
+    );
+
+    setClientNoteMutationError(
+      ""
+    );
+
+    setEditingClientNoteId(null);
+    setEditingClientNoteDraft("");
+    setShowProfileReferralModal(
+      false
     );
 
     setProfileReferralDraft({
@@ -7918,6 +8091,214 @@ const deletePurchase = async (
         setProfileNoteSaving(
           false
         );
+      }
+    };
+
+  const callSecureClientNoteApi =
+    async (method, body) => {
+      const {
+        data: sessionData,
+        error: sessionError,
+      } = await supabase.auth
+        .getSession();
+
+      const accessToken =
+        sessionData?.session
+          ?.access_token;
+
+      if (
+        sessionError ||
+        !accessToken
+      ) {
+        throw new Error(
+          "انتهت جلسة الدخول. سجل الدخول مرة أخرى."
+        );
+      }
+
+      const response = await fetch(
+        "/api/client-notes",
+        {
+          method,
+          headers: {
+            "Content-Type":
+              "application/json",
+            Authorization:
+              `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify(body),
+        }
+      );
+
+      let responseData = {};
+
+      try {
+        responseData =
+          await response.json();
+      } catch {
+        responseData = {};
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          responseData.error ||
+            "تعذر تنفيذ العملية."
+        );
+      }
+
+      return responseData;
+    };
+
+  const startEditingClientNote =
+    (note) => {
+      if (
+        !canEditData ||
+        note?.source ===
+          "legacy_clients_notes"
+      ) {
+        return;
+      }
+
+      setEditingClientNoteId(
+        note.id
+      );
+      setEditingClientNoteDraft(
+        note.noteText || ""
+      );
+      setClientNoteMutationError("");
+    };
+
+  const cancelEditingClientNote =
+    () => {
+      setEditingClientNoteId(null);
+      setEditingClientNoteDraft("");
+      setClientNoteMutationError("");
+    };
+
+  const saveEditedClientNote =
+    async (note) => {
+      if (
+        !ensureSystemWritable() ||
+        !canEditData ||
+        !note?.id ||
+        clientNoteMutationId
+      ) {
+        return;
+      }
+
+      const noteText = String(
+        editingClientNoteDraft || ""
+      ).trim();
+
+      if (!noteText) {
+        setClientNoteMutationError(
+          "لا يمكن حفظ ملاحظة فارغة."
+        );
+        return;
+      }
+
+      setClientNoteMutationId(note.id);
+      setClientNoteMutationError("");
+
+      try {
+        const data =
+          await callSecureClientNoteApi(
+            "PATCH",
+            {
+              noteId: note.id,
+              clientId:
+                selectedClientId,
+              noteText,
+            }
+          );
+
+        if (!data?.note?.id) {
+          throw new Error(
+            "تعذر اعتماد تعديل الملاحظة."
+          );
+        }
+
+        upsertClientNoteInHistory(
+          normalizeClientNoteRecord(
+            data.note
+          )
+        );
+        setEditingClientNoteId(null);
+        setEditingClientNoteDraft("");
+      } catch (error) {
+        console.error(
+          "Client note update error:",
+          error
+        );
+        setClientNoteMutationError(
+          error?.message ||
+            "تعذر تعديل الملاحظة."
+        );
+      } finally {
+        setClientNoteMutationId(null);
+      }
+    };
+
+  const deleteClientNote =
+    async (note) => {
+      if (
+        !note?.id ||
+        clientNoteMutationId ||
+        !ensureDeleteAllowed()
+      ) {
+        return;
+      }
+
+      if (
+        !window.confirm(
+          "حذف هذه الملاحظة نهائيًا؟"
+        )
+      ) {
+        return;
+      }
+
+      setClientNoteMutationId(note.id);
+      setClientNoteMutationError("");
+
+      try {
+        await callSecureClientNoteApi(
+          "DELETE",
+          {
+            noteId: note.id,
+            clientId:
+              selectedClientId,
+          }
+        );
+
+        setClientNoteHistory(
+          (previousNotes) =>
+            previousNotes.filter(
+              (historyNote) =>
+                String(
+                  historyNote.id
+                ) !==
+                String(note.id)
+            )
+        );
+
+        if (
+          String(
+            editingClientNoteId
+          ) === String(note.id)
+        ) {
+          setEditingClientNoteId(null);
+          setEditingClientNoteDraft("");
+        }
+      } catch (error) {
+        console.error(
+          "Client note delete error:",
+          error
+        );
+        setClientNoteMutationError(
+          error?.message ||
+            "تعذر حذف الملاحظة."
+        );
+      } finally {
+        setClientNoteMutationId(null);
       }
     };
 
@@ -8503,6 +8884,10 @@ const deletePurchase = async (
         );
 
         resetProfileReferralDraft();
+
+        setShowProfileReferralModal(
+          false
+        );
 
         const existingProfileNotice =
           !data.created_profile &&
@@ -22173,6 +22558,32 @@ const sendWhatsApp = async (client) => {
         )
       : null;
 
+  const selectedClientReferralSources =
+    profileReferralSources.length
+      ? profileReferralSources
+      : selectedClientUnifiedStatus
+          ?.hasReferral &&
+        selectedClientUnifiedStatus
+          ?.sourceClientId
+        ? [
+            {
+              id:
+                `status-${selectedClientUnifiedStatus.sourceClientId}`,
+              sourceClientId:
+                selectedClientUnifiedStatus.sourceClientId,
+              sourceClientName:
+                selectedClientUnifiedStatus.sourceClientName ||
+                "عميلة أخرى",
+              client:
+                clientsById.get(
+                  String(
+                    selectedClientUnifiedStatus.sourceClientId
+                  )
+                ) || null,
+            },
+          ]
+        : [];
+
   const referredClients =
     clientStatusRows
       .filter(
@@ -34072,6 +34483,7 @@ const welcomeBoardNameStyle = {
             dashboardSearchResults.map((client) => (
               <button
                 key={client.id}
+                className="paradise-dashboard-search-result"
                 onClick={() => {
                   setShowDashboardSearchResults(false);
                   openClientProfile(client);
@@ -34086,10 +34498,11 @@ const welcomeBoardNameStyle = {
                   color: "#4b2e1f",
                   border: "1px solid #eadfd5",
                   borderRadius: "15px",
-                  display: "flex",
+                  display: "grid",
+                  gridTemplateColumns:
+                    "repeat(3, minmax(0, 1fr))",
                   alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: "12px",
+                  gap: "8px",
                   fontSize: "15px",
                   fontWeight: "800",
                   lineHeight: "1.4",
@@ -34099,29 +34512,20 @@ const welcomeBoardNameStyle = {
                 }}
               >
                 <span
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "flex-start",
-                    textAlign: "right",
-                    minWidth: 0,
-                  }}
+                  className="paradise-search-result-name"
                 >
-                  <strong>
-                    {client.name}
-                  </strong>
-
-                  <small
-                    style={{
-                      color: "#8a7a68",
-                      fontWeight: "700",
-                    }}
-                  >
-                    {client.address || "الحي غير مسجل"}
-                  </small>
+                  {client.name}
                 </span>
 
                 <span
+                  className="paradise-search-result-address"
+                >
+                  {client.address ||
+                    "الحي غير مسجل"}
+                </span>
+
+                <span
+                  className="paradise-search-result-phone"
                   style={{
                     direction: "ltr",
                     whiteSpace: "nowrap",
@@ -57079,8 +57483,13 @@ if (screen === "potentialClients") {
                 }}
               />
 
-              {selectedClientUnifiedStatus && (
+              {(selectedClientUnifiedStatus
+                ?.isPotential ||
+                selectedClientReferralSources.length >
+                  0 ||
+                profileReferralSourcesLoading) && (
                 <div
+                  className="paradise-client-status-chips"
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -57115,32 +57524,43 @@ if (screen === "potentialClients") {
                     </span>
                   )}
 
-                  {selectedClientUnifiedStatus
-                    .isActiveReferral && (
-                    <span
-                      style={{
-                        padding:
-                          "5px 10px",
-                        borderRadius:
-                          "999px",
-                        background:
-                          "rgba(107,78,143,0.12)",
-                        color:
-                          "#684b86",
-                        border:
-                          "1px solid rgba(107,78,143,0.20)",
-                        fontSize:
-                          "9px",
-                        fontWeight:
-                          "900",
-                      }}
-                    >
-                      مرشحة من{" "}
-                      {selectedClientUnifiedStatus
-                        .sourceClientName ||
-                        "عميلة أخرى"}
-                    </span>
+                  {selectedClientReferralSources.map(
+                    (source) => (
+                      <button
+                        key={source.id}
+                        type="button"
+                        className="paradise-referral-source-chip"
+                        title={`فتح بروفايل ${
+                          source.sourceClientName ||
+                          "العميلة المرشِّحة"
+                        }`}
+                        onClick={() => {
+                          if (source.client) {
+                            openClientProfile(
+                              source.client
+                            );
+                          }
+                        }}
+                      >
+                        مرشحة من{" "}
+                        {source.sourceClientName ||
+                          "عميلة أخرى"}
+                        <span aria-hidden="true">
+                          ↗
+                        </span>
+                      </button>
+                    )
                   )}
+
+                  {profileReferralSourcesLoading &&
+                    selectedClientReferralSources.length ===
+                      0 && (
+                      <span
+                        className="paradise-referral-source-loading"
+                      >
+                        جاري تحميل المُرشِّحات...
+                      </span>
+                    )}
                 </div>
               )}
             </div>
@@ -59892,9 +60312,6 @@ if (screen === "potentialClients") {
 
           <div
             className="paradise-client-profile-lower-grid"
-            onBlurCapture={() => {
-              saveClientProfile(false);
-            }}
             style={{
               position: "relative",
               zIndex: 1,
@@ -59991,29 +60408,32 @@ if (screen === "potentialClients") {
                 </div>
 
                 <div
-                  style={{
-                    minWidth: "30px",
-                    height: "30px",
-                    padding: "0 9px",
-                    borderRadius: "10px",
-                    background:
-                      "rgba(122,82,57,0.10)",
-                    color: "#704a34",
-                    display:
-                      "inline-flex",
-                    alignItems:
-                      "center",
-                    justifyContent:
-                      "center",
-                    fontSize: "11px",
-                    fontWeight: "950",
-                  }}
+                  className="paradise-referrals-header-actions"
                 >
-                  {profileReferrals.length}
+                  {canAddData && (
+                    <button
+                      type="button"
+                      className="paradise-open-referral-modal"
+                      onClick={() => {
+                        resetProfileReferralDraft();
+                        setShowProfileReferralModal(
+                          true
+                        );
+                      }}
+                    >
+                      + إضافة ترشيح
+                    </button>
+                  )}
+
+                  <span
+                    className="paradise-referrals-count"
+                  >
+                    {profileReferrals.length}
+                  </span>
                 </div>
               </div>
 
-              {canAddData && (
+              {false && canAddData && (
                 <div
                   style={{
                     display: "grid",
@@ -60316,6 +60736,7 @@ if (screen === "potentialClients") {
                     (referral) => (
                       <div
                         key={referral.id}
+                        className="paradise-profile-referral-card"
                         style={{
                           display: "grid",
                           gridTemplateColumns:
@@ -60336,6 +60757,7 @@ if (screen === "potentialClients") {
                         }}
                       >
                         <div
+                          className="paradise-profile-referral-details"
                           style={{
                             minWidth: 0,
                             textAlign:
@@ -60343,6 +60765,7 @@ if (screen === "potentialClients") {
                           }}
                         >
                           <div
+                            className="paradise-profile-referral-heading"
                             style={{
                               display:
                                 "flex",
@@ -60394,6 +60817,7 @@ if (screen === "potentialClients") {
                           </div>
 
                           <div
+                            className="paradise-profile-referral-phone"
                             style={{
                               color:
                                 "#775845",
@@ -60412,6 +60836,7 @@ if (screen === "potentialClients") {
                           </div>
 
                           <div
+                            className="paradise-profile-referral-meta"
                             style={{
                               color:
                                 "#9a7a63",
@@ -60434,6 +60859,7 @@ if (screen === "potentialClients") {
 
                         <button
                           type="button"
+                          className="paradise-profile-referral-open"
                           onClick={() =>
                             openClientProfile(
                               referral.client
@@ -60744,6 +61170,14 @@ if (screen === "potentialClients") {
                 }}
               />
 
+              {clientNoteMutationError && (
+                <div
+                  className="paradise-client-note-error"
+                >
+                  {clientNoteMutationError}
+                </div>
+              )}
+
               {clientNotesLoading ? (
                 <div
                   style={{
@@ -60810,6 +61244,7 @@ if (screen === "potentialClients") {
                       return (
                         <div
                           key={note.id}
+                          className="paradise-client-note-card"
                           style={{
                             padding:
                               "12px 13px",
@@ -60828,6 +61263,7 @@ if (screen === "potentialClients") {
                           }}
                         >
                           <div
+                            className="paradise-client-note-header"
                             style={{
                               display:
                                 "flex",
@@ -60858,46 +61294,162 @@ if (screen === "potentialClients") {
 
                             {!isLegacyNote && (
                               <div
+                                className="paradise-client-note-meta"
                                 style={{
-                                  color:
-                                    "#9b7b65",
-                                  fontSize:
-                                    "8px",
-                                  fontWeight:
-                                    "800",
-                                  whiteSpace:
-                                    "nowrap",
+                                  display:
+                                    "flex",
+                                  alignItems:
+                                    "center",
+                                  gap: "6px",
+                                  flexWrap:
+                                    "wrap",
                                 }}
                               >
-                                {formatClientNoteDate(
-                                  note.createdAt
+                                <span
+                                  className="paradise-client-note-date"
+                                >
+                                  {formatClientNoteDate(
+                                    note.createdAt
+                                  )}
+                                </span>
+
+                                {canEditData && (
+                                  <button
+                                    type="button"
+                                    className="paradise-note-action paradise-note-edit"
+                                    title="تعديل الملاحظة"
+                                    aria-label="تعديل الملاحظة"
+                                    disabled={
+                                      Boolean(
+                                        clientNoteMutationId
+                                      )
+                                    }
+                                    onClick={() =>
+                                      startEditingClientNote(
+                                        note
+                                      )
+                                    }
+                                  >
+                                    ✎
+                                  </button>
+                                )}
+
+                                {canDeleteData && (
+                                  <button
+                                    type="button"
+                                    className="paradise-note-action paradise-note-delete"
+                                    title="حذف الملاحظة"
+                                    aria-label="حذف الملاحظة"
+                                    disabled={
+                                      Boolean(
+                                        clientNoteMutationId
+                                      )
+                                    }
+                                    onClick={() =>
+                                      deleteClientNote(
+                                        note
+                                      )
+                                    }
+                                  >
+                                    ×
+                                  </button>
                                 )}
                               </div>
                             )}
                           </div>
 
-                          <div
-                            style={{
-                              color:
-                                "#432f24",
-                              fontSize:
-                                "11px",
-                              lineHeight:
-                                "1.75",
-                              fontWeight:
-                                "750",
-                              whiteSpace:
-                                "pre-wrap",
-                              overflowWrap:
-                                "anywhere",
-                              direction:
-                                "rtl",
-                              textAlign:
-                                "right",
-                            }}
-                          >
-                            {note.noteText}
-                          </div>
+                          {String(
+                            editingClientNoteId
+                          ) === String(note.id) ? (
+                            <div
+                              className="paradise-client-note-editor"
+                            >
+                              <textarea
+                                autoFocus
+                                value={
+                                  editingClientNoteDraft
+                                }
+                                onChange={(event) =>
+                                  setEditingClientNoteDraft(
+                                    event.target.value
+                                  )
+                                }
+                                maxLength={5000}
+                                disabled={
+                                  String(
+                                    clientNoteMutationId
+                                  ) ===
+                                  String(note.id)
+                                }
+                              />
+
+                              <div>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    saveEditedClientNote(
+                                      note
+                                    )
+                                  }
+                                  disabled={
+                                    Boolean(
+                                      clientNoteMutationId
+                                    ) ||
+                                    !String(
+                                      editingClientNoteDraft ||
+                                        ""
+                                    ).trim()
+                                  }
+                                >
+                                  {String(
+                                    clientNoteMutationId
+                                  ) ===
+                                  String(note.id)
+                                    ? "جاري الحفظ..."
+                                    : "حفظ التعديل"}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  className="paradise-note-edit-cancel"
+                                  onClick={
+                                    cancelEditingClientNote
+                                  }
+                                  disabled={
+                                    Boolean(
+                                      clientNoteMutationId
+                                    )
+                                  }
+                                >
+                                  إلغاء
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div
+                              className="paradise-client-note-text"
+                              style={{
+                                color:
+                                  "#432f24",
+                                fontSize:
+                                  "11px",
+                                lineHeight:
+                                  "1.75",
+                                fontWeight:
+                                  "750",
+                                whiteSpace:
+                                  "pre-wrap",
+                                overflowWrap:
+                                  "anywhere",
+                                direction:
+                                  "rtl",
+                                textAlign:
+                                  "right",
+                              }}
+                            >
+                              {note.noteText}
+                            </div>
+                          )}
 
                           {isLegacyNote && (
                             <div
@@ -60973,6 +61525,199 @@ if (screen === "potentialClients") {
             </button>
           </div>
         </div>
+
+        {showProfileReferralModal &&
+          canAddData &&
+          createPortal(
+            <div
+              className="paradise-referral-modal-overlay"
+              role="presentation"
+            >
+              <form
+                className="paradise-referral-modal-card"
+                dir="rtl"
+                onSubmit={async (event) => {
+                  event.preventDefault();
+                  await saveProfileReferral();
+                }}
+              >
+                <div
+                  className="paradise-referral-modal-header"
+                >
+                  <div>
+                    <h3>
+                      إضافة عميلة مرشحة
+                    </h3>
+                    <p>
+                      من ترشيح {selectedClient.name}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    aria-label="إغلاق"
+                    title="إغلاق"
+                    disabled={
+                      profileReferralSaving
+                    }
+                    onClick={() => {
+                      setShowProfileReferralModal(
+                        false
+                      );
+                      resetProfileReferralDraft();
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <div
+                  className="paradise-referral-modal-grid"
+                >
+                  {[
+                    {
+                      key: "name",
+                      label:
+                        "اسم العميلة المرشحة *",
+                      placeholder:
+                        "اسم العميلة",
+                    },
+                    {
+                      key: "primaryPhone",
+                      label:
+                        "رقم الجوال الأساسي *",
+                      placeholder:
+                        "05xxxxxxxx",
+                      phone: true,
+                    },
+                    {
+                      key: "secondaryPhone",
+                      label:
+                        "رقم ثانوي للبحث",
+                      placeholder:
+                        "اختياري",
+                      phone: true,
+                    },
+                    {
+                      key: "address",
+                      label: "الحي",
+                      placeholder:
+                        "اختياري",
+                    },
+                  ].map(
+                    (
+                      {
+                        key,
+                        label,
+                        placeholder,
+                        phone: isPhone,
+                      },
+                      index
+                    ) => (
+                      <label key={key}>
+                        <span>{label}</span>
+                        <input
+                          autoFocus={
+                            index === 0
+                          }
+                          inputMode={
+                            isPhone
+                              ? "tel"
+                              : undefined
+                          }
+                          dir={
+                            isPhone
+                              ? "ltr"
+                              : undefined
+                          }
+                          placeholder={
+                            placeholder
+                          }
+                          value={
+                            profileReferralDraft[
+                              key
+                            ]
+                          }
+                          onChange={(event) =>
+                            updateProfileReferralDraft(
+                              key,
+                              event.target.value
+                            )
+                          }
+                          onBlur={
+                            isPhone
+                              ? () =>
+                                  updateProfileReferralDraft(
+                                    key,
+                                    formatSaudiPhoneForStorage(
+                                      profileReferralDraft[
+                                        key
+                                      ]
+                                    )
+                                  )
+                              : undefined
+                          }
+                          disabled={
+                            profileReferralSaving
+                          }
+                        />
+                      </label>
+                    )
+                  )}
+                </div>
+
+                {profileReferralError && (
+                  <div
+                    className="paradise-referral-modal-error"
+                    role="alert"
+                  >
+                    {profileReferralError}
+                  </div>
+                )}
+
+                <div
+                  className="paradise-referral-modal-footer"
+                >
+                  <button
+                    type="button"
+                    className="paradise-referral-modal-cancel"
+                    disabled={
+                      profileReferralSaving
+                    }
+                    onClick={() => {
+                      setShowProfileReferralModal(
+                        false
+                      );
+                      resetProfileReferralDraft();
+                    }}
+                  >
+                    إلغاء
+                  </button>
+
+                  <button
+                    type="submit"
+                    className="paradise-referral-modal-save"
+                    disabled={
+                      profileReferralSaving ||
+                      !String(
+                        profileReferralDraft.name ||
+                          ""
+                      ).trim() ||
+                      !String(
+                        profileReferralDraft.primaryPhone ||
+                          ""
+                      ).trim()
+                    }
+                  >
+                    {profileReferralSaving
+                      ? "جاري الحفظ..."
+                      : "حفظ الترشيح"}
+                  </button>
+                </div>
+              </form>
+            </div>,
+            document.body
+          )}
 
         {selectedInvoice &&
           createPortal(

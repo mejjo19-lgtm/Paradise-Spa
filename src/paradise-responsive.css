@@ -11138,3 +11138,610 @@ html body [style*="font-family:'Arial'"] {
     Arial,
     sans-serif !important;
 }
+
+/* =========================================================
+   CLIENT PROFILE — COMPACT, STABLE INTERACTIONS
+   ========================================================= */
+
+.paradise-dashboard-search-result {
+  display: grid !important;
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr)) !important;
+  align-items: center !important;
+  direction: rtl !important;
+}
+
+.paradise-search-result-name,
+.paradise-search-result-address,
+.paradise-search-result-phone {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  font-size: 15px !important;
+  line-height: 1.4 !important;
+  font-weight: 800 !important;
+}
+
+.paradise-search-result-name {
+  text-align: right !important;
+}
+
+.paradise-search-result-address {
+  color: #806957 !important;
+  text-align: center !important;
+}
+
+.paradise-search-result-phone {
+  text-align: left !important;
+}
+
+.paradise-client-status-chips {
+  max-width: 100% !important;
+}
+
+#paradise-client-profile
+  .paradise-referral-source-chip {
+  min-height: 34px !important;
+  padding: 6px 11px !important;
+  border:
+    1px solid
+    rgba(107, 78, 143, 0.22) !important;
+  border-radius: 999px !important;
+  background:
+    rgba(107, 78, 143, 0.12) !important;
+  color: #684b86 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 5px !important;
+  box-shadow: none !important;
+  font-size: 13px !important;
+  font-weight: 900 !important;
+  cursor: pointer !important;
+}
+
+.paradise-referral-source-loading {
+  color: #806b90 !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+}
+
+.paradise-referrals-header-actions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+#paradise-client-profile
+  .paradise-open-referral-modal {
+  min-height: 36px !important;
+  padding: 7px 13px !important;
+  border:
+    1px solid
+    rgba(75, 46, 31, 0.22) !important;
+  border-radius: 12px !important;
+  background:
+    linear-gradient(
+      135deg,
+      #9c7354,
+      #bd9575
+    ) !important;
+  color: #fffaf5 !important;
+  box-shadow:
+    0 6px 14px
+    rgba(75, 46, 31, 0.12) !important;
+  font-size: 13px !important;
+  font-weight: 900 !important;
+  cursor: pointer !important;
+  white-space: nowrap !important;
+}
+
+.paradise-referrals-count {
+  min-width: 30px !important;
+  height: 30px !important;
+  padding: 0 9px !important;
+  border-radius: 10px !important;
+  background:
+    rgba(122, 82, 57, 0.1) !important;
+  color: #704a34 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
+  font-size: 13px !important;
+  font-weight: 950 !important;
+}
+
+#paradise-client-profile
+  .paradise-profile-referral-card {
+  padding: 10px 12px !important;
+  display: grid !important;
+  grid-template-columns:
+    minmax(0, 1fr)
+    auto !important;
+  align-items: center !important;
+  gap: 10px !important;
+  border-radius: 14px !important;
+}
+
+.paradise-profile-referral-details {
+  min-width: 0 !important;
+  display: grid !important;
+  grid-template-columns:
+    minmax(0, 1.2fr)
+    minmax(105px, 0.8fr)
+    minmax(0, 1.25fr) !important;
+  align-items: center !important;
+  gap: 10px !important;
+}
+
+.paradise-profile-referral-heading {
+  min-width: 0 !important;
+  margin: 0 !important;
+  flex-wrap: wrap !important;
+}
+
+.paradise-profile-referral-heading strong {
+  font-size: 15px !important;
+  line-height: 1.35 !important;
+}
+
+.paradise-profile-referral-heading span {
+  padding: 3px 7px !important;
+  font-size: 11px !important;
+  line-height: 1.35 !important;
+}
+
+.paradise-profile-referral-phone {
+  margin: 0 !important;
+  color: #654939 !important;
+  font-size: 14px !important;
+  line-height: 1.4 !important;
+  font-weight: 900 !important;
+  text-align: center !important;
+}
+
+.paradise-profile-referral-meta {
+  margin: 0 !important;
+  color: #785d4a !important;
+  font-size: 13px !important;
+  line-height: 1.45 !important;
+  font-weight: 850 !important;
+}
+
+#paradise-client-profile
+  .paradise-profile-referral-open {
+  min-height: 36px !important;
+  padding: 7px 10px !important;
+  border-radius: 10px !important;
+  font-size: 12px !important;
+}
+
+.paradise-client-note-card {
+  padding: 12px 13px !important;
+}
+
+.paradise-client-note-header {
+  align-items: center !important;
+  margin-bottom: 9px !important;
+}
+
+.paradise-client-note-meta {
+  justify-content: flex-end !important;
+}
+
+.paradise-client-note-date {
+  color: #725542 !important;
+  font-size: 13px !important;
+  line-height: 1.4 !important;
+  font-weight: 900 !important;
+  white-space: nowrap !important;
+}
+
+#paradise-client-profile
+  .paradise-note-action {
+  width: 32px !important;
+  min-width: 32px !important;
+  max-width: 32px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0 !important;
+  border-radius: 9px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 17px !important;
+  line-height: 1 !important;
+  font-weight: 900 !important;
+  cursor: pointer !important;
+}
+
+.paradise-note-edit {
+  border:
+    1px solid
+    rgba(132, 94, 66, 0.3) !important;
+  background: #ead8c8 !important;
+  color: #4b3327 !important;
+}
+
+.paradise-note-delete {
+  border:
+    1px solid
+    rgba(164, 73, 63, 0.28) !important;
+  background:
+    rgba(164, 73, 63, 0.09) !important;
+  color: #93423a !important;
+}
+
+.paradise-note-action:disabled {
+  cursor: not-allowed !important;
+  opacity: 0.5 !important;
+}
+
+.paradise-client-note-text {
+  font-size: 15px !important;
+  line-height: 1.75 !important;
+}
+
+.paradise-client-note-editor {
+  display: grid !important;
+  gap: 9px !important;
+}
+
+#paradise-client-profile
+  .paradise-client-note-editor
+  textarea {
+  width: 100% !important;
+  min-height: 96px !important;
+  margin: 0 !important;
+  padding: 11px 12px !important;
+  border:
+    1px solid
+    rgba(159, 120, 90, 0.42) !important;
+  border-radius: 12px !important;
+  outline: none !important;
+  background: #fffdfa !important;
+  color: #432f24 !important;
+  font-size: 15px !important;
+  line-height: 1.65 !important;
+  resize: vertical !important;
+  box-sizing: border-box !important;
+}
+
+.paradise-client-note-editor > div {
+  display: flex !important;
+  gap: 8px !important;
+}
+
+#paradise-client-profile
+  .paradise-client-note-editor
+  button {
+  min-height: 36px !important;
+  padding: 7px 13px !important;
+  border:
+    1px solid
+    rgba(75, 46, 31, 0.24) !important;
+  border-radius: 10px !important;
+  background:
+    linear-gradient(
+      135deg,
+      #4b3327,
+      #76523d
+    ) !important;
+  color: #fffaf5 !important;
+  font-size: 13px !important;
+  font-weight: 900 !important;
+  cursor: pointer !important;
+}
+
+#paradise-client-profile
+  .paradise-client-note-editor
+  .paradise-note-edit-cancel {
+  background: #ead8c8 !important;
+  color: #4b3327 !important;
+}
+
+.paradise-client-note-error {
+  margin-bottom: 10px !important;
+  padding: 9px 11px !important;
+  border:
+    1px solid
+    rgba(166, 76, 61, 0.18) !important;
+  border-radius: 11px !important;
+  background:
+    rgba(166, 76, 61, 0.09) !important;
+  color: #964c3e !important;
+  font-size: 13px !important;
+  font-weight: 850 !important;
+}
+
+/* Referral form opens in a stable portal and closes explicitly only. */
+.paradise-referral-modal-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 1000005 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  padding: 18px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  overflow-y: auto !important;
+  box-sizing: border-box !important;
+  background:
+    rgba(37, 24, 17, 0.72) !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+}
+
+.paradise-referral-modal-card {
+  width: min(980px, 100%) !important;
+  margin: auto !important;
+  padding: 24px !important;
+  box-sizing: border-box !important;
+  border:
+    1px solid
+    rgba(205, 169, 139, 0.72) !important;
+  border-radius: 24px !important;
+  background:
+    linear-gradient(
+      145deg,
+      #fffdf9,
+      #eee0d3
+    ) !important;
+  box-shadow:
+    0 30px 80px
+    rgba(31, 19, 13, 0.34) !important;
+  color: #432f24 !important;
+}
+
+.paradise-referral-modal-header {
+  margin-bottom: 18px !important;
+  padding-bottom: 15px !important;
+  border-bottom:
+    1px solid
+    rgba(166, 126, 95, 0.24) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 14px !important;
+  text-align: right !important;
+}
+
+.paradise-referral-modal-header h3 {
+  margin: 0 !important;
+  color: #3f2b21 !important;
+  font-size: 21px !important;
+  font-weight: 950 !important;
+}
+
+.paradise-referral-modal-header p {
+  margin: 4px 0 0 !important;
+  color: #876852 !important;
+  font-size: 13px !important;
+  font-weight: 800 !important;
+}
+
+.paradise-referral-modal-header button {
+  width: 38px !important;
+  min-width: 38px !important;
+  height: 38px !important;
+  padding: 0 !important;
+  border:
+    1px solid
+    rgba(136, 96, 68, 0.28) !important;
+  border-radius: 11px !important;
+  background: #fffaf5 !important;
+  color: #5e4030 !important;
+  font-size: 23px !important;
+  cursor: pointer !important;
+}
+
+.paradise-referral-modal-grid {
+  display: grid !important;
+  grid-template-columns:
+    repeat(4, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+}
+
+.paradise-referral-modal-grid label {
+  min-width: 0 !important;
+  display: grid !important;
+  gap: 7px !important;
+  color: #684b39 !important;
+  text-align: right !important;
+}
+
+.paradise-referral-modal-grid label > span {
+  font-size: 13px !important;
+  font-weight: 900 !important;
+}
+
+.paradise-referral-modal-grid input {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 48px !important;
+  margin: 0 !important;
+  padding: 11px 13px !important;
+  border:
+    1px solid
+    rgba(166, 126, 95, 0.42) !important;
+  border-radius: 13px !important;
+  outline: none !important;
+  background: #fffdfa !important;
+  color: #432f24 !important;
+  font-size: 15px !important;
+  font-weight: 850 !important;
+  box-sizing: border-box !important;
+}
+
+.paradise-referral-modal-grid input:focus {
+  border-color:
+    rgba(133, 91, 62, 0.74) !important;
+  box-shadow:
+    0 0 0 3px
+    rgba(174, 128, 94, 0.12) !important;
+}
+
+.paradise-referral-modal-grid input[dir="ltr"] {
+  text-align: center !important;
+}
+
+.paradise-referral-modal-error {
+  margin-top: 12px !important;
+  padding: 10px 12px !important;
+  border-radius: 11px !important;
+  background:
+    rgba(166, 76, 61, 0.09) !important;
+  color: #964c3e !important;
+  font-size: 13px !important;
+  font-weight: 850 !important;
+}
+
+.paradise-referral-modal-footer {
+  margin-top: 18px !important;
+  padding-top: 15px !important;
+  border-top:
+    1px solid
+    rgba(166, 126, 95, 0.22) !important;
+  display: flex !important;
+  gap: 9px !important;
+}
+
+.paradise-referral-modal-footer button {
+  min-width: 120px !important;
+  min-height: 42px !important;
+  padding: 9px 16px !important;
+  border-radius: 12px !important;
+  font-size: 14px !important;
+  font-weight: 900 !important;
+  cursor: pointer !important;
+}
+
+.paradise-referral-modal-cancel {
+  border:
+    1px solid
+    rgba(160, 121, 91, 0.34) !important;
+  background: #ead8c8 !important;
+  color: #50372a !important;
+}
+
+.paradise-referral-modal-save {
+  border:
+    1px solid
+    rgba(62, 39, 29, 0.26) !important;
+  background:
+    linear-gradient(
+      135deg,
+      #432e23,
+      #76513b
+    ) !important;
+  color: #fffaf5 !important;
+}
+
+.paradise-referral-modal-footer
+  button:disabled,
+.paradise-referral-modal-header
+  button:disabled {
+  cursor: not-allowed !important;
+  opacity: 0.55 !important;
+}
+
+@media (max-width: 760px) {
+  .paradise-referral-modal-grid {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .paradise-profile-referral-details {
+    grid-template-columns:
+      minmax(0, 1.2fr)
+      minmax(92px, 0.8fr) !important;
+  }
+
+  .paradise-profile-referral-meta {
+    grid-column: 1 / -1 !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .paradise-dashboard-search-result {
+    padding: 9px 8px !important;
+    gap: 5px !important;
+  }
+
+  .paradise-search-result-name,
+  .paradise-search-result-address,
+  .paradise-search-result-phone {
+    font-size: 12px !important;
+  }
+
+  .paradise-referrals-header-actions {
+    width: 100% !important;
+    justify-content: space-between !important;
+  }
+
+  #paradise-client-profile
+    .paradise-open-referral-modal {
+    flex: 1 1 auto !important;
+  }
+
+  #paradise-client-profile
+    .paradise-profile-referral-card {
+    padding: 9px 10px !important;
+  }
+
+  .paradise-profile-referral-heading strong,
+  .paradise-profile-referral-phone {
+    font-size: 13px !important;
+  }
+
+  .paradise-profile-referral-meta {
+    font-size: 12px !important;
+  }
+
+  #paradise-client-profile
+    .paradise-profile-referral-open {
+    max-width: 82px !important;
+    padding: 6px 8px !important;
+    white-space: normal !important;
+  }
+
+  .paradise-client-note-header {
+    align-items: flex-start !important;
+  }
+
+  .paradise-client-note-meta {
+    justify-content: flex-start !important;
+  }
+
+  .paradise-client-note-date {
+    white-space: normal !important;
+  }
+
+  .paradise-referral-modal-overlay {
+    padding: 10px !important;
+  }
+
+  .paradise-referral-modal-card {
+    padding: 16px !important;
+    border-radius: 19px !important;
+  }
+
+  .paradise-referral-modal-grid {
+    grid-template-columns:
+      minmax(0, 1fr) !important;
+  }
+
+  .paradise-referral-modal-footer {
+    display: grid !important;
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .paradise-referral-modal-footer button {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+}
