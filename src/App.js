@@ -7029,6 +7029,83 @@ const deletePurchase = async (
   };
 
   // 🗑️ DELETE CLIENT SAFELY
+  const deleteReferralLinkedClient =
+    async (clientId) => {
+      const {
+        data: sessionData,
+        error: sessionError,
+      } = await supabase.auth
+        .getSession();
+
+      const accessToken =
+        sessionData?.session
+          ?.access_token;
+
+      if (
+        sessionError ||
+        !accessToken
+      ) {
+        throw new Error(
+          "انتهت جلسة الدخول. سجل الدخول مرة أخرى."
+        );
+      }
+
+      const deleteResponse =
+        await fetch(
+          "/api/client-delete",
+          {
+            method: "DELETE",
+            headers: {
+              "Content-Type":
+                "application/json",
+              Authorization:
+                `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify({
+              clientId,
+            }),
+          }
+        );
+
+      let responseData = {};
+
+      try {
+        responseData =
+          await deleteResponse.json();
+      } catch {
+        responseData = {};
+      }
+
+      if (!deleteResponse.ok) {
+        throw new Error(
+          responseData.error ||
+            "تعذر حذف العميلة."
+        );
+      }
+
+      return responseData;
+    };
+
+  const isReferralDeleteBlock =
+    (deleteResult) => {
+      const rejectionText = [
+        deleteResult?.code,
+        deleteResult?.message,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return (
+        rejectionText.includes(
+          "referral"
+        ) ||
+        rejectionText.includes(
+          "ترشيح"
+        )
+      );
+    };
+
   const deleteClient = async (
     client
   ) => {
@@ -7053,7 +7130,7 @@ const deletePurchase = async (
       return;
     }
 
-    const {
+    let {
       data,
       error,
     } = await supabase.rpc(
@@ -7063,6 +7140,31 @@ const deletePurchase = async (
           Number(client.id),
       }
     );
+
+    if (
+      !error &&
+      !data?.success &&
+      isReferralDeleteBlock(data)
+    ) {
+      try {
+        data =
+          await deleteReferralLinkedClient(
+            Number(client.id)
+          );
+      } catch (fallbackError) {
+        console.error(
+          "Referred client delete error:",
+          fallbackError
+        );
+
+        alert(
+          fallbackError.message ||
+            "تعذر حذف العميلة."
+        );
+
+        return;
+      }
+    }
 
     if (error) {
       console.error(
