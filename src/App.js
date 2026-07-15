@@ -1775,6 +1775,10 @@ const [selectedWelcomeBoardId, setSelectedWelcomeBoardId] = useState("woman");
 const [savedWelcomeBoards, setSavedWelcomeBoards] = useState([]);
 
   const [clients, setClients] = useState([]);
+  const [
+    clientNoteBadgeIds,
+    setClientNoteBadgeIds,
+  ] = useState([]);
   const [clientsVisibleCount, setClientsVisibleCount] = useState(15);
   const [loyaltyVisibleCount, setLoyaltyVisibleCount] = useState(15);
   const [giftVisibleCount, setGiftVisibleCount] = useState(15);
@@ -2088,6 +2092,141 @@ if (!cacheLoaded) {
   return () => {
     clearInterval(clientsPolling);
     supabase.removeChannel(channel);
+  };
+}, [authReady, isLoggedIn]);
+
+useEffect(() => {
+  if (
+    !authReady ||
+    !isLoggedIn
+  ) {
+    setClientNoteBadgeIds([]);
+
+    return undefined;
+  }
+
+  let effectActive = true;
+  let reloadTimer = null;
+
+  const loadClientNoteBadgeIds =
+    async () => {
+      const pageSize = 1000;
+      let from = 0;
+      let hasMore = true;
+      const nextClientIds =
+        new Set();
+
+      while (
+        hasMore &&
+        effectActive
+      ) {
+        const {
+          data,
+          error,
+        } = await supabase
+          .from("client_notes")
+          .select("id,client_id")
+          .order("client_id", {
+            ascending: true,
+          })
+          .order("id", {
+            ascending: true,
+          })
+          .range(
+            from,
+            from + pageSize - 1
+          );
+
+        if (error) {
+          throw error;
+        }
+
+        (data || []).forEach(
+          (note) => {
+            const clientId = Number(
+              note.client_id
+            );
+
+            if (
+              Number.isInteger(
+                clientId
+              ) &&
+              clientId > 0
+            ) {
+              nextClientIds.add(
+                clientId
+              );
+            }
+          }
+        );
+
+        hasMore =
+          Array.isArray(data) &&
+          data.length === pageSize;
+        from += pageSize;
+      }
+
+      if (effectActive) {
+        setClientNoteBadgeIds(
+          Array.from(nextClientIds)
+        );
+      }
+    };
+
+  const reloadClientNoteBadgeIds =
+    () => {
+      if (reloadTimer) {
+        clearTimeout(reloadTimer);
+      }
+
+      reloadTimer = setTimeout(
+        () => {
+          loadClientNoteBadgeIds()
+            .catch((error) => {
+              console.error(
+                "Schedule client note badges reload error:",
+                error
+              );
+            });
+        },
+        200
+      );
+    };
+
+  loadClientNoteBadgeIds()
+    .catch((error) => {
+      console.error(
+        "Schedule client note badges load error:",
+        error
+      );
+    });
+
+  const clientNoteBadgesChannel =
+    supabase
+      .channel(
+        "schedule-client-note-badges-sync"
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "client_notes",
+        },
+        reloadClientNoteBadgeIds
+      )
+      .subscribe();
+
+  return () => {
+    effectActive = false;
+
+    if (reloadTimer) {
+      clearTimeout(reloadTimer);
+    }
+
+    supabase.removeChannel(
+      clientNoteBadgesChannel
+    );
   };
 }, [authReady, isLoggedIn]);
 
@@ -12517,6 +12656,14 @@ const loadIncomeExpenseReportDataRange =
       );
     };
   }, [isLoggedIn]);
+const clientNoteBadgeIdSet =
+  new Set(
+    clientNoteBadgeIds.map(
+      (clientId) =>
+        String(clientId)
+    )
+  );
+
 const getScheduleClientBadges = (
   row
 ) => {
@@ -12540,7 +12687,14 @@ const getScheduleClientBadges = (
     notes:
       String(
         client?.notes || ""
-      ).trim(),
+      ).trim() ||
+      (clientNoteBadgeIdSet.has(
+        String(
+          row?.clientId || ""
+        )
+      )
+        ? "يوجد ملاحظة في بروفايل العميلة"
+        : ""),
 
     blacklist:
       Boolean(
