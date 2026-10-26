@@ -160,6 +160,7 @@ useEffect(() => {
     buildingNumber: "",
     floor: "",
     apartment: "",
+    addressNote: "",
     mapUrl: "",
     isPrimary: false,
   });
@@ -202,6 +203,10 @@ useEffect(() => {
 
           apartment: String(
             location?.apartment || ""
+          ).trim(),
+
+          addressNote: String(
+            location?.addressNote || ""
           ).trim(),
 
           mapUrl: String(
@@ -8723,6 +8728,11 @@ const deletePurchase = async (
             location?.apartment || ""
           ),
 
+        addressNote:
+          String(
+            location?.addressNote || ""
+          ),
+
         mapUrl:
           String(
             location?.mapUrl || ""
@@ -8752,16 +8762,22 @@ const deletePurchase = async (
         return;
       }
 
-      const locationName =
-        String(
-          profileDeliveryLocationDraft
-            .name || ""
-        ).trim();
-
       const district =
         String(
           profileDeliveryLocationDraft
             .district || ""
+        ).trim();
+
+      /*
+        الاسم يبقى داخليًا فقط للتوافق
+        مع المواقع القديمة، ولا يظهر للموظفة.
+      */
+      const locationName =
+        String(
+          profileDeliveryLocationDraft
+            .name ||
+          district ||
+          "الموقع"
         ).trim();
 
       const rawMapUrl =
@@ -8775,13 +8791,6 @@ const deletePurchase = async (
           rawMapUrl
         );
 
-      if (!locationName) {
-        setProfileDeliveryLocationError(
-          "اكتب اسم الموقع، مثل: المنزل 1."
-        );
-
-        return;
-      }
 
       if (
         rawMapUrl &&
@@ -8869,6 +8878,12 @@ const deletePurchase = async (
           String(
             profileDeliveryLocationDraft
               .apartment || ""
+          ).trim(),
+
+        addressNote:
+          String(
+            profileDeliveryLocationDraft
+              .addressNote || ""
           ).trim(),
 
         mapUrl:
@@ -12328,6 +12343,138 @@ const loadIncomeExpenseReportDataRange =
     scheduleData,
   ]);
 
+  useEffect(() => {
+    if (
+      !isLoggedIn ||
+      screen !== "appointments" ||
+      !selectedScheduleDate
+    ) {
+      return;
+    }
+
+    const currentDayData =
+      scheduleData[selectedScheduleDate] ||
+      {};
+
+    const currentRows =
+      Array.isArray(
+        currentDayData.rows
+      )
+        ? currentDayData.rows
+        : [];
+
+    if (
+      currentRows.length === 0
+    ) {
+      return;
+    }
+
+    const changedRowIndexes = [];
+
+    const nextRows =
+      currentRows.map(
+        (row, rowIndex) => {
+          const clientId =
+            String(
+              row?.clientId || ""
+            ).trim();
+
+          const currentLocationId =
+            String(
+              row?.clientLocationId ||
+                ""
+            ).trim();
+
+          if (
+            !clientId ||
+            currentLocationId ||
+            !hasScheduleClientDeliveryLocationsLoaded(
+              clientId
+            )
+          ) {
+            return row;
+          }
+
+          const primaryLocation =
+            getScheduleClientDeliveryLocations(
+              clientId
+            ).find(
+              (location) =>
+                location.active !==
+                  false &&
+                location.isPrimary
+            );
+
+          if (!primaryLocation) {
+            return row;
+          }
+
+          changedRowIndexes.push(
+            rowIndex
+          );
+
+          return {
+            ...row,
+
+            clientLocationId:
+              String(
+                primaryLocation.id
+              ),
+
+            district:
+              String(
+                primaryLocation
+                  .district ||
+                row.district ||
+                ""
+              ).trim(),
+          };
+        }
+      );
+
+    if (
+      changedRowIndexes.length === 0
+    ) {
+      return;
+    }
+
+    scheduleLastEditRef.current =
+      Date.now();
+
+    setScheduleData(
+      (previous) => ({
+        ...previous,
+
+        [selectedScheduleDate]: {
+          ...(previous[
+            selectedScheduleDate
+          ] || {}),
+
+          rows:
+            nextRows,
+        },
+      })
+    );
+
+    changedRowIndexes.forEach(
+      (rowIndex) => {
+        queueScheduleRowSave(
+          selectedScheduleDate,
+          rowIndex,
+          nextRows[rowIndex],
+          currentDayData
+            .cellStyles || {}
+        );
+      }
+    );
+  }, [
+    isLoggedIn,
+    screen,
+    selectedScheduleDate,
+    scheduleData,
+    scheduleClientDeliveryLocationsById,
+  ]);
+
   const financeDefaultMonthlySettings = {
     monthlyTarget: "30000",
     staffSalary: "13500",
@@ -14585,11 +14732,10 @@ const getScheduleClientBadges = (
   { field: "status", label: "Status", width: 96 },
     { field: "clientBy", label: "Client By", width: 92 },
     { field: "serviceTime", label: "Service Time", width: 88 },
+    { field: "note", label: "Note", width: 160 },
     { field: "driver", label: "Driver", width: 80 },
     { field: "therapist", label: "Therapist", width: 84 },
     { field: "district", label: "District", width: 92 },
-    { field: "note", label: "Note", width: 160 },
-    { field: "clientLocationId", label: "Location", width: 118 },
     { field: "client", label: "Client", width: 110 },
     { field: "addExtra", label: "Profile", width: 76 },
     { field: "frame", label: "Frame", width: 52 },
@@ -40802,9 +40948,11 @@ if (screen === "menu") {
           background:
             "linear-gradient(to bottom right, #f6f1ea, #ebe1d3)",
           padding:
-            "24px",
+            "clamp(8px, 2vw, 24px)",
           fontFamily:
             "Arial",
+          boxSizing:
+            "border-box",
         }}
       >
         <div
@@ -40816,11 +40964,15 @@ if (screen === "menu") {
             background:
               "rgba(255,255,255,0.92)",
             borderRadius:
-              "30px",
+              "clamp(18px, 3vw, 30px)",
             padding:
-              "24px",
+              "clamp(10px, 2.2vw, 24px)",
             boxShadow:
               "0 15px 35px rgba(0,0,0,0.08)",
+            boxSizing:
+              "border-box",
+            overflow:
+              "hidden",
           }}
         >
           <div
@@ -41113,7 +41265,7 @@ if (screen === "menu") {
                 gridAutoFlow:
                   "column",
                 gridAutoColumns:
-                  "minmax(315px, 1fr)",
+                  "min(360px, calc(100vw - 52px))",
                 gap:
                   "16px",
                 overflowX:
@@ -41257,19 +41409,21 @@ if (screen === "menu") {
                                   }
                                   style={{
                                     padding:
-                                      "15px",
+                                      "clamp(14px, 2vw, 18px)",
                                     borderRadius:
-                                      "19px",
+                                      "20px",
                                     border:
                                       deliveryCompleted
-                                        ? "1px solid rgba(91,111,82,0.38)"
+                                        ? "1px solid rgba(121,88,64,0.34)"
                                         : "1px solid rgba(167,127,96,0.28)",
                                     background:
                                       deliveryCompleted
-                                        ? "#e8e4df"
-                                        : "#ffffff",
+                                        ? "#eee1d5"
+                                        : "#fffdf9",
                                     boxShadow:
-                                      "0 8px 22px rgba(75,46,31,0.07)",
+                                      "0 10px 26px rgba(75,46,31,0.08)",
+                                    boxSizing:
+                                      "border-box",
                                   }}
                                 >
                                   <div
@@ -41289,7 +41443,9 @@ if (screen === "menu") {
                                         color:
                                           "#4b2e1f",
                                         fontSize:
-                                          "15px",
+                                          "18px",
+                                        fontWeight:
+                                          "950",
                                       }}
                                     >
                                       {appointment
@@ -41333,19 +41489,19 @@ if (screen === "menu") {
                                     <div
                                       style={{
                                         marginBottom:
-                                          "10px",
+                                          "12px",
                                         padding:
-                                          "8px 10px",
+                                          "10px 12px",
                                         borderRadius:
                                           "12px",
                                         background:
-                                          "#d8e4d2",
+                                          "#dfcbbb",
                                         color:
-                                          "#41613b",
+                                          "#4b3327",
                                         textAlign:
                                           "center",
                                         fontSize:
-                                          "11px",
+                                          "13px",
                                         fontWeight:
                                           "950",
                                       }}
@@ -41385,11 +41541,13 @@ if (screen === "menu") {
                                               color:
                                                 "#3f2b21",
                                               fontSize:
-                                                "14px",
+                                                "17px",
                                               fontWeight:
                                                 "950",
                                               marginBottom:
-                                                "6px",
+                                                "9px",
+                                              lineHeight:
+                                                1.4,
                                             }}
                                           >
                                             {member.name ||
@@ -41398,80 +41556,55 @@ if (screen === "menu") {
 
                                           <div
                                             style={{
+                                              display:
+                                                "grid",
+                                              gap:
+                                                "5px",
                                               color:
-                                                "#745541",
+                                                "#674a39",
                                               fontSize:
-                                                "11px",
+                                                "13px",
                                               fontWeight:
                                                 "800",
                                               lineHeight:
-                                                1.8,
+                                                1.7,
                                             }}
                                           >
-                                            الجوال:{" "}
-                                            {member.phone ||
-                                              "-"}
-                                            <br />
-
-                                            الأخصائية:{" "}
-                                            {member.therapist ||
-                                              "-"}
-                                            <br />
-
-                                            الخدمة:{" "}
-                                            {member.service ||
-                                              "-"}
-                                            <br />
-
-                                            رقم الخدمة:{" "}
-                                            {member.order ||
-                                              "-"}
-                                            <br />
-
-                                            الوقت:{" "}
-                                            {member.serviceTime ||
-                                              "-"}
-                                          </div>
-
-                                          {String(
-                                            member.note ||
-                                              ""
-                                          ).trim() ? (
-                                            <div
-                                              style={{
-                                                marginTop:
-                                                  "7px",
-                                                padding:
-                                                  "7px 9px",
-                                                borderRadius:
-                                                  "10px",
-                                                background:
-                                                  "#f2e5d9",
-                                                color:
-                                                  "#654938",
-                                                fontSize:
-                                                  "10px",
-                                                fontWeight:
-                                                  "850",
-                                              }}
-                                            >
-                                              ملاحظة:{" "}
-                                              {
-                                                member.note
-                                              }
+                                            <div>
+                                              <strong>
+                                                الجوال:{" "}
+                                              </strong>
+                                              {member.phone ||
+                                                "-"}
                                             </div>
-                                          ) : null}
+
+                                            <div>
+                                              <strong>
+                                                الأخصائية:{" "}
+                                              </strong>
+                                              {member.therapist ||
+                                                "-"}
+                                            </div>
+
+                                            <div>
+                                              <strong>
+                                                الخدمة:{" "}
+                                              </strong>
+                                              {member.service ||
+                                                "-"}
+                                            </div>
+                                          </div>
 
                                           <div
                                             style={{
                                               display:
-                                                "flex",
-                                              flexWrap:
-                                                "wrap",
+                                                "grid",
+                                              gridTemplateColumns:
+                                                "repeat(auto-fit, minmax(145px, 1fr))",
                                               gap:
-                                                "6px",
+                                                "8px",
                                               marginTop:
-                                                "9px",
+                                                "13px",
                                             }}
                                           >
                                             <button
@@ -41487,22 +41620,24 @@ if (screen === "menu") {
                                                 )
                                               }
                                               style={{
+                                                width:
+                                                  "100%",
                                                 minHeight:
-                                                  "33px",
+                                                  "46px",
                                                 padding:
-                                                  "6px 10px",
+                                                  "9px 12px",
                                                 borderRadius:
-                                                  "10px",
+                                                  "12px",
                                                 border:
-                                                  "1px solid rgba(107,77,57,0.26)",
+                                                  "1px solid rgba(107,77,57,0.28)",
                                                 background:
-                                                  "#ffffff",
+                                                  "#fffdf9",
                                                 color:
                                                   "#4b3327",
                                                 fontSize:
-                                                  "9px",
+                                                  "12px",
                                                 fontWeight:
-                                                  "900",
+                                                  "950",
                                                 cursor:
                                                   normalizeDeliveryExternalPhone(
                                                     member.phone
@@ -41517,7 +41652,7 @@ if (screen === "menu") {
                                                     : 0.5,
                                               }}
                                             >
-                                              الاتصال بالعميلة
+                                              ☎ الاتصال بالعميلة
                                             </button>
 
                                             <button
@@ -41534,28 +41669,36 @@ if (screen === "menu") {
                                                 )
                                               }
                                               style={{
+                                                width:
+                                                  "100%",
                                                 minHeight:
-                                                  "33px",
+                                                  "46px",
                                                 padding:
-                                                  "6px 10px",
+                                                  "9px 12px",
                                                 borderRadius:
-                                                  "10px",
+                                                  "12px",
                                                 border:
-                                                  "none",
+                                                  "1px solid rgba(157,117,87,0.26)",
                                                 background:
-                                                  "#dfe9d8",
+                                                  "#f2e5d9",
                                                 color:
-                                                  "#45603e",
+                                                  "#533a2d",
                                                 fontSize:
-                                                  "9px",
+                                                  "12px",
                                                 fontWeight:
-                                                  "900",
+                                                  "950",
                                                 cursor:
                                                   normalizeDeliveryExternalPhone(
                                                     member.phone
                                                   )
                                                     ? "pointer"
                                                     : "not-allowed",
+                                                opacity:
+                                                  normalizeDeliveryExternalPhone(
+                                                    member.phone
+                                                  )
+                                                    ? 1
+                                                    : 0.5,
                                               }}
                                             >
                                               الأخصائية في الطريق
@@ -41575,28 +41718,36 @@ if (screen === "menu") {
                                                 )
                                               }
                                               style={{
+                                                width:
+                                                  "100%",
                                                 minHeight:
-                                                  "33px",
+                                                  "46px",
                                                 padding:
-                                                  "6px 10px",
+                                                  "9px 12px",
                                                 borderRadius:
-                                                  "10px",
+                                                  "12px",
                                                 border:
-                                                  "none",
+                                                  "1px solid rgba(157,117,87,0.30)",
                                                 background:
-                                                  "#ead8c8",
+                                                  "#e5d0be",
                                                 color:
-                                                  "#533b2c",
+                                                  "#4b3327",
                                                 fontSize:
-                                                  "9px",
+                                                  "12px",
                                                 fontWeight:
-                                                  "900",
+                                                  "950",
                                                 cursor:
                                                   normalizeDeliveryExternalPhone(
                                                     member.phone
                                                   )
                                                     ? "pointer"
                                                     : "not-allowed",
+                                                opacity:
+                                                  normalizeDeliveryExternalPhone(
+                                                    member.phone
+                                                  )
+                                                    ? 1
+                                                    : 0.5,
                                               }}
                                             >
                                               الأخصائية وصلت
@@ -41610,80 +41761,118 @@ if (screen === "menu") {
                                   <div
                                     style={{
                                       marginTop:
-                                        "11px",
+                                        "13px",
                                       padding:
-                                        "11px",
-                                      borderRadius:
                                         "14px",
+                                      borderRadius:
+                                        "15px",
                                       background:
-                                        location
-                                          ? "#eef2e8"
-                                          : "#fff0dc",
+                                        "#faf5f0",
                                       border:
-                                        location
-                                          ? "1px solid rgba(101,133,88,0.24)"
-                                          : "1px solid rgba(193,127,55,0.28)",
+                                        "1px solid rgba(183,151,124,0.22)",
                                       color:
-                                        "#5c4434",
+                                        "#533a2d",
                                       fontSize:
-                                        "11px",
+                                        "13px",
                                       fontWeight:
                                         "850",
                                       lineHeight:
-                                        1.8,
+                                        1.9,
                                     }}
                                   >
-                                    {!hasSelectedLocation ? (
+                                    {location ? (
+                                      <>
+                                        <div>
+                                          <strong>
+                                            الحي:{" "}
+                                          </strong>
+                                          {location.district ||
+                                            appointment
+                                              .row
+                                              ?.district ||
+                                            "-"}
+                                        </div>
+
+                                        <div>
+                                          <strong>
+                                            رقم المبنى:{" "}
+                                          </strong>
+                                          {location.buildingNumber ||
+                                            "-"}
+                                        </div>
+
+                                        <div>
+                                          <strong>
+                                            الدور:{" "}
+                                          </strong>
+                                          {location.floor ||
+                                            "-"}
+                                        </div>
+
+                                        <div>
+                                          <strong>
+                                            الشقة:{" "}
+                                          </strong>
+                                          {location.apartment ||
+                                            "-"}
+                                        </div>
+
+                                        {String(
+                                          location.addressNote ||
+                                            ""
+                                        ).trim() ? (
+                                          <div
+                                            style={{
+                                              marginTop:
+                                                "10px",
+                                              padding:
+                                                "10px 12px",
+                                              borderRadius:
+                                                "11px",
+                                              background:
+                                                "#ead8c8",
+                                              color:
+                                                "#4b3327",
+                                              fontSize:
+                                                "13px",
+                                              fontWeight:
+                                                "950",
+                                              lineHeight:
+                                                1.7,
+                                            }}
+                                          >
+                                            ملاحظة العنوان:{" "}
+                                            {
+                                              location.addressNote
+                                            }
+                                          </div>
+                                        ) : null}
+                                      </>
+                                    ) : String(
+                                        appointment
+                                          .row
+                                          ?.district ||
+                                          ""
+                                      ).trim() ? (
+                                      <div>
+                                        <strong>
+                                          الحي:{" "}
+                                        </strong>
+                                        {
+                                          appointment
+                                            .row
+                                            .district
+                                        }
+                                      </div>
+                                    ) : (
                                       <strong
                                         style={{
                                           color:
-                                            "#a55d27",
+                                            "#9b572d",
                                         }}
                                       >
                                         ⚠ الموقع غير محدد
                                       </strong>
-                                    ) : !locationsLoaded ? (
-                                      <strong>
-                                        جاري تحميل الموقع...
-                                      </strong>
-                                    ) : !location ? (
-                                      <strong
-                                        style={{
-                                          color:
-                                            "#a55d27",
-                                        }}
-                                      >
-                                        ⚠ الموقع المحفوظ غير متاح
-                                      </strong>
-                                    ) : (
-                                      <>
-                                        <strong>
-                                          {location.name}
-                                        </strong>
-                                        <br />
-
-                                        الحي:{" "}
-                                        {location.district ||
-                                          appointment
-                                            .row
-                                            ?.district ||
-                                          "-"}
-                                        <br />
-
-                                        رقم المبنى:{" "}
-                                        {location.buildingNumber ||
-                                          "-"}
-                                        <br />
-
-                                        الدور:{" "}
-                                        {location.floor ||
-                                          "-"}
-                                        <br />
-
-                                        الشقة:{" "}
-                                        {location.apartment ||
-                                          "-"}
-                                      </>
                                     )}
                                   </div>
 
@@ -41696,9 +41885,9 @@ if (screen === "menu") {
                                         display:
                                           "grid",
                                         gridTemplateColumns:
-                                          "repeat(auto-fill, minmax(82px, 1fr))",
+                                          "repeat(auto-fill, minmax(105px, 1fr))",
                                         gap:
-                                          "7px",
+                                          "8px",
                                       }}
                                     >
                                       {locationImages.map(
@@ -41731,7 +41920,7 @@ if (screen === "menu") {
                                               }
                                               style={{
                                                 minHeight:
-                                                  "86px",
+                                                  "105px",
                                                 padding:
                                                   0,
                                                 overflow:
@@ -41761,7 +41950,7 @@ if (screen === "menu") {
                                                     width:
                                                       "100%",
                                                     height:
-                                                      "86px",
+                                                      "105px",
                                                     display:
                                                       "block",
                                                     objectFit:
@@ -41792,13 +41981,13 @@ if (screen === "menu") {
                                   <div
                                     style={{
                                       marginTop:
-                                        "12px",
+                                        "13px",
                                       display:
                                         "grid",
                                       gridTemplateColumns:
-                                        "repeat(auto-fit, minmax(130px, 1fr))",
+                                        "repeat(2, minmax(0, 1fr))",
                                       gap:
-                                        "8px",
+                                        "9px",
                                     }}
                                   >
                                     <button
@@ -41816,7 +42005,7 @@ if (screen === "menu") {
                                       }
                                       style={{
                                         minHeight:
-                                          "40px",
+                                          "48px",
                                         borderRadius:
                                           "12px",
                                         border:
@@ -41856,17 +42045,19 @@ if (screen === "menu") {
                                       }
                                       style={{
                                         minHeight:
-                                          "40px",
+                                          "48px",
                                         borderRadius:
                                           "12px",
                                         border:
-                                          "none",
+                                          "1px solid rgba(93,63,47,0.18)",
                                         background:
                                           deliveryCompleted
-                                            ? "#b9a89b"
-                                            : "linear-gradient(135deg, #61745a, #82937a)",
+                                            ? "#bda999"
+                                            : "linear-gradient(135deg, #4b3327, #76543f)",
                                         color:
                                           "#ffffff",
+                                        fontSize:
+                                          "12px",
                                         fontWeight:
                                           "950",
                                         cursor:
@@ -43622,6 +43813,19 @@ if (screen === "menu") {
                         style={getScheduleInputStyle(index, "serviceTime", { fontWeight: "bold" })}
                       />
                     </td>
+                    <td
+                      style={getScheduleCellStyle(index, "note")}
+                      {...getScheduleCellHandlers(index, "note")}
+                    >
+                      <input
+                        value={row.note}
+                        onChange={(e) =>
+                          updateScheduleRow(index, "note", e.target.value)
+                        }
+                        {...getScheduleEditableProps(index, "note")}
+                        style={getScheduleInputStyle(index, "note")}
+                      />
+                    </td>
 
                     <td
                       style={getScheduleCellStyle(index, "driver")}
@@ -43701,139 +43905,6 @@ if (screen === "menu") {
                       />
                     </td>
 
-                    <td
-                      style={getScheduleCellStyle(index, "note")}
-                      {...getScheduleCellHandlers(index, "note")}
-                    >
-                      <input
-                        value={row.note}
-                        onChange={(e) =>
-                          updateScheduleRow(index, "note", e.target.value)
-                        }
-                        {...getScheduleEditableProps(index, "note")}
-                        style={getScheduleInputStyle(index, "note")}
-                      />
-                    </td>
-
-                    <td
-                      style={getScheduleCellStyle(
-                        index,
-                        "clientLocationId"
-                      )}
-                      {...getScheduleCellHandlers(
-                        index,
-                        "clientLocationId"
-                      )}
-                    >
-                      <select
-                        value={
-                          row.clientLocationId ||
-                          ""
-                        }
-                        onChange={(event) =>
-                          updateScheduleRow(
-                            index,
-                            "clientLocationId",
-                            event.target.value
-                          )
-                        }
-                        {...getScheduleEditableProps(
-                          index,
-                          "clientLocationId"
-                        )}
-                        disabled={
-                          Boolean(
-                            getScheduleEditableProps(
-                              index,
-                              "clientLocationId"
-                            ).disabled
-                          ) ||
-                          !row.clientId ||
-                          !hasScheduleClientDeliveryLocationsLoaded(
-                            row.clientId
-                          ) ||
-                          (
-                            getScheduleClientLocationOptions(
-                              row
-                            ).length === 0 &&
-                            !String(
-                              row.clientLocationId ||
-                                ""
-                            ).trim()
-                          )
-                        }
-                        style={getScheduleInputStyle(
-                          index,
-                          "clientLocationId",
-                          {
-                            fontSize:
-                              "12px",
-                          }
-                        )}
-                      >
-                        {!row.clientId ? (
-                          <option value=""></option>
-                        ) : !hasScheduleClientDeliveryLocationsLoaded(
-                            row.clientId
-                          ) ? (
-                          <option value="">
-                            جاري تحميل المواقع...
-                          </option>
-                        ) : (
-                          <option value="">
-                            ⚠ الموقع غير محدد
-                          </option>
-                        )}
-
-                        {String(
-                          row.clientLocationId ||
-                            ""
-                        ).trim() &&
-                        !getScheduleClientLocationOptions(
-                          row
-                        ).some(
-                          (location) =>
-                            String(
-                              location.id
-                            ) ===
-                            String(
-                              row.clientLocationId
-                            )
-                        ) ? (
-                          <option
-                            value={
-                              row.clientLocationId
-                            }
-                          >
-                            الموقع المحفوظ
-                          </option>
-                        ) : null}
-
-                        {getScheduleClientLocationOptions(
-                          row
-                        ).map(
-                          (location) => (
-                            <option
-                              key={
-                                location.id
-                              }
-                              value={
-                                location.id
-                              }
-                            >
-                              {location.name}
-                              {location.district
-                                ? ` - ${location.district}`
-                                : ""}
-                              {location.active ===
-                              false
-                                ? " (متوقف)"
-                                : ""}
-                            </option>
-                          )
-                        )}
-                      </select>
-                    </td>
 
                     <td
   style={getScheduleCellStyle(index, "client")}
@@ -65902,11 +65973,6 @@ if (screen === "potentialClients") {
                 >
                   {[
                     [
-                      "name",
-                      "اسم الموقع",
-                      "مثال: المنزل 1",
-                    ],
-                    [
                       "district",
                       "الحي",
                       "اسم الحي",
@@ -65925,6 +65991,11 @@ if (screen === "potentialClients") {
                       "apartment",
                       "الشقة",
                       "مثال: 12",
+                    ],
+                    [
+                      "addressNote",
+                      "ملاحظة خاصة بالعنوان",
+                      "مثال: رقم المصعد 2233 أو لا تدق الجرس",
                     ],
                   ].map(
                     ([
@@ -66221,37 +66292,18 @@ if (screen === "potentialClients") {
                             "flex-start",
                         }}
                       >
-                        <div>
-                          <div
-                            style={{
-                              color:
-                                "#3f2b21",
-                              fontSize:
-                                "15px",
-                              fontWeight:
-                                "950",
-                            }}
-                          >
-                            {
-                              location.name
-                            }
-                          </div>
-
-                          <div
-                            style={{
-                              marginTop:
-                                "4px",
-                              color:
-                                "#876750",
-                              fontSize:
-                                "10px",
-                              fontWeight:
-                                "800",
-                            }}
-                          >
-                            {location.district ||
-                              "الحي غير محدد"}
-                          </div>
+                        <div
+                          style={{
+                            color:
+                              "#3f2b21",
+                            fontSize:
+                              "15px",
+                            fontWeight:
+                              "950",
+                          }}
+                        >
+                          {location.district ||
+                            "الحي غير محدد"}
                         </div>
 
                         <div
@@ -66312,11 +66364,11 @@ if (screen === "potentialClients") {
                           color:
                             "#674a39",
                           fontSize:
-                            "11px",
+                            "12px",
                           fontWeight:
                             "800",
                           lineHeight:
-                            1.8,
+                            1.9,
                         }}
                       >
                         رقم المبنى:{" "}
@@ -66330,6 +66382,37 @@ if (screen === "potentialClients") {
                         الشقة:{" "}
                         {location.apartment ||
                           "-"}
+
+                        {String(
+                          location.addressNote ||
+                            ""
+                        ).trim() ? (
+                          <div
+                            style={{
+                              marginTop:
+                                "9px",
+                              padding:
+                                "9px 11px",
+                              borderRadius:
+                                "11px",
+                              background:
+                                "#f2e5d9",
+                              color:
+                                "#533a2d",
+                              fontSize:
+                                "12px",
+                              fontWeight:
+                                "900",
+                              lineHeight:
+                                1.7,
+                            }}
+                          >
+                            ملاحظة العنوان:{" "}
+                            {
+                              location.addressNote
+                            }
+                          </div>
+                        ) : null}
                       </div>
 
                       <div
