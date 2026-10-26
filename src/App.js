@@ -9186,6 +9186,34 @@ const deletePurchase = async (
         for (
           const file of validFiles
         ) {
+          /*
+            صور الحافظة، خصوصًا المنسوخة
+            من WhatsApp، قد تكون مرتبطة
+            بمصدر Clipboard مؤقت.
+
+            ننسخ محتوى الصورة فورًا إلى
+            Blob مستقل قبل رفعها إلى
+            Supabase Storage حتى لا يعلق
+            الرفع على "جاري معالجة الصور".
+          */
+          const stableImageBlob =
+            file instanceof Blob &&
+            typeof file.arrayBuffer ===
+              "function"
+              ? new Blob(
+                  [
+                    await file.arrayBuffer(),
+                  ],
+                  {
+                    type:
+                      String(
+                        file?.type ||
+                          "image/jpeg"
+                      ),
+                  }
+                )
+              : file;
+
           const objectPath =
             createClientDeliveryImageObjectPath(
               location.id,
@@ -9200,18 +9228,17 @@ const deletePurchase = async (
             )
             .upload(
               objectPath,
-              file,
+              stableImageBlob,
               {
                 cacheControl:
                   "3600",
                 upsert: false,
 
-                ...(file?.type
-                  ? {
-                      contentType:
-                        file.type,
-                    }
-                  : {}),
+                contentType:
+                  String(
+                    file?.type ||
+                      "image/jpeg"
+                  ),
               }
             );
 
@@ -13650,12 +13677,96 @@ const loadIncomeExpenseReportDataRange =
           phone
         );
 
-      const directlyLinkedClient =
+      let directlyLinkedClient =
         clients.find(
           (client) =>
             String(client.id) ===
             String(clientId || "")
         ) || null;
+
+      /*
+        قد يكون clientId محفوظًا بشكل صحيح
+        داخل الموعد بينما قائمة العملاء المحلية
+        في هذا الجهاز لم تتحدث بعد، خصوصًا
+        بعد Send To أو عند استخدام الكاش.
+
+        في هذه الحالة نقرأ البروفايل مباشرة
+        من Supabase بواسطة clientId بدل
+        اعتبار العميلة غير موجودة.
+      */
+      if (
+        !directlyLinkedClient &&
+        String(clientId || "").trim()
+      ) {
+        const {
+          data: linkedClientData,
+          error: linkedClientError,
+        } = await supabase
+          .from("clients")
+          .select(
+            "id,name,arabic_name,loyalty_card_name,phone,secondary_phone,address,visits,frame,blacklist,exclude_from_inactive_clients,notes,last_order_at,last_activity_at,last_contacted_at,last_contacted_by_name,last_contacted_by_auth_user_id"
+          )
+          .eq(
+            "id",
+            clientId
+          )
+          .maybeSingle();
+
+        if (
+          !linkedClientError &&
+          linkedClientData?.id
+        ) {
+          directlyLinkedClient =
+            normalizeClientRecord(
+              linkedClientData
+            );
+
+          setClients(
+            (previousClients) => {
+              const alreadyExists =
+                previousClients.some(
+                  (client) =>
+                    String(
+                      client.id
+                    ) ===
+                    String(
+                      directlyLinkedClient.id
+                    )
+                );
+
+              if (alreadyExists) {
+                return previousClients.map(
+                  (client) =>
+                    String(
+                      client.id
+                    ) ===
+                    String(
+                      directlyLinkedClient.id
+                    )
+                      ? directlyLinkedClient
+                      : client
+                );
+              }
+
+              return [
+                directlyLinkedClient,
+                ...previousClients,
+              ].sort(
+                (
+                  firstClient,
+                  secondClient
+                ) =>
+                  Number(
+                    secondClient.id || 0
+                  ) -
+                  Number(
+                    firstClient.id || 0
+                  )
+              );
+            }
+          );
+        }
+      }
 
       const normalizedLinkedPhone =
         normalizeDigits(
