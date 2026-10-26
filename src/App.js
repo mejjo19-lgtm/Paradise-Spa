@@ -12289,6 +12289,45 @@ const loadIncomeExpenseReportDataRange =
     };
   }, [isLoggedIn, selectedScheduleDate]);
 
+  useEffect(() => {
+    if (
+      !isLoggedIn ||
+      screen !== "appointments" ||
+      !selectedScheduleDate
+    ) {
+      return;
+    }
+
+    const clientIds = Array.from(
+      new Set(
+        getRowsForDate(selectedScheduleDate)
+          .map((row) =>
+            String(
+              row?.clientId || ""
+            ).trim()
+          )
+          .filter(Boolean)
+      )
+    );
+
+    clientIds.forEach((clientId) => {
+      if (
+        !hasScheduleClientDeliveryLocationsLoaded(
+          clientId
+        )
+      ) {
+        loadScheduleClientDeliveryLocations(
+          clientId
+        );
+      }
+    });
+  }, [
+    isLoggedIn,
+    screen,
+    selectedScheduleDate,
+    scheduleData,
+  ]);
+
   const financeDefaultMonthlySettings = {
     monthlyTarget: "30000",
     staffSalary: "13500",
@@ -14549,6 +14588,7 @@ const getScheduleClientBadges = (
     { field: "driver", label: "Driver", width: 80 },
     { field: "therapist", label: "Therapist", width: 84 },
     { field: "district", label: "District", width: 92 },
+    { field: "note", label: "Note", width: 160 },
     { field: "clientLocationId", label: "Location", width: 118 },
     { field: "client", label: "Client", width: 110 },
     { field: "addExtra", label: "Profile", width: 76 },
@@ -14562,7 +14602,6 @@ const getScheduleClientBadges = (
     { field: "paymentMethod", label: "Payment Method", width: 102 },
     { field: "cashReceivedBy", label: "Cash Received By", width: 102 },
     { field: "sendTo", label: "Send To", width: 120 },
-    { field: "note", label: "Note", width: 160 },
     { field: "giftFrom", label: "Gift From", width: 112 },
     { field: "giftPhone", label: "Phone No.", width: 106 },
   ];
@@ -43600,9 +43639,7 @@ if (screen === "menu") {
                         {...getScheduleEditableProps(index, "driver")}
                         style={getScheduleInputStyle(index, "driver")}
                       >
-                        <option value="">
-                          بدون مندوب
-                        </option>
+                        <option value=""></option>
 
                         {String(row.driver || "").trim() &&
                         !getAppointmentDriverId(row) ? (
@@ -43665,6 +43702,20 @@ if (screen === "menu") {
                     </td>
 
                     <td
+                      style={getScheduleCellStyle(index, "note")}
+                      {...getScheduleCellHandlers(index, "note")}
+                    >
+                      <input
+                        value={row.note}
+                        onChange={(e) =>
+                          updateScheduleRow(index, "note", e.target.value)
+                        }
+                        {...getScheduleEditableProps(index, "note")}
+                        style={getScheduleInputStyle(index, "note")}
+                      />
+                    </td>
+
+                    <td
                       style={getScheduleCellStyle(
                         index,
                         "clientLocationId"
@@ -43679,11 +43730,6 @@ if (screen === "menu") {
                           row.clientLocationId ||
                           ""
                         }
-                        onMouseDown={() =>
-                          loadScheduleClientDeliveryLocations(
-                            row.clientId
-                          )
-                        }
                         onChange={(event) =>
                           updateScheduleRow(
                             index,
@@ -43695,6 +43741,27 @@ if (screen === "menu") {
                           index,
                           "clientLocationId"
                         )}
+                        disabled={
+                          Boolean(
+                            getScheduleEditableProps(
+                              index,
+                              "clientLocationId"
+                            ).disabled
+                          ) ||
+                          !row.clientId ||
+                          !hasScheduleClientDeliveryLocationsLoaded(
+                            row.clientId
+                          ) ||
+                          (
+                            getScheduleClientLocationOptions(
+                              row
+                            ).length === 0 &&
+                            !String(
+                              row.clientLocationId ||
+                                ""
+                            ).trim()
+                          )
+                        }
                         style={getScheduleInputStyle(
                           index,
                           "clientLocationId",
@@ -43705,26 +43772,18 @@ if (screen === "menu") {
                         )}
                       >
                         {!row.clientId ? (
+                          <option value=""></option>
+                        ) : !hasScheduleClientDeliveryLocationsLoaded(
+                            row.clientId
+                          ) ? (
                           <option value="">
-                            اختاري العميلة أولاً
+                            جاري تحميل المواقع...
                           </option>
                         ) : (
                           <option value="">
                             ⚠ الموقع غير محدد
                           </option>
                         )}
-
-                        {row.clientId &&
-                        !hasScheduleClientDeliveryLocationsLoaded(
-                          row.clientId
-                        ) ? (
-                          <option
-                            value=""
-                            disabled
-                          >
-                            اضغطي لتحميل المواقع
-                          </option>
-                        ) : null}
 
                         {String(
                           row.clientLocationId ||
@@ -44125,20 +44184,6 @@ margin: "0 auto",
                     </td>
 
                     <td
-                      style={getScheduleCellStyle(index, "note")}
-                      {...getScheduleCellHandlers(index, "note")}
-                    >
-                      <input
-                        value={row.note}
-                        onChange={(e) =>
-                          updateScheduleRow(index, "note", e.target.value)
-                        }
-                        {...getScheduleEditableProps(index, "note")}
-                        style={getScheduleInputStyle(index, "note")}
-                      />
-                    </td>
-
-                    <td
                       style={getScheduleCellStyle(index, "giftFrom")}
                       {...getScheduleCellHandlers(index, "giftFrom")}
                     >
@@ -44510,9 +44555,7 @@ margin: "0 auto",
                                       field
                                     )}
                                   >
-                                    <option value="">
-                                      بدون مندوب
-                                    </option>
+                                    <option value=""></option>
 
                                     {String(
                                       extraClient.driver || ""
