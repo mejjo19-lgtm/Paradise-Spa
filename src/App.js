@@ -152,10 +152,161 @@ useEffect(() => {
   }
 }, [screen]);
 
+  const createEmptyClientDeliveryLocationDraft = () => ({
+    locationId: "",
+    name: "",
+    district: "",
+    buildingNumber: "",
+    floor: "",
+    apartment: "",
+    mapUrl: "",
+    isPrimary: false,
+  });
+
+  const normalizeClientDeliveryLocations = (
+    value
+  ) => {
+    const sourceLocations =
+      Array.isArray(value)
+        ? value
+        : [];
+
+    return sourceLocations
+      .map(
+        (
+          location,
+          index
+        ) => ({
+          id: String(
+            location?.id ||
+              `legacy-location-${index + 1}`
+          ).trim(),
+
+          name: String(
+            location?.name || ""
+          ).trim(),
+
+          district: String(
+            location?.district || ""
+          ).trim(),
+
+          buildingNumber: String(
+            location?.buildingNumber ||
+              ""
+          ).trim(),
+
+          floor: String(
+            location?.floor || ""
+          ).trim(),
+
+          apartment: String(
+            location?.apartment || ""
+          ).trim(),
+
+          mapUrl: String(
+            location?.mapUrl || ""
+          ).trim(),
+
+          isPrimary: Boolean(
+            location?.isPrimary
+          ),
+
+          active:
+            location?.active !== false,
+
+          sortOrder: Number(
+            location?.sortOrder ??
+              index + 1
+          ),
+
+          images: Array.isArray(
+            location?.images
+          )
+            ? location.images
+            : [],
+        })
+      )
+      .filter(
+        (location) =>
+          location.id &&
+          location.name
+      )
+      .sort(
+        (
+          firstLocation,
+          secondLocation
+        ) => {
+          if (
+            firstLocation.isPrimary !==
+            secondLocation.isPrimary
+          ) {
+            return firstLocation.isPrimary
+              ? -1
+              : 1;
+          }
+
+          return (
+            firstLocation.sortOrder -
+            secondLocation.sortOrder
+          );
+        }
+      );
+  };
+
   const [
     selectedClientId,
     setSelectedClientId,
   ] = useState(null);
+
+  const selectedClientIdRef =
+    useRef(null);
+
+  useEffect(() => {
+    selectedClientIdRef.current =
+      selectedClientId;
+  }, [selectedClientId]);
+
+  const [
+    profileDeliveryLocations,
+    setProfileDeliveryLocations,
+  ] = useState([]);
+
+  const [
+    profileDeliveryLocationDraft,
+    setProfileDeliveryLocationDraft,
+  ] = useState(
+    createEmptyClientDeliveryLocationDraft
+  );
+
+  const [
+    showProfileDeliveryLocationForm,
+    setShowProfileDeliveryLocationForm,
+  ] = useState(false);
+
+  const [
+    profileDeliveryLocationSaving,
+    setProfileDeliveryLocationSaving,
+  ] = useState(false);
+
+  const [
+    profileDeliveryLocationError,
+    setProfileDeliveryLocationError,
+  ] = useState("");
+
+  const [
+    scheduleClientDeliveryLocationsById,
+    setScheduleClientDeliveryLocationsById,
+  ] = useState({});
+
+  const [
+    profileDeliveryImageUrls,
+    setProfileDeliveryImageUrls,
+  ] = useState({});
+
+  const [
+    profileDeliveryImageBusyLocationId,
+    setProfileDeliveryImageBusyLocationId,
+  ] = useState("");
 
   const [
     selectedLoyaltyClientId,
@@ -1483,6 +1634,7 @@ const scheduleLastEditRef = useRef(0);
 const dailyManualLastEditRef = useRef(0);
 const scheduleSettingsLastEditRef = useRef(0);
 const financeSettingsLastEditRef = useRef(0);
+const deliverySettingsLastEditRef = useRef(0);
 const sharedDataMetaRef = useRef({});
 const sharedDataDeviceIdRef = useRef(`${Date.now()}-${Math.random().toString(36).slice(2)}`);
 const scheduleEditingRef = useRef(false);
@@ -2073,6 +2225,46 @@ if (!cacheLoaded) {
         }
 
         if (payload.new) {
+          const changedClientId =
+            String(
+              payload.new.id || ""
+            );
+
+          if (
+            changedClientId &&
+            Object.prototype.hasOwnProperty.call(
+              payload.new,
+              "delivery_locations"
+            )
+          ) {
+            const realtimeLocations =
+              normalizeClientDeliveryLocations(
+                payload.new
+                  .delivery_locations
+              );
+
+            setScheduleClientDeliveryLocationsById(
+              (previous) => ({
+                ...previous,
+
+                [changedClientId]:
+                  realtimeLocations,
+              })
+            );
+
+            if (
+              changedClientId ===
+              String(
+                selectedClientIdRef.current ||
+                  ""
+              )
+            ) {
+              setProfileDeliveryLocations(
+                realtimeLocations
+              );
+            }
+          }
+
           const nextClient = normalizeClientRecord(payload.new);
           setClients((prev) => {
             const exists = prev.some((client) => String(client.id) === String(nextClient.id));
@@ -3348,6 +3540,313 @@ function fetchSharedClientLists() {
     return savedSettings ? JSON.parse(savedSettings) : {};
   });
 
+  const createDefaultDeliverySettings = () => ({
+    drivers: [],
+    whatsappTemplates: {
+      onTheWay: "مرحبًا أستاذة {clientName}، الأخصائية في الطريق إليك الآن 🤍",
+      arrived: "مرحبًا أستاذة {clientName}، الأخصائية وصلت إلى موقعك 🤍",
+    },
+  });
+
+  const [deliverySettings, setDeliverySettings] = useState(() => {
+    const defaultSettings = createDefaultDeliverySettings();
+
+    try {
+      const savedSettings = JSON.parse(
+        localStorage.getItem("paradise-delivery-settings") || "null"
+      );
+
+      if (savedSettings && typeof savedSettings === "object") {
+        return {
+          ...defaultSettings,
+          ...savedSettings,
+          drivers: Array.isArray(savedSettings.drivers)
+            ? savedSettings.drivers
+            : [],
+          whatsappTemplates: {
+            ...defaultSettings.whatsappTemplates,
+            ...(savedSettings.whatsappTemplates || {}),
+          },
+        };
+      }
+    } catch (error) {
+      console.log("Delivery settings local load error:", error);
+    }
+
+    return defaultSettings;
+  });
+
+  const deliveryDrivers = (Array.isArray(deliverySettings.drivers)
+    ? deliverySettings.drivers
+    : []
+  )
+    .map((driver, index) => ({
+      id: String(driver?.id || "").trim(),
+      name: String(driver?.name || "").trim(),
+      active: driver?.active !== false,
+      sortOrder: Number(driver?.sortOrder ?? driver?.sort_order ?? index + 1),
+    }))
+    .filter((driver) => driver.id && driver.name)
+    .sort((firstDriver, secondDriver) =>
+      firstDriver.sortOrder !== secondDriver.sortOrder
+        ? firstDriver.sortOrder - secondDriver.sortOrder
+        : firstDriver.name.localeCompare(secondDriver.name, "ar")
+    );
+
+  const activeDeliveryDrivers = deliveryDrivers.filter(
+    (driver) => driver.active
+  );
+
+  const getDeliveryDriverById = (driverId) =>
+    deliveryDrivers.find(
+      (driver) =>
+        String(driver.id) ===
+        String(driverId || "")
+    ) || null;
+
+  const getAppointmentDriverId = (appointment = {}) => {
+    const explicitDriverId = String(
+      appointment?.driverId || ""
+    ).trim();
+
+    if (
+      explicitDriverId &&
+      getDeliveryDriverById(explicitDriverId)
+    ) {
+      return explicitDriverId;
+    }
+
+    const legacyDriverName = String(
+      appointment?.driver || ""
+    ).trim();
+
+    if (!legacyDriverName) {
+      return "";
+    }
+
+    const matchedDriver =
+      deliveryDrivers.find(
+        (driver) =>
+          String(driver.name || "")
+            .trim()
+            .toLowerCase() ===
+          legacyDriverName.toLowerCase()
+      );
+
+    return matchedDriver
+      ? String(matchedDriver.id)
+      : "";
+  };
+
+  const getAppointmentDriverSelectValue = (
+    appointment = {}
+  ) => {
+    const driverId =
+      getAppointmentDriverId(
+        appointment
+      );
+
+    if (driverId) {
+      return driverId;
+    }
+
+    const legacyDriverName =
+      String(
+        appointment?.driver || ""
+      ).trim();
+
+    return legacyDriverName
+      ? `legacy:${legacyDriverName}`
+      : "";
+  };
+
+  const getAppointmentDriverOptions = (
+    appointment = {}
+  ) => {
+    const selectedDriverId =
+      getAppointmentDriverId(
+        appointment
+      );
+
+    return deliveryDrivers.filter(
+      (driver) =>
+        driver.active ||
+        String(driver.id) ===
+          selectedDriverId
+    );
+  };
+
+  const hasScheduleClientDeliveryLocationsLoaded =
+    (
+      clientId
+    ) => {
+      const normalizedClientId =
+        String(
+          clientId || ""
+        ).trim();
+
+      if (!normalizedClientId) {
+        return false;
+      }
+
+      return Object.prototype.hasOwnProperty.call(
+        scheduleClientDeliveryLocationsById,
+        normalizedClientId
+      );
+    };
+
+  const getScheduleClientDeliveryLocations =
+    (
+      clientId
+    ) => {
+      const normalizedClientId =
+        String(
+          clientId || ""
+        ).trim();
+
+      if (!normalizedClientId) {
+        return [];
+      }
+
+      const cachedLocations =
+        scheduleClientDeliveryLocationsById[
+          normalizedClientId
+        ];
+
+      return Array.isArray(
+        cachedLocations
+      )
+        ? cachedLocations
+        : [];
+    };
+
+  const loadScheduleClientDeliveryLocations =
+    async (
+      clientId,
+      forceReload = false
+    ) => {
+      const normalizedClientId =
+        String(
+          clientId || ""
+        ).trim();
+
+      if (!normalizedClientId) {
+        return [];
+      }
+
+      if (
+        !forceReload &&
+        hasScheduleClientDeliveryLocationsLoaded(
+          normalizedClientId
+        )
+      ) {
+        return getScheduleClientDeliveryLocations(
+          normalizedClientId
+        );
+      }
+
+      try {
+        const {
+          data,
+          error,
+        } = await supabase
+          .from("clients")
+          .select(
+            "id,delivery_locations"
+          )
+          .eq(
+            "id",
+            normalizedClientId
+          )
+          .single();
+
+        if (error) {
+          throw error;
+        }
+
+        const nextLocations =
+          normalizeClientDeliveryLocations(
+            data?.delivery_locations
+          );
+
+        setScheduleClientDeliveryLocationsById(
+          (previous) => ({
+            ...previous,
+
+            [normalizedClientId]:
+              nextLocations,
+          })
+        );
+
+        return nextLocations;
+      } catch (error) {
+        console.error(
+          "Schedule client locations load error:",
+          error
+        );
+
+        return [];
+      }
+    };
+
+  const getScheduleClientLocationOptions =
+    (
+      appointment = {}
+    ) => {
+      const selectedLocationId =
+        String(
+          appointment
+            ?.clientLocationId ||
+            ""
+        ).trim();
+
+      return getScheduleClientDeliveryLocations(
+        appointment?.clientId
+      ).filter(
+        (location) =>
+          location.active !==
+            false ||
+          String(
+            location.id
+          ) ===
+            selectedLocationId
+      );
+    };
+
+  const getScheduleClientLocationName =
+    (
+      appointment = {}
+    ) => {
+      const selectedLocationId =
+        String(
+          appointment
+            ?.clientLocationId ||
+            ""
+        ).trim();
+
+      if (!selectedLocationId) {
+        return "";
+      }
+
+      const location =
+        getScheduleClientDeliveryLocations(
+          appointment?.clientId
+        ).find(
+          (
+            currentLocation
+          ) =>
+            String(
+              currentLocation.id
+            ) ===
+            selectedLocationId
+        );
+
+      return (
+        location?.name ||
+        "الموقع المحفوظ"
+      );
+    };
+
   const [
     selectedFinanceMonth,
     setSelectedFinanceMonth,
@@ -3893,6 +4392,18 @@ function fetchSharedClientLists() {
     createEmptyTherapistDraft
   );
 
+  const createEmptyDeliveryDriverDraft = () => ({
+    driverId: "",
+    name: "",
+  });
+
+  const [
+    deliveryDriverDraft,
+    setDeliveryDriverDraft,
+  ] = useState(
+    createEmptyDeliveryDriverDraft
+  );
+
   const [securitySettings, setSecuritySettings] = useState({
     deleteLocked: false,
     systemFrozen: false,
@@ -4036,12 +4547,14 @@ function fetchSharedClientLists() {
   const sharedDataKeys = [
   "scheduleSettings",
   "financeMonthlySettings",
+  "deliverySettings",
 ];
 
   const sharedDataLocalStorageKeys = {
     dailyManualData: "paradise-daily-manual-data",
     scheduleSettings: "paradise-schedule-settings",
     financeMonthlySettings: "paradise-finance-monthly-settings",
+    deliverySettings: "paradise-delivery-settings",
   };
 
   const getSharedDataLocalStorageKey = (dataKey) =>
@@ -4056,6 +4569,7 @@ function fetchSharedClientLists() {
     if (dataKey === "dailyManualData") return dailyManualLastEditRef.current;
     if (dataKey === "scheduleSettings") return scheduleSettingsLastEditRef.current;
     if (dataKey === "financeMonthlySettings") return financeSettingsLastEditRef.current;
+    if (dataKey === "deliverySettings") return deliverySettingsLastEditRef.current;
     return 0;
   };
 
@@ -4306,6 +4820,7 @@ function fetchSharedClientLists() {
     
     const settingsRow = data?.find((row) => row.data_key === "scheduleSettings");
     const financeSettingsRow = data?.find((row) => row.data_key === "financeMonthlySettings");
+    const deliverySettingsRow = data?.find((row) => row.data_key === "deliverySettings");
 
     sharedDataKeys.forEach((dataKey) => {
       const metaRow = data?.find((row) => row.data_key === getSharedDataMetaKey(dataKey));
@@ -4323,6 +4838,9 @@ function fetchSharedClientLists() {
     const recentlyEditedFinanceSettings =
       userIsEditingSharedData ||
       now - financeSettingsLastEditRef.current < sharedDataEditProtectionDelay;
+    const recentlyEditedDeliverySettings =
+      userIsEditingSharedData ||
+      now - deliverySettingsLastEditRef.current < sharedDataEditProtectionDelay;
 
     
 
@@ -4341,6 +4859,37 @@ function fetchSharedClientLists() {
       saveSharedDataLocalBackup(
         "financeMonthlySettings",
         financeSettingsRow.data,
+        "after-load-supabase"
+      );
+    }
+
+    if (deliverySettingsRow?.data && !recentlyEditedDeliverySettings) {
+      const defaultSettings = createDefaultDeliverySettings();
+
+      const nextDeliverySettings = {
+        ...defaultSettings,
+        ...deliverySettingsRow.data,
+
+        drivers: Array.isArray(deliverySettingsRow.data.drivers)
+          ? deliverySettingsRow.data.drivers
+          : [],
+
+        whatsappTemplates: {
+          ...defaultSettings.whatsappTemplates,
+          ...(deliverySettingsRow.data.whatsappTemplates || {}),
+        },
+      };
+
+      setDeliverySettings(nextDeliverySettings);
+
+      localStorage.setItem(
+        "paradise-delivery-settings",
+        JSON.stringify(nextDeliverySettings)
+      );
+
+      saveSharedDataLocalBackup(
+        "deliverySettings",
+        nextDeliverySettings,
         "after-load-supabase"
       );
     }
@@ -4401,6 +4950,41 @@ function fetchSharedClientLists() {
         saveSharedDataLocalBackup(
           "financeMonthlySettings",
           changedData,
+          "after-realtime-direct"
+        );
+      }
+
+      if (
+        changedKey === "deliverySettings" &&
+        !userIsEditingSharedData &&
+        now - deliverySettingsLastEditRef.current >= sharedDataEditProtectionDelay
+      ) {
+        const defaultSettings = createDefaultDeliverySettings();
+
+        const nextDeliverySettings = {
+          ...defaultSettings,
+          ...changedData,
+
+          drivers: Array.isArray(changedData.drivers)
+            ? changedData.drivers
+            : [],
+
+          whatsappTemplates: {
+            ...defaultSettings.whatsappTemplates,
+            ...(changedData.whatsappTemplates || {}),
+          },
+        };
+
+        setDeliverySettings(nextDeliverySettings);
+
+        localStorage.setItem(
+          "paradise-delivery-settings",
+          JSON.stringify(nextDeliverySettings)
+        );
+
+        saveSharedDataLocalBackup(
+          "deliverySettings",
+          nextDeliverySettings,
           "after-realtime-direct"
         );
       }
@@ -4874,6 +5458,29 @@ useEffect(() => {
 
     return () => clearTimeout(saveTimer);
   }, [financeMonthlySettings, sharedDataLoaded]);
+
+  // 💾 SAVE DELIVERY SETTINGS
+  useEffect(() => {
+    localStorage.setItem(
+      "paradise-delivery-settings",
+      JSON.stringify(deliverySettings)
+    );
+
+    if (!sharedDataLoaded) return undefined;
+
+    const saveTimer = setTimeout(() => {
+      saveSharedData(
+        "deliverySettings",
+        deliverySettings
+      );
+    }, sharedDataSaveDelay);
+
+    return () =>
+      clearTimeout(saveTimer);
+  }, [
+    deliverySettings,
+    sharedDataLoaded,
+  ]);
 
   useEffect(() => {
     const updateTodayDate = () => {
@@ -7900,6 +8507,1141 @@ const deletePurchase = async (
   };
 
 
+  const resetProfileDeliveryLocationDraft =
+    () => {
+      setProfileDeliveryLocationDraft(
+        createEmptyClientDeliveryLocationDraft()
+      );
+
+      setProfileDeliveryLocationError(
+        ""
+      );
+    };
+
+  const normalizeSafeMapUrl = (
+    value
+  ) => {
+    const rawUrl =
+      String(
+        value || ""
+      ).trim();
+
+    if (!rawUrl) {
+      return "";
+    }
+
+    try {
+      const parsedUrl =
+        new URL(rawUrl);
+
+      if (
+        parsedUrl.protocol !==
+          "https:" &&
+        parsedUrl.protocol !==
+          "http:"
+      ) {
+        return "";
+      }
+
+      return rawUrl;
+    } catch {
+      return "";
+    }
+  };
+
+  const saveProfileDeliveryLocations =
+    async (
+      nextLocations
+    ) => {
+      if (
+        !ensureSystemWritable() ||
+        !canEditData ||
+        !selectedClientId
+      ) {
+        return false;
+      }
+
+      const normalizedLocations =
+        normalizeClientDeliveryLocations(
+          nextLocations
+        );
+
+      setProfileDeliveryLocationSaving(
+        true
+      );
+
+      setProfileDeliveryLocationError(
+        ""
+      );
+
+      try {
+        const {
+          data,
+          error,
+        } = await supabase
+          .from("clients")
+          .update({
+            delivery_locations:
+              normalizedLocations,
+          })
+          .eq(
+            "id",
+            selectedClientId
+          )
+          .select(
+            "id,delivery_locations"
+          )
+          .single();
+
+        if (error) {
+          throw error;
+        }
+
+        const savedLocations =
+          normalizeClientDeliveryLocations(
+            data?.delivery_locations
+          );
+
+        setProfileDeliveryLocations(
+          savedLocations
+        );
+
+        setScheduleClientDeliveryLocationsById(
+          (previous) => ({
+            ...previous,
+
+            [String(
+              selectedClientId
+            )]:
+              savedLocations,
+          })
+        );
+
+        return true;
+      } catch (error) {
+        console.error(
+          "Client delivery locations save error:",
+          error
+        );
+
+        setProfileDeliveryLocationError(
+          "تعذر حفظ مواقع العميلة. تأكد من الاتصال وحاول مرة أخرى."
+        );
+
+        return false;
+      } finally {
+        setProfileDeliveryLocationSaving(
+          false
+        );
+      }
+    };
+
+  const startEditProfileDeliveryLocation =
+    (
+      location
+    ) => {
+      if (
+        !canEditData ||
+        !ensureSystemWritable()
+      ) {
+        return;
+      }
+
+      setProfileDeliveryLocationDraft({
+        locationId:
+          String(
+            location?.id || ""
+          ),
+
+        name:
+          String(
+            location?.name || ""
+          ),
+
+        district:
+          String(
+            location?.district || ""
+          ),
+
+        buildingNumber:
+          String(
+            location?.buildingNumber ||
+              ""
+          ),
+
+        floor:
+          String(
+            location?.floor || ""
+          ),
+
+        apartment:
+          String(
+            location?.apartment || ""
+          ),
+
+        mapUrl:
+          String(
+            location?.mapUrl || ""
+          ),
+
+        isPrimary:
+          Boolean(
+            location?.isPrimary
+          ),
+      });
+
+      setProfileDeliveryLocationError(
+        ""
+      );
+
+      setShowProfileDeliveryLocationForm(
+        true
+      );
+    };
+
+  const saveProfileDeliveryLocation =
+    async () => {
+      if (
+        !ensureSystemWritable() ||
+        !canEditData
+      ) {
+        return;
+      }
+
+      const locationName =
+        String(
+          profileDeliveryLocationDraft
+            .name || ""
+        ).trim();
+
+      const district =
+        String(
+          profileDeliveryLocationDraft
+            .district || ""
+        ).trim();
+
+      const rawMapUrl =
+        String(
+          profileDeliveryLocationDraft
+            .mapUrl || ""
+        ).trim();
+
+      const safeMapUrl =
+        normalizeSafeMapUrl(
+          rawMapUrl
+        );
+
+      if (!locationName) {
+        setProfileDeliveryLocationError(
+          "اكتب اسم الموقع، مثل: المنزل 1."
+        );
+
+        return;
+      }
+
+      if (
+        rawMapUrl &&
+        !safeMapUrl
+      ) {
+        setProfileDeliveryLocationError(
+          "رابط الموقع غير صحيح. استخدم رابط يبدأ بـ http:// أو https:// فقط."
+        );
+
+        return;
+      }
+
+      const editingLocationId =
+        String(
+          profileDeliveryLocationDraft
+            .locationId || ""
+        ).trim();
+
+      const nextLocationId =
+        editingLocationId ||
+        (
+          window.crypto
+            ?.randomUUID?.() ||
+          `location-${Date.now()}-${Math.random()
+            .toString(36)
+            .slice(2, 10)}`
+        );
+
+      const existingLocation =
+        profileDeliveryLocations.find(
+          (location) =>
+            String(location.id) ===
+            nextLocationId
+        );
+
+      const nextSortOrder =
+        profileDeliveryLocations.reduce(
+          (
+            highestOrder,
+            location
+          ) =>
+            Math.max(
+              highestOrder,
+              Number(
+                location.sortOrder ||
+                  0
+              )
+            ),
+          0
+        ) + 1;
+
+      const shouldBePrimary =
+        Boolean(
+          profileDeliveryLocationDraft
+            .isPrimary
+        ) ||
+        profileDeliveryLocations
+          .length === 0;
+
+      const nextLocation = {
+        ...(existingLocation || {}),
+
+        id:
+          nextLocationId,
+
+        name:
+          locationName,
+
+        district,
+
+        buildingNumber:
+          String(
+            profileDeliveryLocationDraft
+              .buildingNumber ||
+              ""
+          ).trim(),
+
+        floor:
+          String(
+            profileDeliveryLocationDraft
+              .floor || ""
+          ).trim(),
+
+        apartment:
+          String(
+            profileDeliveryLocationDraft
+              .apartment || ""
+          ).trim(),
+
+        mapUrl:
+          safeMapUrl,
+
+        isPrimary:
+          shouldBePrimary,
+
+        active:
+          existingLocation?.active !==
+          false,
+
+        sortOrder:
+          Number(
+            existingLocation
+              ?.sortOrder ??
+              nextSortOrder
+          ),
+
+        images:
+          Array.isArray(
+            existingLocation?.images
+          )
+            ? existingLocation.images
+            : [],
+      };
+
+      let nextLocations =
+        existingLocation
+          ? profileDeliveryLocations.map(
+              (location) =>
+                String(
+                  location.id
+                ) ===
+                nextLocationId
+                  ? nextLocation
+                  : location
+            )
+          : [
+              ...profileDeliveryLocations,
+              nextLocation,
+            ];
+
+      if (shouldBePrimary) {
+        nextLocations =
+          nextLocations.map(
+            (location) => ({
+              ...location,
+
+              isPrimary:
+                String(
+                  location.id
+                ) ===
+                nextLocationId,
+            })
+          );
+      }
+
+      if (
+        !nextLocations.some(
+          (location) =>
+            location.isPrimary &&
+            location.active !== false
+        )
+      ) {
+        const firstActiveLocation =
+          nextLocations.find(
+            (location) =>
+              location.active !== false
+          );
+
+        if (
+          firstActiveLocation
+        ) {
+          nextLocations =
+            nextLocations.map(
+              (location) => ({
+                ...location,
+
+                isPrimary:
+                  String(
+                    location.id
+                  ) ===
+                  String(
+                    firstActiveLocation.id
+                  ),
+              })
+            );
+        }
+      }
+
+      const saved =
+        await saveProfileDeliveryLocations(
+          nextLocations
+        );
+
+      if (!saved) {
+        return;
+      }
+
+      resetProfileDeliveryLocationDraft();
+
+      setShowProfileDeliveryLocationForm(
+        false
+      );
+    };
+
+  const setProfileDeliveryLocationActive =
+    async (
+      location
+    ) => {
+      if (
+        !ensureSystemWritable() ||
+        !canEditData
+      ) {
+        return;
+      }
+
+      const nextActive =
+        location.active === false;
+
+      if (
+        !window.confirm(
+          nextActive
+            ? `تأكيد إعادة تفعيل ${location.name}؟`
+            : `تأكيد إيقاف ${location.name}؟\n\nلن نحذف الموقع حتى لا تنكسر المواعيد المرتبطة به.`
+        )
+      ) {
+        return;
+      }
+
+      let nextLocations =
+        profileDeliveryLocations.map(
+          (currentLocation) =>
+            String(
+              currentLocation.id
+            ) ===
+            String(
+              location.id
+            )
+              ? {
+                  ...currentLocation,
+                  active:
+                    nextActive,
+                }
+              : currentLocation
+        );
+
+      const currentPrimary =
+        nextLocations.find(
+          (currentLocation) =>
+            currentLocation
+              .isPrimary &&
+            currentLocation.active !==
+              false
+        );
+
+      if (!currentPrimary) {
+        const firstActiveLocation =
+          nextLocations.find(
+            (currentLocation) =>
+              currentLocation.active !==
+              false
+          );
+
+        nextLocations =
+          nextLocations.map(
+            (currentLocation) => ({
+              ...currentLocation,
+
+              isPrimary:
+                Boolean(
+                  firstActiveLocation
+                ) &&
+                String(
+                  currentLocation.id
+                ) ===
+                  String(
+                    firstActiveLocation.id
+                  ),
+            })
+          );
+      }
+
+      await saveProfileDeliveryLocations(
+        nextLocations
+      );
+    };
+
+  const createClientDeliveryImageObjectPath =
+    (
+      locationId,
+      file
+    ) => {
+      const imageId =
+        window.crypto
+          ?.randomUUID?.() ||
+        `image-${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2, 10)}`;
+
+      const originalName =
+        String(
+          file?.name || ""
+        ).trim();
+
+      const rawExtension =
+        originalName.includes(".")
+          ? originalName
+              .split(".")
+              .pop()
+          : String(
+              file?.type || ""
+            )
+              .split("/")
+              .pop();
+
+      const safeExtension =
+        String(
+          rawExtension || "jpg"
+        )
+          .toLowerCase()
+          .replace(
+            /[^a-z0-9]/g,
+            ""
+          )
+          .slice(0, 10) ||
+        "jpg";
+
+      return `clients/${selectedClientId}/${locationId}/${imageId}.${safeExtension}`;
+    };
+
+  const uploadProfileDeliveryLocationImages =
+    async (
+      location,
+      fileList
+    ) => {
+      if (
+        !ensureSystemWritable() ||
+        !canEditData ||
+        !selectedClientId ||
+        !location?.id
+      ) {
+        return;
+      }
+
+      const receivedFiles =
+        Array.from(
+          fileList || []
+        ).filter(Boolean);
+
+      if (
+        receivedFiles.length === 0
+      ) {
+        setProfileDeliveryLocationError(
+          "لم يتم اختيار أي صورة."
+        );
+
+        return;
+      }
+
+      const validFiles =
+        receivedFiles.filter(
+          (file) =>
+            String(
+              file?.type || ""
+            ).startsWith(
+              "image/"
+            ) &&
+            Number(
+              file?.size || 0
+            ) > 0 &&
+            Number(
+              file?.size || 0
+            ) <= 15728640
+        );
+
+      if (
+        validFiles.length !==
+        receivedFiles.length
+      ) {
+        setProfileDeliveryLocationError(
+          "بعض الملفات ليست صورًا صالحة أو حجم الصورة أكبر من 15 MB."
+        );
+
+        return;
+      }
+
+      setProfileDeliveryLocationError(
+        ""
+      );
+
+      setProfileDeliveryImageBusyLocationId(
+        String(location.id)
+      );
+
+      const uploadedImages = [];
+
+      try {
+        for (
+          const file of validFiles
+        ) {
+          const objectPath =
+            createClientDeliveryImageObjectPath(
+              location.id,
+              file
+            );
+
+          const {
+            error: uploadError,
+          } = await supabase.storage
+            .from(
+              "client-location-images"
+            )
+            .upload(
+              objectPath,
+              file,
+              {
+                cacheControl:
+                  "3600",
+                upsert: false,
+
+                ...(file?.type
+                  ? {
+                      contentType:
+                        file.type,
+                    }
+                  : {}),
+              }
+            );
+
+          if (uploadError) {
+            throw uploadError;
+          }
+
+          uploadedImages.push({
+            id:
+              window.crypto
+                ?.randomUUID?.() ||
+              `image-meta-${Date.now()}-${Math.random()
+                .toString(36)
+                .slice(2, 10)}`,
+
+            path:
+              objectPath,
+
+            name:
+              String(
+                file?.name ||
+                  "صورة الموقع"
+              ),
+
+            mimeType:
+              String(
+                file?.type ||
+                  "image/jpeg"
+              ),
+
+            size:
+              Number(
+                file?.size || 0
+              ),
+
+            createdAt:
+              new Date().toISOString(),
+          });
+        }
+
+        const nextLocations =
+          profileDeliveryLocations.map(
+            (
+              currentLocation
+            ) =>
+              String(
+                currentLocation.id
+              ) ===
+              String(
+                location.id
+              )
+                ? {
+                    ...currentLocation,
+
+                    images: [
+                      ...(Array.isArray(
+                        currentLocation.images
+                      )
+                        ? currentLocation.images
+                        : []),
+
+                      ...uploadedImages,
+                    ],
+                  }
+                : currentLocation
+          );
+
+        const saved =
+          await saveProfileDeliveryLocations(
+            nextLocations
+          );
+
+        if (!saved) {
+          throw new Error(
+            "DELIVERY_LOCATION_SAVE_FAILED"
+          );
+        }
+      } catch (error) {
+        console.error(
+          "Client location image upload error:",
+          error
+        );
+
+        if (
+          uploadedImages.length >
+          0
+        ) {
+          try {
+            await supabase.storage
+              .from(
+                "client-location-images"
+              )
+              .remove(
+                uploadedImages.map(
+                  (
+                    image
+                  ) =>
+                    image.path
+                )
+              );
+          } catch (
+            cleanupError
+          ) {
+            console.error(
+              "Client location image rollback error:",
+              cleanupError
+            );
+          }
+        }
+
+        setProfileDeliveryLocationError(
+          "تعذر رفع صور الموقع. لم يتم اعتماد الصور غير المكتملة."
+        );
+      } finally {
+        setProfileDeliveryImageBusyLocationId(
+          ""
+        );
+      }
+    };
+
+  const pasteProfileDeliveryLocationImages =
+    async (
+      location,
+      event
+    ) => {
+      event.preventDefault();
+
+      const clipboardItems =
+        Array.from(
+          event.clipboardData
+            ?.items || []
+        );
+
+      const imageFiles =
+        clipboardItems
+          .filter(
+            (item) =>
+              item.kind ===
+                "file" &&
+              String(
+                item.type || ""
+              ).startsWith(
+                "image/"
+              )
+          )
+          .map((item) =>
+            item.getAsFile()
+          )
+          .filter(Boolean);
+
+      if (
+        imageFiles.length === 0
+      ) {
+        setProfileDeliveryLocationError(
+          "لا توجد صورة في الحافظة."
+        );
+
+        return;
+      }
+
+      await uploadProfileDeliveryLocationImages(
+        location,
+        imageFiles
+      );
+    };
+
+  const readProfileDeliveryLocationImagesFromClipboard =
+    async (
+      location
+    ) => {
+      if (
+        !ensureSystemWritable() ||
+        !canEditData
+      ) {
+        return;
+      }
+
+      if (
+        !navigator.clipboard
+          ?.read
+      ) {
+        setProfileDeliveryLocationError(
+          "هذا المتصفح لا يسمح بقراءة الصور من الحافظة مباشرة. استخدم زر اختيار الصور أو الكاميرا."
+        );
+
+        return;
+      }
+
+      try {
+        const clipboardItems =
+          await navigator.clipboard.read();
+
+        const imageBlobs = [];
+
+        for (
+          const item of clipboardItems
+        ) {
+          for (
+            const type of item.types
+          ) {
+            if (
+              !String(
+                type
+              ).startsWith(
+                "image/"
+              )
+            ) {
+              continue;
+            }
+
+            const blob =
+              await item.getType(
+                type
+              );
+
+            imageBlobs.push(
+              blob
+            );
+          }
+        }
+
+        if (
+          imageBlobs.length ===
+          0
+        ) {
+          setProfileDeliveryLocationError(
+            "لا توجد صورة في الحافظة."
+          );
+
+          return;
+        }
+
+        await uploadProfileDeliveryLocationImages(
+          location,
+          imageBlobs
+        );
+      } catch (error) {
+        console.error(
+          "Clipboard image read error:",
+          error
+        );
+
+        setProfileDeliveryLocationError(
+          "تعذر قراءة الصورة من الحافظة على هذا الجهاز. استخدم اختيار الصور أو الكاميرا."
+        );
+      }
+    };
+
+  const removeProfileDeliveryLocationImage =
+    async (
+      location,
+      image
+    ) => {
+      if (
+        !ensureSystemWritable() ||
+        !canEditData ||
+        !location?.id ||
+        !image?.path
+      ) {
+        return;
+      }
+
+      if (
+        !window.confirm(
+          "تأكيد حذف هذه الصورة من موقع العميلة؟"
+        )
+      ) {
+        return;
+      }
+
+      setProfileDeliveryLocationError(
+        ""
+      );
+
+      setProfileDeliveryImageBusyLocationId(
+        String(location.id)
+      );
+
+      try {
+        const nextLocations =
+          profileDeliveryLocations.map(
+            (
+              currentLocation
+            ) =>
+              String(
+                currentLocation.id
+              ) ===
+              String(
+                location.id
+              )
+                ? {
+                    ...currentLocation,
+
+                    images: (
+                      Array.isArray(
+                        currentLocation.images
+                      )
+                        ? currentLocation.images
+                        : []
+                    ).filter(
+                      (
+                        currentImage
+                      ) =>
+                        String(
+                          currentImage?.path ||
+                            ""
+                        ) !==
+                        String(
+                          image.path
+                        )
+                    ),
+                  }
+                : currentLocation
+          );
+
+        const saved =
+          await saveProfileDeliveryLocations(
+            nextLocations
+          );
+
+        if (!saved) {
+          return;
+        }
+
+        const {
+          error: removeError,
+        } = await supabase.storage
+          .from(
+            "client-location-images"
+          )
+          .remove([
+            image.path,
+          ]);
+
+        if (removeError) {
+          console.error(
+            "Client location image storage delete error:",
+            removeError
+          );
+
+          setProfileDeliveryLocationError(
+            "تم حذف الصورة من ملف العميلة، لكن تعذر تنظيف الملف من Storage."
+          );
+        }
+
+        setProfileDeliveryImageUrls(
+          (previous) => {
+            const nextUrls = {
+              ...previous,
+            };
+
+            delete nextUrls[
+              image.path
+            ];
+
+            return nextUrls;
+          }
+        );
+      } catch (error) {
+        console.error(
+          "Client location image delete error:",
+          error
+        );
+
+        setProfileDeliveryLocationError(
+          "تعذر حذف الصورة."
+        );
+      } finally {
+        setProfileDeliveryImageBusyLocationId(
+          ""
+        );
+      }
+    };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const imagePaths =
+      profileDeliveryLocations
+        .flatMap(
+          (location) =>
+            Array.isArray(
+              location?.images
+            )
+              ? location.images
+              : []
+        )
+        .map(
+          (image) =>
+            String(
+              image?.path || ""
+            ).trim()
+        )
+        .filter(Boolean);
+
+    if (
+      imagePaths.length === 0
+    ) {
+      setProfileDeliveryImageUrls(
+        {}
+      );
+
+      return undefined;
+    }
+
+    const loadSignedUrls =
+      async () => {
+        const urlEntries =
+          await Promise.all(
+            imagePaths.map(
+              async (
+                imagePath
+              ) => {
+                const {
+                  data,
+                  error,
+                } =
+                  await supabase.storage
+                    .from(
+                      "client-location-images"
+                    )
+                    .createSignedUrl(
+                      imagePath,
+                      3600
+                    );
+
+                if (error) {
+                  console.error(
+                    "Client location image signed URL error:",
+                    error
+                  );
+
+                  return [
+                    imagePath,
+                    "",
+                  ];
+                }
+
+                return [
+                  imagePath,
+                  String(
+                    data
+                      ?.signedUrl ||
+                      ""
+                  ),
+                ];
+              }
+            )
+          );
+
+        if (cancelled) {
+          return;
+        }
+
+        setProfileDeliveryImageUrls(
+          urlEntries.reduce(
+            (
+              result,
+              [
+                imagePath,
+                signedUrl,
+              ]
+            ) => {
+              if (
+                signedUrl
+              ) {
+                result[
+                  imagePath
+                ] =
+                  signedUrl;
+              }
+
+              return result;
+            },
+            {}
+          )
+        );
+      };
+
+    loadSignedUrls();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    profileDeliveryLocations,
+    selectedClientId,
+  ]);
+
   const openClientProfile = async (
     client
   ) => {
@@ -7976,6 +9718,19 @@ const deletePurchase = async (
         fullClient
           ?.exclude_from_inactive_clients
       )
+    );
+
+    setProfileDeliveryLocations(
+      normalizeClientDeliveryLocations(
+        fullClient
+          ?.delivery_locations
+      )
+    );
+
+    resetProfileDeliveryLocationDraft();
+
+    setShowProfileDeliveryLocationForm(
+      false
     );
 
     await loadProfileReferralsForClient(
@@ -9630,8 +11385,10 @@ const stepScheduleOrder = (rowIndex, currentOrder, direction) => {
     clientBy: "",
     serviceTime,
     driver: "",
+    driverId: "",
     therapist: "",
     district: "",
+    clientLocationId: "",
 
     // رقم سجل العميلة الحقيقي لمنع الخلط عند تكرار رقم الجوال
     clientId: "",
@@ -12748,6 +14505,7 @@ const getScheduleClientBadges = (
     { field: "driver", label: "Driver", width: 80 },
     { field: "therapist", label: "Therapist", width: 84 },
     { field: "district", label: "District", width: 92 },
+    { field: "clientLocationId", label: "Location", width: 118 },
     { field: "client", label: "Client", width: 110 },
     { field: "addExtra", label: "Profile", width: 76 },
     { field: "frame", label: "Frame", width: 52 },
@@ -14592,6 +16350,7 @@ const getScheduleClientBadges = (
     clientBy: client.clientBy ?? "",
     serviceTime: client.serviceTime ?? "",
     driver: client.driver ?? "",
+    driverId: client.driverId ?? "",
     therapist: client.therapist ?? "",
     district: client.district ?? "",
 
@@ -15711,11 +17470,29 @@ const getScheduleClientBadges = (
             field === "name" ||
             field === "phone";
 
+          const selectedDeliveryDriver =
+            field === "driverId"
+              ? getDeliveryDriverById(
+                  value
+                )
+              : null;
+
           updatedExtraClient = {
             ...client,
 
-            [field]:
-              value,
+            ...(field === "driverId"
+              ? {
+                  driverId: String(
+                    value || ""
+                  ),
+                  driver:
+                    selectedDeliveryDriver
+                      ?.name || "",
+                }
+              : {
+                  [field]:
+                    value,
+                }),
 
             /*
               تغيير الاسم أو الجوال يعني أن هذه
@@ -16485,6 +18262,9 @@ const getScheduleClientBadges = (
               client.id
             ),
 
+          clientLocationId:
+            "",
+
           client:
             nextName,
 
@@ -16614,6 +18394,10 @@ const getScheduleClientBadges = (
 
       setDuplicateClientSearch(
         ""
+      );
+
+      loadScheduleClientDeliveryLocations(
+        client.id
       );
 
       return client;
@@ -19436,11 +21220,63 @@ const handleScheduleRowAction = (rowIndex, action) => {
           value ?? ""
         );
 
+    const selectedDeliveryDriver =
+      field === "driverId"
+        ? getDeliveryDriverById(
+            value
+          )
+        : null;
+
+    const selectedClientLocation =
+      field ===
+      "clientLocationId"
+        ? getScheduleClientDeliveryLocations(
+            originalRow.clientId
+          ).find(
+            (location) =>
+              String(
+                location.id
+              ) ===
+              String(
+                value || ""
+              )
+          ) || null
+        : null;
+
     const updatedRowSnapshot = {
       ...originalRow,
 
-      [field]:
-        value,
+      ...(field === "driverId"
+        ? {
+            driverId: String(
+              value || ""
+            ),
+
+            driver:
+              selectedDeliveryDriver
+                ?.name || "",
+          }
+        : field ===
+            "clientLocationId"
+          ? {
+              clientLocationId:
+                String(
+                  value || ""
+                ),
+
+              ...(selectedClientLocation
+                ?.district
+                ? {
+                    district:
+                      selectedClientLocation
+                        .district,
+                  }
+                : {}),
+            }
+          : {
+              [field]:
+                value,
+            }),
 
       /*
         تغيير اسم العميلة أو رقمها قد يعني
@@ -19453,6 +21289,7 @@ const handleScheduleRowAction = (rowIndex, action) => {
       ...(identityChanged
         ? {
             clientId: "",
+            clientLocationId: "",
             sendTo: "",
           }
         : {}),
@@ -24139,6 +25976,10 @@ const leavingTime = addMinutesToDisplayTime(
     [
       "appointments",
       "جدول المواعيد",
+    ],
+    [
+      "delivery",
+      "التوصيل",
     ],
     [
       "clients",
@@ -29534,6 +31375,244 @@ const welcomeBoardNameStyle = {
       }
     };
 
+  const resetDeliveryDriverDraft =
+    () => {
+      setDeliveryDriverDraft(
+        createEmptyDeliveryDriverDraft()
+      );
+    };
+
+  const startEditDeliveryDriver = (
+    driver
+  ) => {
+    setDeliveryDriverDraft({
+      driverId:
+        String(driver?.id || ""),
+      name:
+        String(driver?.name || ""),
+    });
+  };
+
+  const saveDeliveryDriver = () => {
+    if (
+      !ensureSystemWritable()
+    ) {
+      return;
+    }
+
+    const normalizedName =
+      String(
+        deliveryDriverDraft.name ||
+          ""
+      ).trim();
+
+    if (!normalizedName) {
+      alert(
+        "اكتب اسم مندوب التوصيل."
+      );
+
+      return;
+    }
+
+    const editingDriverId =
+      String(
+        deliveryDriverDraft.driverId ||
+          ""
+      ).trim();
+
+    const duplicateDriver =
+      deliveryDrivers.some(
+        (driver) =>
+          String(driver.id) !==
+            editingDriverId &&
+          String(driver.name)
+            .trim()
+            .toLowerCase() ===
+            normalizedName.toLowerCase()
+      );
+
+    if (duplicateDriver) {
+      alert(
+        "اسم مندوب التوصيل مسجل مسبقًا."
+      );
+
+      return;
+    }
+
+    const nextDriverId =
+      editingDriverId ||
+      (
+        window.crypto
+          ?.randomUUID?.() ||
+        `driver-${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2, 10)}`
+      );
+
+    const nextSortOrder =
+      deliveryDrivers.reduce(
+        (
+          highestOrder,
+          driver
+        ) =>
+          Math.max(
+            highestOrder,
+            Number(
+              driver.sortOrder || 0
+            )
+          ),
+        0
+      ) + 1;
+
+    deliverySettingsLastEditRef.current =
+      Date.now();
+
+    setDeliverySettings(
+      (previous) => {
+        const previousDrivers =
+          Array.isArray(
+            previous?.drivers
+          )
+            ? previous.drivers
+            : [];
+
+        const existingDriver =
+          previousDrivers.find(
+            (driver) =>
+              String(driver?.id) ===
+              nextDriverId
+          );
+
+        const nextDriver = {
+          ...(existingDriver || {}),
+          id: nextDriverId,
+          name: normalizedName,
+          active:
+            existingDriver?.active !==
+            false,
+          sortOrder:
+            Number(
+              existingDriver?.sortOrder ??
+                existingDriver?.sort_order ??
+                nextSortOrder
+            ),
+        };
+
+        const nextDrivers =
+          existingDriver
+            ? previousDrivers.map(
+                (driver) =>
+                  String(
+                    driver?.id
+                  ) === nextDriverId
+                    ? nextDriver
+                    : driver
+              )
+            : [
+                ...previousDrivers,
+                nextDriver,
+              ];
+
+        return {
+          ...previous,
+          drivers: nextDrivers,
+        };
+      }
+    );
+
+    resetDeliveryDriverDraft();
+  };
+
+  const setDeliveryDriverActive = (
+    driver
+  ) => {
+    if (
+      !ensureSystemWritable()
+    ) {
+      return;
+    }
+
+    const nextActive =
+      driver.active === false;
+
+    const confirmationMessage =
+      nextActive
+        ? `تأكيد تفعيل مندوب التوصيل ${driver.name}؟`
+        : `تأكيد إيقاف مندوب التوصيل ${driver.name}؟\n\nسيبقى محفوظًا في المواعيد السابقة ولن يظهر للاختيار في المواعيد الجديدة.`;
+
+    if (
+      !window.confirm(
+        confirmationMessage
+      )
+    ) {
+      return;
+    }
+
+    deliverySettingsLastEditRef.current =
+      Date.now();
+
+    setDeliverySettings(
+      (previous) => ({
+        ...previous,
+
+        drivers: (
+          Array.isArray(
+            previous?.drivers
+          )
+            ? previous.drivers
+            : []
+        ).map(
+          (currentDriver) =>
+            String(
+              currentDriver?.id
+            ) ===
+            String(driver.id)
+              ? {
+                  ...currentDriver,
+                  active:
+                    nextActive,
+                }
+              : currentDriver
+        ),
+      })
+    );
+
+    if (
+      String(
+        deliveryDriverDraft.driverId
+      ) ===
+      String(driver.id)
+    ) {
+      resetDeliveryDriverDraft();
+    }
+  };
+
+  const updateDeliveryWhatsappTemplate =
+    (
+      templateKey,
+      templateValue
+    ) => {
+      deliverySettingsLastEditRef.current =
+        Date.now();
+
+      setDeliverySettings(
+        (previous) => ({
+          ...previous,
+
+          whatsappTemplates: {
+            ...createDefaultDeliverySettings()
+              .whatsappTemplates,
+            ...(previous
+              ?.whatsappTemplates ||
+              {}),
+
+            [templateKey]:
+              templateValue,
+          },
+        })
+      );
+    };
+
   useEffect(() => {
     if (
       !isLoggedIn ||
@@ -33543,6 +35622,433 @@ const welcomeBoardNameStyle = {
                     )}
                   </div>
                 )}
+              </div>
+            </div>
+          ) : null}
+
+          {isOwnerUser ? (
+            <div
+              style={{
+                ...settingsRowStyle,
+                display: "grid",
+                gap: "20px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  justifyContent: "space-between",
+                  gap: "14px",
+                  flexWrap: "wrap",
+                }}
+              >
+                <div>
+                  <h3
+                    style={{
+                      ...settingsSectionTitleStyle,
+                      marginBottom: "6px",
+                    }}
+                  >
+                    مناديب التوصيل
+                  </h3>
+
+                  <p
+                    style={{
+                      ...settingsHelpTextStyle,
+                      margin: 0,
+                    }}
+                  >
+                    إضافة مناديب التوصيل وتعديل أسمائهم وتفعيلهم أو إيقافهم. يحتفظ كل مندوب بمعرف ثابت حتى عند تغيير الاسم.
+                  </p>
+                </div>
+
+                <div
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    minHeight: "38px",
+                    padding: "0 14px",
+                    borderRadius: "999px",
+                    background: "rgba(183,151,124,0.14)",
+                    border: "1px solid rgba(183,151,124,0.28)",
+                    color: "#6a4a37",
+                    fontSize: "13px",
+                    fontWeight: 900,
+                  }}
+                >
+                  <span>
+                    {deliveryDrivers.length}
+                  </span>
+
+                  <span>
+                    مندوب مسجل
+                  </span>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  padding: "18px",
+                  borderRadius: "22px",
+                  background:
+                    "linear-gradient(145deg, rgba(255,255,255,0.95), rgba(241,228,215,0.82))",
+                  border:
+                    "1px solid rgba(205,177,153,0.58)",
+                  boxShadow:
+                    "0 12px 30px rgba(92,65,47,0.065), inset 0 1px 0 rgba(255,255,255,0.92)",
+                }}
+              >
+                <div
+                  style={{
+                    marginBottom: "14px",
+                    color: "#4a3325",
+                    fontSize: "16px",
+                    fontWeight: 950,
+                  }}
+                >
+                  {deliveryDriverDraft.driverId
+                    ? "تعديل مندوب التوصيل"
+                    : "إضافة مندوب توصيل"}
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      "minmax(0, 1fr) auto",
+                    gap: "12px",
+                    alignItems: "end",
+                  }}
+                >
+                  <label
+                    style={{
+                      display: "grid",
+                      gap: "7px",
+                      color: "#684b38",
+                      fontSize: "13px",
+                      fontWeight: 900,
+                    }}
+                  >
+                    اسم المندوب
+
+                    <input
+                      type="text"
+                      autoComplete="off"
+                      placeholder="مثال: ماجد"
+                      value={
+                        deliveryDriverDraft.name
+                      }
+                      onChange={(event) =>
+                        setDeliveryDriverDraft(
+                          (previous) => ({
+                            ...previous,
+                            name:
+                              event.target
+                                .value,
+                          })
+                        )
+                      }
+                      style={
+                        settingsInputStyle
+                      }
+                    />
+                  </label>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "9px",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={
+                        saveDeliveryDriver
+                      }
+                      style={
+                        settingsPrimaryButtonStyle
+                      }
+                    >
+                      {deliveryDriverDraft.driverId
+                        ? "حفظ التعديل"
+                        : "إضافة المندوب"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={
+                        resetDeliveryDriverDraft
+                      }
+                      style={
+                        settingsMutedButtonStyle
+                      }
+                    >
+                      {deliveryDriverDraft.driverId
+                        ? "إلغاء التعديل"
+                        : "تفريغ"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gap: "12px",
+                }}
+              >
+                <div
+                  style={{
+                    color: "#4a3325",
+                    fontSize: "16px",
+                    fontWeight: 950,
+                  }}
+                >
+                  المناديب المسجلون
+                </div>
+
+                {deliveryDrivers.length ===
+                0 ? (
+                  <div
+                    style={{
+                      ...settingsMiniCardStyle,
+                      textAlign: "center",
+                      fontWeight: 900,
+                    }}
+                  >
+                    لا يوجد مناديب توصيل مسجلون.
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "repeat(auto-fit, minmax(min(250px, 100%), 1fr))",
+                      gap: "14px",
+                    }}
+                  >
+                    {deliveryDrivers.map(
+                      (driver) => (
+                        <div
+                          key={driver.id}
+                          style={{
+                            ...settingsMiniCardStyle,
+                            display: "grid",
+                            gap: "14px",
+                            padding: "17px",
+                            opacity:
+                              driver.active
+                                ? 1
+                                : 0.72,
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: "12px",
+                            }}
+                          >
+                            <div>
+                              <div
+                                style={{
+                                  color: "#4a3325",
+                                  fontSize: "18px",
+                                  fontWeight: 950,
+                                }}
+                              >
+                                {driver.name}
+                              </div>
+
+                              <div
+                                style={{
+                                  marginTop: "5px",
+                                  color: "#8a6b55",
+                                  fontSize: "11px",
+                                  fontWeight: 850,
+                                }}
+                              >
+                                ترتيب الظهور:{" "}
+                                {driver.sortOrder}
+                              </div>
+                            </div>
+
+                            <span
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                minHeight: "32px",
+                                padding: "0 12px",
+                                borderRadius: "999px",
+                                background:
+                                  driver.active
+                                    ? "#e2f1df"
+                                    : "#f6ddd6",
+                                color:
+                                  driver.active
+                                    ? "#34734f"
+                                    : "#9b4b3d",
+                                fontSize: "12px",
+                                fontWeight: 950,
+                              }}
+                            >
+                              {driver.active
+                                ? "مفعّل"
+                                : "متوقف"}
+                            </span>
+                          </div>
+
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: "9px",
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <button
+                              type="button"
+                              onClick={() =>
+                                startEditDeliveryDriver(
+                                  driver
+                                )
+                              }
+                              style={{
+                                ...settingsMutedButtonStyle,
+                                flex: "1 1 110px",
+                              }}
+                            >
+                              تعديل
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setDeliveryDriverActive(
+                                  driver
+                                )
+                              }
+                              style={{
+                                ...settingsPrimaryButtonStyle,
+                                flex: "1 1 110px",
+                                background:
+                                  driver.active
+                                    ? "linear-gradient(135deg, #a65f50, #c27a68)"
+                                    : "linear-gradient(135deg, #66805f, #88a17d)",
+                              }}
+                            >
+                              {driver.active
+                                ? "إيقاف"
+                                : "تفعيل"}
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div
+                style={{
+                  padding: "18px",
+                  borderRadius: "22px",
+                  background:
+                    "linear-gradient(145deg, rgba(255,255,255,0.95), rgba(241,228,215,0.82))",
+                  border:
+                    "1px solid rgba(205,177,153,0.58)",
+                  display: "grid",
+                  gap: "14px",
+                }}
+              >
+                <div
+                  style={{
+                    color: "#4a3325",
+                    fontSize: "16px",
+                    fontWeight: 950,
+                  }}
+                >
+                  رسائل واتساب للتوصيل
+                </div>
+
+                <label
+                  style={{
+                    display: "grid",
+                    gap: "7px",
+                    color: "#684b38",
+                    fontSize: "13px",
+                    fontWeight: 900,
+                  }}
+                >
+                  رسالة الأخصائية في الطريق
+
+                  <textarea
+                    value={
+                      deliverySettings
+                        ?.whatsappTemplates
+                        ?.onTheWay || ""
+                    }
+                    onChange={(event) =>
+                      updateDeliveryWhatsappTemplate(
+                        "onTheWay",
+                        event.target.value
+                      )
+                    }
+                    rows={3}
+                    style={{
+                      ...settingsInputStyle,
+                      resize: "vertical",
+                      minHeight: "86px",
+                    }}
+                  />
+                </label>
+
+                <label
+                  style={{
+                    display: "grid",
+                    gap: "7px",
+                    color: "#684b38",
+                    fontSize: "13px",
+                    fontWeight: 900,
+                  }}
+                >
+                  رسالة الأخصائية وصلت
+
+                  <textarea
+                    value={
+                      deliverySettings
+                        ?.whatsappTemplates
+                        ?.arrived || ""
+                    }
+                    onChange={(event) =>
+                      updateDeliveryWhatsappTemplate(
+                        "arrived",
+                        event.target.value
+                      )
+                    }
+                    rows={3}
+                    style={{
+                      ...settingsInputStyle,
+                      resize: "vertical",
+                      minHeight: "86px",
+                    }}
+                  />
+                </label>
+
+                <div
+                  style={{
+                    color: "#8a6b55",
+                    fontSize: "12px",
+                    fontWeight: 800,
+                    lineHeight: 1.7,
+                  }}
+                >
+                  يمكنك استخدام {"{clientName}"} داخل الرسالة، وسيستبدله النظام باسم العميلة عند فتح واتساب.
+                </div>
               </div>
             </div>
           ) : null}
@@ -38825,14 +41331,51 @@ if (screen === "menu") {
                       style={getScheduleCellStyle(index, "driver")}
                       {...getScheduleCellHandlers(index, "driver")}
                     >
-                      <input
-                        value={row.driver}
+                      <select
+                        value={getAppointmentDriverSelectValue(row)}
                         onChange={(e) =>
-                          updateScheduleRow(index, "driver", e.target.value)
+                          updateScheduleRow(
+                            index,
+                            "driverId",
+                            e.target.value
+                          )
                         }
                         {...getScheduleEditableProps(index, "driver")}
                         style={getScheduleInputStyle(index, "driver")}
-                      />
+                      >
+                        <option value="">
+                          بدون مندوب
+                        </option>
+
+                        {String(row.driver || "").trim() &&
+                        !getAppointmentDriverId(row) ? (
+                          <option
+                            value={`legacy:${String(
+                              row.driver || ""
+                            ).trim()}`}
+                            disabled
+                          >
+                            {String(
+                              row.driver || ""
+                            ).trim()}{" "}
+                            (قديم)
+                          </option>
+                        ) : null}
+
+                        {getAppointmentDriverOptions(row).map(
+                          (driver) => (
+                            <option
+                              key={driver.id}
+                              value={driver.id}
+                            >
+                              {driver.name}
+                              {driver.active
+                                ? ""
+                                : " (متوقف)"}
+                            </option>
+                          )
+                        )}
+                      </select>
                     </td>
 
                     <td
@@ -38862,6 +41405,118 @@ if (screen === "menu") {
                         {...getScheduleEditableProps(index, "district")}
                         style={getScheduleInputStyle(index, "district")}
                       />
+                    </td>
+
+                    <td
+                      style={getScheduleCellStyle(
+                        index,
+                        "clientLocationId"
+                      )}
+                      {...getScheduleCellHandlers(
+                        index,
+                        "clientLocationId"
+                      )}
+                    >
+                      <select
+                        value={
+                          row.clientLocationId ||
+                          ""
+                        }
+                        onMouseDown={() =>
+                          loadScheduleClientDeliveryLocations(
+                            row.clientId
+                          )
+                        }
+                        onChange={(event) =>
+                          updateScheduleRow(
+                            index,
+                            "clientLocationId",
+                            event.target.value
+                          )
+                        }
+                        {...getScheduleEditableProps(
+                          index,
+                          "clientLocationId"
+                        )}
+                        style={getScheduleInputStyle(
+                          index,
+                          "clientLocationId",
+                          {
+                            fontSize:
+                              "12px",
+                          }
+                        )}
+                      >
+                        {!row.clientId ? (
+                          <option value="">
+                            اختاري العميلة أولاً
+                          </option>
+                        ) : (
+                          <option value="">
+                            ⚠ الموقع غير محدد
+                          </option>
+                        )}
+
+                        {row.clientId &&
+                        !hasScheduleClientDeliveryLocationsLoaded(
+                          row.clientId
+                        ) ? (
+                          <option
+                            value=""
+                            disabled
+                          >
+                            اضغطي لتحميل المواقع
+                          </option>
+                        ) : null}
+
+                        {String(
+                          row.clientLocationId ||
+                            ""
+                        ).trim() &&
+                        !getScheduleClientLocationOptions(
+                          row
+                        ).some(
+                          (location) =>
+                            String(
+                              location.id
+                            ) ===
+                            String(
+                              row.clientLocationId
+                            )
+                        ) ? (
+                          <option
+                            value={
+                              row.clientLocationId
+                            }
+                          >
+                            الموقع المحفوظ
+                          </option>
+                        ) : null}
+
+                        {getScheduleClientLocationOptions(
+                          row
+                        ).map(
+                          (location) => (
+                            <option
+                              key={
+                                location.id
+                              }
+                              value={
+                                location.id
+                              }
+                            >
+                              {location.name}
+                              {location.district
+                                ? ` - ${location.district}`
+                                : ""}
+                              {location.active ===
+                              false
+                                ? " (متوقف)"
+                                : ""}
+                            </option>
+                          )
+                        )}
+                      </select>
                     </td>
 
                     <td
@@ -39581,17 +42236,15 @@ margin: "0 auto",
                                     extraClients.length
                                   )}
                                 >
-                                  <input
-                                    value={
-                                      extraClient.driver ??
-                                      row.driver ??
-                                      ""
-                                    }
+                                  <select
+                                    value={getAppointmentDriverSelectValue(
+                                      extraClient
+                                    )}
                                     onChange={(event) =>
                                       updateAdditionalClientField(
                                         index,
                                         extraIndex,
-                                        "driver",
+                                        "driverId",
                                         event.target.value
                                       )
                                     }
@@ -39599,7 +42252,46 @@ margin: "0 auto",
                                       index,
                                       field
                                     )}
-                                  />
+                                  >
+                                    <option value="">
+                                      بدون مندوب
+                                    </option>
+
+                                    {String(
+                                      extraClient.driver || ""
+                                    ).trim() &&
+                                    !getAppointmentDriverId(
+                                      extraClient
+                                    ) ? (
+                                      <option
+                                        value={`legacy:${String(
+                                          extraClient.driver || ""
+                                        ).trim()}`}
+                                        disabled
+                                      >
+                                        {String(
+                                          extraClient.driver || ""
+                                        ).trim()}{" "}
+                                        (قديم)
+                                      </option>
+                                    ) : null}
+
+                                    {getAppointmentDriverOptions(
+                                      extraClient
+                                    ).map(
+                                      (driver) => (
+                                        <option
+                                          key={driver.id}
+                                          value={driver.id}
+                                        >
+                                          {driver.name}
+                                          {driver.active
+                                            ? ""
+                                            : " (متوقف)"}
+                                        </option>
+                                      )
+                                    )}
+                                  </select>
                                 </td>
                               );
                             }
@@ -39665,6 +42357,45 @@ margin: "0 auto",
                                     style={getScheduleInputStyle(
                                       index,
                                       field
+                                    )}
+                                  />
+                                </td>
+                              );
+                            }
+
+                            if (field === "clientLocationId") {
+                              return (
+                                <td
+                                  key={field}
+                                  style={getHouseholdClientCellStyle(
+                                    row,
+                                    index,
+                                    field,
+                                    extraIndex,
+                                    extraClients.length
+                                  )}
+                                >
+                                  <input
+                                    value={
+                                      getScheduleClientLocationName(
+                                        row
+                                      ) ||
+                                      "نفس المنزل"
+                                    }
+                                    readOnly
+                                    disabled
+                                    title="عميلات نفس المنزل يستخدمون موقع التوصيل المحدد في الصف الرئيسي."
+                                    style={getScheduleInputStyle(
+                                      index,
+                                      field,
+                                      {
+                                        fontSize:
+                                          "11px",
+                                        fontWeight:
+                                          "bold",
+                                        color:
+                                          "#6b4c3a",
+                                      }
                                     )}
                                   />
                                 </td>
@@ -60702,6 +63433,1224 @@ if (screen === "potentialClients") {
                     )}
                   </div>
                 </div>
+              </div>
+            )}
+          </div>
+
+          <div
+            className="paradise-client-profile-locations"
+            style={{
+              position: "relative",
+              zIndex: 1,
+              width: "100%",
+              margin: "0 auto 22px",
+              padding: "18px",
+              boxSizing: "border-box",
+              borderRadius: "24px",
+              border:
+                "1px solid rgba(178,143,114,0.34)",
+              background:
+                "linear-gradient(145deg, rgba(255,253,249,0.97), rgba(229,211,195,0.87))",
+              boxShadow:
+                "0 13px 30px rgba(75,46,31,0.08), inset 0 1px 0 rgba(255,255,255,0.90)",
+              direction: "rtl",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent:
+                  "space-between",
+                alignItems: "center",
+                gap: "12px",
+                flexWrap: "wrap",
+                marginBottom: "15px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "9px",
+                }}
+              >
+                <div
+                  style={{
+                    width: "30px",
+                    height: "30px",
+                    borderRadius: "10px",
+                    background:
+                      "linear-gradient(145deg, #d1b095, #9d7355)",
+                    color: "#fffaf5",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent:
+                      "center",
+                    fontWeight: "900",
+                  }}
+                >
+                  ⌂
+                </div>
+
+                <div>
+                  <div
+                    style={{
+                      color: "#3f2b21",
+                      fontSize: "14px",
+                      fontWeight: "950",
+                    }}
+                  >
+                    مواقع العميلة
+                  </div>
+
+                  <div
+                    style={{
+                      color: "#98775f",
+                      fontSize: "9px",
+                      fontWeight: "800",
+                      marginTop: "2px",
+                    }}
+                  >
+                    Delivery Locations
+                  </div>
+                </div>
+              </div>
+
+              {canEditData && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (
+                      showProfileDeliveryLocationForm
+                    ) {
+                      resetProfileDeliveryLocationDraft();
+
+                      setShowProfileDeliveryLocationForm(
+                        false
+                      );
+
+                      return;
+                    }
+
+                    resetProfileDeliveryLocationDraft();
+
+                    setShowProfileDeliveryLocationForm(
+                      true
+                    );
+                  }}
+                  style={{
+                    minHeight: "36px",
+                    padding: "7px 15px",
+                    borderRadius: "999px",
+                    border:
+                      "1px solid rgba(157,117,87,0.34)",
+                    background:
+                      "linear-gradient(135deg, #b98d6d, #8f6549)",
+                    color: "#fffaf5",
+                    fontWeight: "900",
+                    fontSize: "11px",
+                    cursor: "pointer",
+                  }}
+                >
+                  {showProfileDeliveryLocationForm
+                    ? "إغلاق"
+                    : "+ إضافة موقع"}
+                </button>
+              )}
+            </div>
+
+            {profileDeliveryLocationError && (
+              <div
+                style={{
+                  marginBottom: "12px",
+                  padding: "10px 12px",
+                  borderRadius: "13px",
+                  background:
+                    "rgba(164,73,63,0.09)",
+                  color: "#8e3f38",
+                  fontSize: "11px",
+                  fontWeight: "900",
+                }}
+              >
+                {
+                  profileDeliveryLocationError
+                }
+              </div>
+            )}
+
+            {showProfileDeliveryLocationForm && (
+              <div
+                style={{
+                  display: "grid",
+                  gap: "12px",
+                  padding: "15px",
+                  marginBottom: "15px",
+                  borderRadius: "19px",
+                  border:
+                    "1px solid rgba(169,128,97,0.34)",
+                  background:
+                    "rgba(255,250,245,0.76)",
+                }}
+              >
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      "repeat(auto-fit, minmax(160px, 1fr))",
+                    gap: "10px",
+                  }}
+                >
+                  {[
+                    [
+                      "name",
+                      "اسم الموقع",
+                      "مثال: المنزل 1",
+                    ],
+                    [
+                      "district",
+                      "الحي",
+                      "اسم الحي",
+                    ],
+                    [
+                      "buildingNumber",
+                      "رقم المبنى",
+                      "رقم المبنى",
+                    ],
+                    [
+                      "floor",
+                      "الدور",
+                      "مثال: 2",
+                    ],
+                    [
+                      "apartment",
+                      "الشقة",
+                      "مثال: 12",
+                    ],
+                  ].map(
+                    ([
+                      field,
+                      label,
+                      placeholder,
+                    ]) => (
+                      <label
+                        key={field}
+                        style={{
+                          display:
+                            "grid",
+                          gap: "6px",
+                          color:
+                            "#684a39",
+                          fontSize:
+                            "10px",
+                          fontWeight:
+                            "900",
+                        }}
+                      >
+                        {label}
+
+                        <input
+                          type="text"
+                          value={
+                            profileDeliveryLocationDraft[
+                              field
+                            ] || ""
+                          }
+                          placeholder={
+                            placeholder
+                          }
+                          onChange={(
+                            event
+                          ) =>
+                            setProfileDeliveryLocationDraft(
+                              (
+                                previous
+                              ) => ({
+                                ...previous,
+
+                                [field]:
+                                  event
+                                    .target
+                                    .value,
+                              })
+                            )
+                          }
+                          style={{
+                            width:
+                              "100%",
+                            minHeight:
+                              "43px",
+                            padding:
+                              "10px 12px",
+                            boxSizing:
+                              "border-box",
+                            borderRadius:
+                              "13px",
+                            border:
+                              "1px solid rgba(168,129,99,0.38)",
+                            background:
+                              "#fffdf9",
+                            color:
+                              "#432f24",
+                            outline:
+                              "none",
+                            fontWeight:
+                              "850",
+                          }}
+                        />
+                      </label>
+                    )
+                  )}
+                </div>
+
+                <label
+                  style={{
+                    display: "grid",
+                    gap: "6px",
+                    color: "#684a39",
+                    fontSize: "10px",
+                    fontWeight: "900",
+                  }}
+                >
+                  رابط الموقع
+
+                  <input
+                    type="url"
+                    dir="ltr"
+                    placeholder="https://maps.app.goo.gl/..."
+                    value={
+                      profileDeliveryLocationDraft
+                        .mapUrl
+                    }
+                    onChange={(event) =>
+                      setProfileDeliveryLocationDraft(
+                        (
+                          previous
+                        ) => ({
+                          ...previous,
+                          mapUrl:
+                            event
+                              .target
+                              .value,
+                        })
+                      )
+                    }
+                    style={{
+                      width: "100%",
+                      minHeight: "43px",
+                      padding: "10px 12px",
+                      boxSizing:
+                        "border-box",
+                      borderRadius: "13px",
+                      border:
+                        "1px solid rgba(168,129,99,0.38)",
+                      background: "#fffdf9",
+                      color: "#432f24",
+                      outline: "none",
+                      fontWeight: "800",
+                    }}
+                  />
+                </label>
+
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    cursor: "pointer",
+                    color: "#533a2d",
+                    fontSize: "11px",
+                    fontWeight: "900",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={
+                      profileDeliveryLocationDraft
+                        .isPrimary
+                    }
+                    onChange={(event) =>
+                      setProfileDeliveryLocationDraft(
+                        (
+                          previous
+                        ) => ({
+                          ...previous,
+
+                          isPrimary:
+                            event
+                              .target
+                              .checked,
+                        })
+                      )
+                    }
+                  />
+
+                  اجعله الموقع الافتراضي للعميلة
+                </label>
+
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "9px",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <button
+                    type="button"
+                    disabled={
+                      profileDeliveryLocationSaving
+                    }
+                    onClick={
+                      saveProfileDeliveryLocation
+                    }
+                    style={{
+                      minHeight: "38px",
+                      padding: "8px 17px",
+                      border: "none",
+                      borderRadius: "12px",
+                      background:
+                        "linear-gradient(135deg, #4b3327, #76543f)",
+                      color: "#fffaf5",
+                      fontWeight: "900",
+                      cursor:
+                        profileDeliveryLocationSaving
+                          ? "not-allowed"
+                          : "pointer",
+                    }}
+                  >
+                    {profileDeliveryLocationSaving
+                      ? "جاري الحفظ..."
+                      : profileDeliveryLocationDraft.locationId
+                        ? "حفظ تعديل الموقع"
+                        : "حفظ الموقع"}
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={
+                      profileDeliveryLocationSaving
+                    }
+                    onClick={() => {
+                      resetProfileDeliveryLocationDraft();
+
+                      setShowProfileDeliveryLocationForm(
+                        false
+                      );
+                    }}
+                    style={{
+                      minHeight: "38px",
+                      padding: "8px 17px",
+                      borderRadius: "12px",
+                      border:
+                        "1px solid rgba(157,117,87,0.34)",
+                      background: "#f1e2d5",
+                      color: "#5b4031",
+                      fontWeight: "900",
+                      cursor: "pointer",
+                    }}
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {profileDeliveryLocations.length ===
+            0 ? (
+              <div
+                style={{
+                  padding: "18px",
+                  borderRadius: "16px",
+                  border:
+                    "1px dashed rgba(170,132,103,0.38)",
+                  background:
+                    "rgba(255,250,245,0.65)",
+                  color: "#92725a",
+                  textAlign: "center",
+                  fontSize: "12px",
+                  fontWeight: "850",
+                }}
+              >
+                لا توجد مواقع مسجلة لهذه العميلة.
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns:
+                    "repeat(auto-fit, minmax(min(245px, 100%), 1fr))",
+                  gap: "12px",
+                }}
+              >
+                {profileDeliveryLocations.map(
+                  (location) => (
+                    <div
+                      key={
+                        location.id
+                      }
+                      style={{
+                        padding:
+                          "15px",
+                        borderRadius:
+                          "18px",
+                        border:
+                          location
+                            .isPrimary
+                            ? "1px solid rgba(134,99,70,0.55)"
+                            : "1px solid rgba(177,141,112,0.28)",
+                        background:
+                          location.active
+                            ? "#fffaf5"
+                            : "#eee5dd",
+                        opacity:
+                          location.active
+                            ? 1
+                            : 0.72,
+                        display:
+                          "grid",
+                        gap: "10px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display:
+                            "flex",
+                          justifyContent:
+                            "space-between",
+                          gap: "8px",
+                          alignItems:
+                            "flex-start",
+                        }}
+                      >
+                        <div>
+                          <div
+                            style={{
+                              color:
+                                "#3f2b21",
+                              fontSize:
+                                "15px",
+                              fontWeight:
+                                "950",
+                            }}
+                          >
+                            {
+                              location.name
+                            }
+                          </div>
+
+                          <div
+                            style={{
+                              marginTop:
+                                "4px",
+                              color:
+                                "#876750",
+                              fontSize:
+                                "10px",
+                              fontWeight:
+                                "800",
+                            }}
+                          >
+                            {location.district ||
+                              "الحي غير محدد"}
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            display:
+                              "flex",
+                            gap: "5px",
+                            flexWrap:
+                              "wrap",
+                          }}
+                        >
+                          {location.isPrimary && (
+                            <span
+                              style={{
+                                padding:
+                                  "4px 8px",
+                                borderRadius:
+                                  "999px",
+                                background:
+                                  "#e4d1bd",
+                                color:
+                                  "#543a2d",
+                                fontSize:
+                                  "9px",
+                                fontWeight:
+                                  "950",
+                              }}
+                            >
+                              افتراضي
+                            </span>
+                          )}
+
+                          {!location.active && (
+                            <span
+                              style={{
+                                padding:
+                                  "4px 8px",
+                                borderRadius:
+                                  "999px",
+                                background:
+                                  "#f0d8d1",
+                                color:
+                                  "#924b3f",
+                                fontSize:
+                                  "9px",
+                                fontWeight:
+                                  "950",
+                              }}
+                            >
+                              متوقف
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          color:
+                            "#674a39",
+                          fontSize:
+                            "11px",
+                          fontWeight:
+                            "800",
+                          lineHeight:
+                            1.8,
+                        }}
+                      >
+                        رقم المبنى:{" "}
+                        {location.buildingNumber ||
+                          "-"}
+                        <br />
+                        الدور:{" "}
+                        {location.floor ||
+                          "-"}
+                        <br />
+                        الشقة:{" "}
+                        {location.apartment ||
+                          "-"}
+                      </div>
+
+                      <div
+                        style={{
+                          display:
+                            "grid",
+                          gap: "9px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display:
+                              "flex",
+                            justifyContent:
+                              "space-between",
+                            alignItems:
+                              "center",
+                            gap: "8px",
+                          }}
+                        >
+                          <div
+                            style={{
+                              color:
+                                "#4b3327",
+                              fontSize:
+                                "11px",
+                              fontWeight:
+                                "950",
+                            }}
+                          >
+                            صور الموقع
+                          </div>
+
+                          <div
+                            style={{
+                              color:
+                                "#98775f",
+                              fontSize:
+                                "9px",
+                              fontWeight:
+                                "850",
+                            }}
+                          >
+                            {Array.isArray(
+                              location.images
+                            )
+                              ? location
+                                  .images
+                                  .length
+                              : 0}{" "}
+                            صورة
+                          </div>
+                        </div>
+
+                        {Array.isArray(
+                          location.images
+                        ) &&
+                        location.images
+                          .length >
+                          0 ? (
+                          <div
+                            style={{
+                              display:
+                                "grid",
+                              gridTemplateColumns:
+                                "repeat(auto-fill, minmax(82px, 1fr))",
+                              gap:
+                                "8px",
+                            }}
+                          >
+                            {location.images.map(
+                              (
+                                image
+                              ) => {
+                                const signedUrl =
+                                  profileDeliveryImageUrls[
+                                    image
+                                      .path
+                                  ];
+
+                                return (
+                                  <div
+                                    key={
+                                      image.id ||
+                                      image.path
+                                    }
+                                    style={{
+                                      position:
+                                        "relative",
+                                      minHeight:
+                                        "88px",
+                                      borderRadius:
+                                        "13px",
+                                      overflow:
+                                        "hidden",
+                                      border:
+                                        "1px solid rgba(164,126,96,0.28)",
+                                      background:
+                                        "#eee3d9",
+                                    }}
+                                  >
+                                    {signedUrl ? (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          window.open(
+                                            signedUrl,
+                                            "_blank",
+                                            "noopener,noreferrer"
+                                          )
+                                        }
+                                        title="فتح الصورة بحجم أكبر"
+                                        style={{
+                                          width:
+                                            "100%",
+                                          height:
+                                            "100%",
+                                          minHeight:
+                                            "88px",
+                                          padding:
+                                            0,
+                                          border:
+                                            "none",
+                                          background:
+                                            "transparent",
+                                          cursor:
+                                            "pointer",
+                                        }}
+                                      >
+                                        <img
+                                          src={
+                                            signedUrl
+                                          }
+                                          alt={
+                                            image.name ||
+                                            "صورة موقع العميلة"
+                                          }
+                                          loading="lazy"
+                                          style={{
+                                            display:
+                                              "block",
+                                            width:
+                                              "100%",
+                                            height:
+                                              "88px",
+                                            objectFit:
+                                              "cover",
+                                          }}
+                                        />
+                                      </button>
+                                    ) : (
+                                      <div
+                                        style={{
+                                          minHeight:
+                                            "88px",
+                                          display:
+                                            "flex",
+                                          alignItems:
+                                            "center",
+                                          justifyContent:
+                                            "center",
+                                          padding:
+                                            "8px",
+                                          textAlign:
+                                            "center",
+                                          color:
+                                            "#92725a",
+                                          fontSize:
+                                            "9px",
+                                          fontWeight:
+                                            "850",
+                                        }}
+                                      >
+                                        جاري تجهيز الصورة...
+                                      </div>
+                                    )}
+
+                                    {canEditData && (
+                                      <button
+                                        type="button"
+                                        disabled={
+                                          String(
+                                            profileDeliveryImageBusyLocationId
+                                          ) ===
+                                          String(
+                                            location.id
+                                          )
+                                        }
+                                        onClick={() =>
+                                          removeProfileDeliveryLocationImage(
+                                            location,
+                                            image
+                                          )
+                                        }
+                                        title="حذف الصورة"
+                                        style={{
+                                          position:
+                                            "absolute",
+                                          top:
+                                            "5px",
+                                          left:
+                                            "5px",
+                                          width:
+                                            "25px",
+                                          height:
+                                            "25px",
+                                          borderRadius:
+                                            "50%",
+                                          border:
+                                            "none",
+                                          background:
+                                            "rgba(79,45,35,0.86)",
+                                          color:
+                                            "#ffffff",
+                                          fontSize:
+                                            "13px",
+                                          fontWeight:
+                                            "950",
+                                          cursor:
+                                            "pointer",
+                                        }}
+                                      >
+                                        ×
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              }
+                            )}
+                          </div>
+                        ) : (
+                          <div
+                            style={{
+                              padding:
+                                "10px",
+                              borderRadius:
+                                "12px",
+                              background:
+                                "rgba(238,225,213,0.65)",
+                              color:
+                                "#91715a",
+                              textAlign:
+                                "center",
+                              fontSize:
+                                "10px",
+                              fontWeight:
+                                "850",
+                            }}
+                          >
+                            لا توجد صور لهذا الموقع.
+                          </div>
+                        )}
+
+                        {canEditData &&
+                        location.active !==
+                          false ? (
+                          <div
+                            style={{
+                              display:
+                                "grid",
+                              gap:
+                                "8px",
+                            }}
+                          >
+                            <div
+                              style={{
+                                display:
+                                  "flex",
+                                flexWrap:
+                                  "wrap",
+                                gap:
+                                  "7px",
+                              }}
+                            >
+                              <label
+                                style={{
+                                  minHeight:
+                                    "34px",
+                                  padding:
+                                    "6px 11px",
+                                  borderRadius:
+                                    "10px",
+                                  border:
+                                    "1px solid rgba(157,117,87,0.34)",
+                                  background:
+                                    "#ead8c8",
+                                  color:
+                                    "#4b3327",
+                                  fontSize:
+                                    "10px",
+                                  fontWeight:
+                                    "900",
+                                  cursor:
+                                    "pointer",
+                                  display:
+                                    "inline-flex",
+                                  alignItems:
+                                    "center",
+                                  justifyContent:
+                                    "center",
+                                }}
+                              >
+                                إضافة صور
+
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  multiple
+                                  disabled={
+                                    String(
+                                      profileDeliveryImageBusyLocationId
+                                    ) ===
+                                    String(
+                                      location.id
+                                    )
+                                  }
+                                  onChange={(
+                                    event
+                                  ) => {
+                                    const files =
+                                      Array.from(
+                                        event
+                                          .target
+                                          .files ||
+                                          []
+                                      );
+
+                                    event.target.value =
+                                      "";
+
+                                    uploadProfileDeliveryLocationImages(
+                                      location,
+                                      files
+                                    );
+                                  }}
+                                  style={{
+                                    display:
+                                      "none",
+                                  }}
+                                />
+                              </label>
+
+                              <label
+                                style={{
+                                  minHeight:
+                                    "34px",
+                                  padding:
+                                    "6px 11px",
+                                  borderRadius:
+                                    "10px",
+                                  border:
+                                    "1px solid rgba(157,117,87,0.34)",
+                                  background:
+                                    "#f4e8dd",
+                                  color:
+                                    "#4b3327",
+                                  fontSize:
+                                    "10px",
+                                  fontWeight:
+                                    "900",
+                                  cursor:
+                                    "pointer",
+                                  display:
+                                    "inline-flex",
+                                  alignItems:
+                                    "center",
+                                  justifyContent:
+                                    "center",
+                                }}
+                              >
+                                الكاميرا
+
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  capture="environment"
+                                  disabled={
+                                    String(
+                                      profileDeliveryImageBusyLocationId
+                                    ) ===
+                                    String(
+                                      location.id
+                                    )
+                                  }
+                                  onChange={(
+                                    event
+                                  ) => {
+                                    const files =
+                                      Array.from(
+                                        event
+                                          .target
+                                          .files ||
+                                          []
+                                      );
+
+                                    event.target.value =
+                                      "";
+
+                                    uploadProfileDeliveryLocationImages(
+                                      location,
+                                      files
+                                    );
+                                  }}
+                                  style={{
+                                    display:
+                                      "none",
+                                  }}
+                                />
+                              </label>
+
+                              <button
+                                type="button"
+                                disabled={
+                                  String(
+                                    profileDeliveryImageBusyLocationId
+                                  ) ===
+                                  String(
+                                    location.id
+                                  )
+                                }
+                                onClick={() =>
+                                  readProfileDeliveryLocationImagesFromClipboard(
+                                    location
+                                  )
+                                }
+                                style={{
+                                  minHeight:
+                                    "34px",
+                                  padding:
+                                    "6px 11px",
+                                  borderRadius:
+                                    "10px",
+                                  border:
+                                    "1px solid rgba(157,117,87,0.34)",
+                                  background:
+                                    "#f4e8dd",
+                                  color:
+                                    "#4b3327",
+                                  fontSize:
+                                    "10px",
+                                  fontWeight:
+                                    "900",
+                                  cursor:
+                                    "pointer",
+                                }}
+                              >
+                                لصق صورة
+                              </button>
+                            </div>
+
+                            <div
+                              tabIndex={0}
+                              onPaste={(
+                                event
+                              ) =>
+                                pasteProfileDeliveryLocationImages(
+                                  location,
+                                  event
+                                )
+                              }
+                              style={{
+                                padding:
+                                  "9px 11px",
+                                borderRadius:
+                                  "11px",
+                                border:
+                                  "1px dashed rgba(157,117,87,0.38)",
+                                background:
+                                  "rgba(255,253,249,0.72)",
+                                color:
+                                  "#896a53",
+                                textAlign:
+                                  "center",
+                                fontSize:
+                                  "9px",
+                                fontWeight:
+                                  "850",
+                                outline:
+                                  "none",
+                              }}
+                            >
+                              على الكمبيوتر: اضغط هنا ثم الصق الصورة بـ Ctrl+V
+                            </div>
+
+                            {String(
+                              profileDeliveryImageBusyLocationId
+                            ) ===
+                              String(
+                                location.id
+                              ) && (
+                              <div
+                                style={{
+                                  color:
+                                    "#76543f",
+                                  fontSize:
+                                    "10px",
+                                  fontWeight:
+                                    "900",
+                                }}
+                              >
+                                جاري معالجة الصور...
+                              </div>
+                            )}
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <div
+                        style={{
+                          display:
+                            "flex",
+                          gap: "7px",
+                          flexWrap:
+                            "wrap",
+                        }}
+                      >
+                        {location.mapUrl && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              window.open(
+                                location.mapUrl,
+                                "_blank",
+                                "noopener,noreferrer"
+                              )
+                            }
+                            style={{
+                              minHeight:
+                                "34px",
+                              padding:
+                                "6px 11px",
+                              borderRadius:
+                                "10px",
+                              border:
+                                "1px solid rgba(157,117,87,0.34)",
+                              background:
+                                "#ead8c8",
+                              color:
+                                "#4b3327",
+                              fontWeight:
+                                "900",
+                              cursor:
+                                "pointer",
+                            }}
+                          >
+                            فتح الموقع
+                          </button>
+                        )}
+
+                        {canEditData && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                startEditProfileDeliveryLocation(
+                                  location
+                                )
+                              }
+                              style={{
+                                minHeight:
+                                  "34px",
+                                padding:
+                                  "6px 11px",
+                                borderRadius:
+                                  "10px",
+                                border:
+                                  "1px solid rgba(157,117,87,0.34)",
+                                background:
+                                  "#f4e8dd",
+                                color:
+                                  "#4b3327",
+                                fontWeight:
+                                  "900",
+                                cursor:
+                                  "pointer",
+                              }}
+                            >
+                              تعديل
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={
+                                profileDeliveryLocationSaving
+                              }
+                              onClick={() =>
+                                setProfileDeliveryLocationActive(
+                                  location
+                                )
+                              }
+                              style={{
+                                minHeight:
+                                  "34px",
+                                padding:
+                                  "6px 11px",
+                                borderRadius:
+                                  "10px",
+                                border:
+                                  "none",
+                                background:
+                                  location.active
+                                    ? "#b66f5d"
+                                    : "#708b68",
+                                color:
+                                  "#ffffff",
+                                fontWeight:
+                                  "900",
+                                cursor:
+                                  "pointer",
+                              }}
+                            >
+                              {location.active
+                                ? "إيقاف"
+                                : "تفعيل"}
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )
+                )}
               </div>
             )}
           </div>
