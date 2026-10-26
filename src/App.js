@@ -3243,6 +3243,16 @@ function fetchSharedClientLists() {
     selectedDeliveryDriverFilter,
   ]);
 
+  const [
+    deliveryLocationImageUrls,
+    setDeliveryLocationImageUrls,
+  ] = useState({});
+
+  const [
+    deliveryStatusBusyKey,
+    setDeliveryStatusBusyKey,
+  ] = useState("");
+
   /*
     تاريخ إصدار الفاتورة مستقل عن
     تاريخ جدول المواعيد.
@@ -25996,6 +26006,371 @@ const sendWhatsApp = async (client) => {
       );
     };
 
+  const normalizeDeliveryExternalPhone =
+    (
+      value
+    ) => {
+      let digits =
+        String(
+          value || ""
+        ).replace(
+          /\D/g,
+          ""
+        );
+
+      if (
+        digits.startsWith(
+          "00"
+        )
+      ) {
+        digits =
+          digits.slice(2);
+      }
+
+      if (
+        digits.startsWith(
+          "0"
+        ) &&
+        digits.length === 10
+      ) {
+        digits =
+          `966${digits.slice(1)}`;
+      } else if (
+        digits.startsWith(
+          "5"
+        ) &&
+        digits.length === 9
+      ) {
+        digits =
+          `966${digits}`;
+      }
+
+      return digits;
+    };
+
+  const openDeliveryPhoneCall =
+    (
+      member
+    ) => {
+      const phone =
+        normalizeDeliveryExternalPhone(
+          member?.phone
+        );
+
+      if (!phone) {
+        alert(
+          "رقم جوال العميلة غير متوفر."
+        );
+
+        return;
+      }
+
+      window.location.href =
+        `tel:+${phone}`;
+    };
+
+  const getDeliveryWhatsappMessage =
+    (
+      member,
+      templateKey
+    ) => {
+      const defaultTemplates =
+        createDefaultDeliverySettings()
+          .whatsappTemplates;
+
+      const template =
+        String(
+          deliverySettings
+            ?.whatsappTemplates
+            ?.[templateKey] ||
+            defaultTemplates[
+              templateKey
+            ] ||
+            ""
+        );
+
+      const clientName =
+        String(
+          member?.name || ""
+        ).trim() ||
+        "عميلتنا";
+
+      return template
+        .split(
+          "{clientName}"
+        )
+        .join(
+          clientName
+        );
+    };
+
+  const openDeliveryWhatsapp =
+    (
+      member,
+      templateKey
+    ) => {
+      const phone =
+        normalizeDeliveryExternalPhone(
+          member?.phone
+        );
+
+      if (!phone) {
+        alert(
+          "رقم جوال العميلة غير متوفر."
+        );
+
+        return;
+      }
+
+      const message =
+        getDeliveryWhatsappMessage(
+          member,
+          templateKey
+        );
+
+      window.open(
+        `https://wa.me/${phone}?text=${encodeURIComponent(
+          message
+        )}`,
+        "_blank",
+        "noopener,noreferrer"
+      );
+    };
+
+  const isDeliveryAppointmentCompleted =
+    (
+      appointment
+    ) => {
+      const statuses =
+        appointment?.row
+          ?.deliveryStatusByDriver;
+
+      if (
+        !statuses ||
+        typeof statuses !==
+          "object" ||
+        Array.isArray(
+          statuses
+        )
+      ) {
+        return false;
+      }
+
+      const status =
+        statuses[
+          appointment.driverKey
+        ];
+
+      return (
+        status ===
+          "delivered" ||
+        status?.status ===
+          "delivered"
+      );
+    };
+
+  const setDeliveryAppointmentCompleted =
+    async (
+      appointment,
+      completed
+    ) => {
+      if (
+        !ensureSystemWritable() ||
+        !canEditData ||
+        !appointment
+      ) {
+        return;
+      }
+
+      const date =
+        selectedDeliveryDate;
+
+      const rowIndex =
+        Number(
+          appointment.rowIndex
+        );
+
+      if (
+        !date ||
+        !Number.isInteger(
+          rowIndex
+        )
+      ) {
+        return;
+      }
+
+      const currentDayData =
+        scheduleData[date] ||
+        {};
+
+      const currentRows =
+        currentDayData.rows ||
+        timeSlots.map(
+          createEmptyAppointmentRow
+        );
+
+      const originalRow =
+        currentRows[
+          rowIndex
+        ] ||
+        appointment.row ||
+        createEmptyAppointmentRow(
+          timeSlots[
+            rowIndex
+          ] || ""
+        );
+
+      const existingStatuses =
+        originalRow
+          ?.deliveryStatusByDriver &&
+        typeof originalRow
+          .deliveryStatusByDriver ===
+          "object" &&
+        !Array.isArray(
+          originalRow
+            .deliveryStatusByDriver
+        )
+          ? {
+              ...originalRow
+                .deliveryStatusByDriver,
+            }
+          : {};
+
+      if (completed) {
+        existingStatuses[
+          appointment.driverKey
+        ] = {
+          status:
+            "delivered",
+
+          deliveredAt:
+            new Date()
+              .toISOString(),
+
+          updatedAt:
+            new Date()
+              .toISOString(),
+        };
+      } else {
+        delete existingStatuses[
+          appointment.driverKey
+        ];
+      }
+
+      const updatedRow = {
+        ...originalRow,
+
+        deliveryStatusByDriver:
+          existingStatuses,
+      };
+
+      setDeliveryStatusBusyKey(
+        appointment.key
+      );
+
+      try {
+        const {
+          error,
+        } = await supabase
+          .from(
+            "schedule_rows"
+          )
+          .upsert(
+            {
+              id:
+                getScheduleRowId(
+                  date,
+                  rowIndex
+                ),
+
+              schedule_date:
+                date,
+
+              row_index:
+                rowIndex,
+
+              row_data:
+                updatedRow,
+
+              cell_styles:
+                getScheduleRowCellStyles(
+                  currentDayData
+                    .cellStyles ||
+                    {},
+                  rowIndex
+                ),
+
+              updated_at:
+                new Date()
+                  .toISOString(),
+
+              updated_by:
+                sharedDataDeviceIdRef
+                  .current,
+            },
+            {
+              onConflict:
+                "id",
+            }
+          );
+
+        if (error) {
+          throw error;
+        }
+
+        scheduleLastEditRef.current =
+          Date.now();
+
+        setScheduleData(
+          (previous) => {
+            const previousDay =
+              previous[
+                date
+              ] || {};
+
+            const previousRows =
+              previousDay.rows ||
+              timeSlots.map(
+                createEmptyAppointmentRow
+              );
+
+            return {
+              ...previous,
+
+              [date]: {
+                ...previousDay,
+
+                rows:
+                  previousRows.map(
+                    (
+                      row,
+                      index
+                    ) =>
+                      index ===
+                      rowIndex
+                        ? updatedRow
+                        : row
+                  ),
+              },
+            };
+          }
+        );
+      } catch (error) {
+        console.error(
+          "Delivery status save error:",
+          error
+        );
+
+        alert(
+          "تعذر تحديث حالة التوصيل. حاول مرة أخرى."
+        );
+      } finally {
+        setDeliveryStatusBusyKey(
+          ""
+        );
+      }
+    };
+
   useEffect(() => {
     if (
       !isLoggedIn ||
@@ -26054,6 +26429,154 @@ const sendWhatsApp = async (client) => {
     screen,
     selectedDeliveryDate,
     scheduleData,
+  ]);
+
+  useEffect(() => {
+    if (
+      !isLoggedIn ||
+      screen !== "delivery"
+    ) {
+      setDeliveryLocationImageUrls(
+        {}
+      );
+
+      return undefined;
+    }
+
+    const imagePaths =
+      Array.from(
+        new Set(
+          deliveryAppointments
+            .flatMap(
+              (
+                appointment
+              ) => {
+                const location =
+                  getDeliveryLocationForRow(
+                    appointment.row
+                  );
+
+                return Array.isArray(
+                  location?.images
+                )
+                  ? location.images.map(
+                      (image) =>
+                        String(
+                          image?.path ||
+                            ""
+                        ).trim()
+                    )
+                  : [];
+              }
+            )
+            .filter(
+              Boolean
+            )
+        )
+      );
+
+    if (
+      imagePaths.length ===
+      0
+    ) {
+      setDeliveryLocationImageUrls(
+        {}
+      );
+
+      return undefined;
+    }
+
+    let cancelled =
+      false;
+
+    const loadDeliveryImageUrls =
+      async () => {
+        const entries =
+          await Promise.all(
+            imagePaths.map(
+              async (
+                imagePath
+              ) => {
+                const {
+                  data,
+                  error,
+                } =
+                  await supabase.storage
+                    .from(
+                      "client-location-images"
+                    )
+                    .createSignedUrl(
+                      imagePath,
+                      3600
+                    );
+
+                if (error) {
+                  console.error(
+                    "Delivery image signed URL error:",
+                    error
+                  );
+
+                  return [
+                    imagePath,
+                    "",
+                  ];
+                }
+
+                return [
+                  imagePath,
+                  String(
+                    data
+                      ?.signedUrl ||
+                      ""
+                  ),
+                ];
+              }
+            )
+          );
+
+        if (cancelled) {
+          return;
+        }
+
+        setDeliveryLocationImageUrls(
+          entries.reduce(
+            (
+              result,
+              [
+                imagePath,
+                signedUrl,
+              ]
+            ) => {
+              if (
+                signedUrl
+              ) {
+                result[
+                  imagePath
+                ] =
+                  signedUrl;
+              }
+
+              return result;
+            },
+            {}
+          )
+        );
+      };
+
+    loadDeliveryImageUrls();
+
+    return () => {
+      cancelled = true;
+    };
+
+    // يتم التحميل فقط عند فتح صفحة التوصيل أو تغير يومها/بياناتها.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isLoggedIn,
+    screen,
+    selectedDeliveryDate,
+    scheduleData,
+    scheduleClientDeliveryLocationsById,
   ]);
 
   const getDashboardAppointments = (
@@ -40671,6 +41194,23 @@ if (screen === "menu") {
                                     ?.clientId
                                 );
 
+                              const deliveryCompleted =
+                                isDeliveryAppointmentCompleted(
+                                  appointment
+                                );
+
+                              const locationImages =
+                                Array.isArray(
+                                  location?.images
+                                )
+                                  ? location.images
+                                  : [];
+
+                              const safeMapUrl =
+                                normalizeSafeMapUrl(
+                                  location?.mapUrl
+                                );
+
                               return (
                                 <article
                                   key={
@@ -40682,9 +41222,13 @@ if (screen === "menu") {
                                     borderRadius:
                                       "19px",
                                     border:
-                                      "1px solid rgba(167,127,96,0.28)",
+                                      deliveryCompleted
+                                        ? "1px solid rgba(91,111,82,0.38)"
+                                        : "1px solid rgba(167,127,96,0.28)",
                                     background:
-                                      "#ffffff",
+                                      deliveryCompleted
+                                        ? "#e8e4df"
+                                        : "#ffffff",
                                     boxShadow:
                                       "0 8px 22px rgba(75,46,31,0.07)",
                                   }}
@@ -40745,6 +41289,31 @@ if (screen === "menu") {
                                         : "عميلات"}
                                     </span>
                                   </div>
+
+                                  {deliveryCompleted ? (
+                                    <div
+                                      style={{
+                                        marginBottom:
+                                          "10px",
+                                        padding:
+                                          "8px 10px",
+                                        borderRadius:
+                                          "12px",
+                                        background:
+                                          "#d8e4d2",
+                                        color:
+                                          "#41613b",
+                                        textAlign:
+                                          "center",
+                                        fontSize:
+                                          "11px",
+                                        fontWeight:
+                                          "950",
+                                      }}
+                                    >
+                                      ✓ تم التوصيل
+                                    </div>
+                                  ) : null}
 
                                   <div
                                     style={{
@@ -40853,6 +41422,147 @@ if (screen === "menu") {
                                               }
                                             </div>
                                           ) : null}
+
+                                          <div
+                                            style={{
+                                              display:
+                                                "flex",
+                                              flexWrap:
+                                                "wrap",
+                                              gap:
+                                                "6px",
+                                              marginTop:
+                                                "9px",
+                                            }}
+                                          >
+                                            <button
+                                              type="button"
+                                              disabled={
+                                                !normalizeDeliveryExternalPhone(
+                                                  member.phone
+                                                )
+                                              }
+                                              onClick={() =>
+                                                openDeliveryPhoneCall(
+                                                  member
+                                                )
+                                              }
+                                              style={{
+                                                minHeight:
+                                                  "33px",
+                                                padding:
+                                                  "6px 10px",
+                                                borderRadius:
+                                                  "10px",
+                                                border:
+                                                  "1px solid rgba(107,77,57,0.26)",
+                                                background:
+                                                  "#ffffff",
+                                                color:
+                                                  "#4b3327",
+                                                fontSize:
+                                                  "9px",
+                                                fontWeight:
+                                                  "900",
+                                                cursor:
+                                                  normalizeDeliveryExternalPhone(
+                                                    member.phone
+                                                  )
+                                                    ? "pointer"
+                                                    : "not-allowed",
+                                                opacity:
+                                                  normalizeDeliveryExternalPhone(
+                                                    member.phone
+                                                  )
+                                                    ? 1
+                                                    : 0.5,
+                                              }}
+                                            >
+                                              الاتصال بالعميلة
+                                            </button>
+
+                                            <button
+                                              type="button"
+                                              disabled={
+                                                !normalizeDeliveryExternalPhone(
+                                                  member.phone
+                                                )
+                                              }
+                                              onClick={() =>
+                                                openDeliveryWhatsapp(
+                                                  member,
+                                                  "onTheWay"
+                                                )
+                                              }
+                                              style={{
+                                                minHeight:
+                                                  "33px",
+                                                padding:
+                                                  "6px 10px",
+                                                borderRadius:
+                                                  "10px",
+                                                border:
+                                                  "none",
+                                                background:
+                                                  "#dfe9d8",
+                                                color:
+                                                  "#45603e",
+                                                fontSize:
+                                                  "9px",
+                                                fontWeight:
+                                                  "900",
+                                                cursor:
+                                                  normalizeDeliveryExternalPhone(
+                                                    member.phone
+                                                  )
+                                                    ? "pointer"
+                                                    : "not-allowed",
+                                              }}
+                                            >
+                                              الأخصائية في الطريق
+                                            </button>
+
+                                            <button
+                                              type="button"
+                                              disabled={
+                                                !normalizeDeliveryExternalPhone(
+                                                  member.phone
+                                                )
+                                              }
+                                              onClick={() =>
+                                                openDeliveryWhatsapp(
+                                                  member,
+                                                  "arrived"
+                                                )
+                                              }
+                                              style={{
+                                                minHeight:
+                                                  "33px",
+                                                padding:
+                                                  "6px 10px",
+                                                borderRadius:
+                                                  "10px",
+                                                border:
+                                                  "none",
+                                                background:
+                                                  "#ead8c8",
+                                                color:
+                                                  "#533b2c",
+                                                fontSize:
+                                                  "9px",
+                                                fontWeight:
+                                                  "900",
+                                                cursor:
+                                                  normalizeDeliveryExternalPhone(
+                                                    member.phone
+                                                  )
+                                                    ? "pointer"
+                                                    : "not-allowed",
+                                              }}
+                                            >
+                                              الأخصائية وصلت
+                                            </button>
+                                          </div>
                                         </div>
                                       )
                                     )}
@@ -40936,6 +41646,204 @@ if (screen === "menu") {
                                           "-"}
                                       </>
                                     )}
+                                  </div>
+
+                                  {locationImages.length >
+                                  0 ? (
+                                    <div
+                                      style={{
+                                        marginTop:
+                                          "11px",
+                                        display:
+                                          "grid",
+                                        gridTemplateColumns:
+                                          "repeat(auto-fill, minmax(82px, 1fr))",
+                                        gap:
+                                          "7px",
+                                      }}
+                                    >
+                                      {locationImages.map(
+                                        (
+                                          image
+                                        ) => {
+                                          const signedUrl =
+                                            deliveryLocationImageUrls[
+                                              image
+                                                ?.path
+                                            ];
+
+                                          return (
+                                            <button
+                                              key={
+                                                image.id ||
+                                                image.path
+                                              }
+                                              type="button"
+                                              disabled={
+                                                !signedUrl
+                                              }
+                                              onClick={() =>
+                                                signedUrl &&
+                                                window.open(
+                                                  signedUrl,
+                                                  "_blank",
+                                                  "noopener,noreferrer"
+                                                )
+                                              }
+                                              style={{
+                                                minHeight:
+                                                  "86px",
+                                                padding:
+                                                  0,
+                                                overflow:
+                                                  "hidden",
+                                                borderRadius:
+                                                  "12px",
+                                                border:
+                                                  "1px solid rgba(161,124,95,0.28)",
+                                                background:
+                                                  "#eadfd6",
+                                                cursor:
+                                                  signedUrl
+                                                    ? "pointer"
+                                                    : "default",
+                                              }}
+                                            >
+                                              {signedUrl ? (
+                                                <img
+                                                  src={
+                                                    signedUrl
+                                                  }
+                                                  alt={
+                                                    image.name ||
+                                                    "صورة الموقع"
+                                                  }
+                                                  style={{
+                                                    width:
+                                                      "100%",
+                                                    height:
+                                                      "86px",
+                                                    display:
+                                                      "block",
+                                                    objectFit:
+                                                      "cover",
+                                                  }}
+                                                />
+                                              ) : (
+                                                <span
+                                                  style={{
+                                                    fontSize:
+                                                      "9px",
+                                                    color:
+                                                      "#866a55",
+                                                    fontWeight:
+                                                      "850",
+                                                  }}
+                                                >
+                                                  جاري تحميل الصورة...
+                                                </span>
+                                              )}
+                                            </button>
+                                          );
+                                        }
+                                      )}
+                                    </div>
+                                  ) : null}
+
+                                  <div
+                                    style={{
+                                      marginTop:
+                                        "12px",
+                                      display:
+                                        "grid",
+                                      gridTemplateColumns:
+                                        "repeat(auto-fit, minmax(130px, 1fr))",
+                                      gap:
+                                        "8px",
+                                    }}
+                                  >
+                                    <button
+                                      type="button"
+                                      disabled={
+                                        !safeMapUrl
+                                      }
+                                      onClick={() =>
+                                        safeMapUrl &&
+                                        window.open(
+                                          safeMapUrl,
+                                          "_blank",
+                                          "noopener,noreferrer"
+                                        )
+                                      }
+                                      style={{
+                                        minHeight:
+                                          "40px",
+                                        borderRadius:
+                                          "12px",
+                                        border:
+                                          "1px solid rgba(109,81,61,0.28)",
+                                        background:
+                                          safeMapUrl
+                                            ? "#f2e2d4"
+                                            : "#eee8e2",
+                                        color:
+                                          safeMapUrl
+                                            ? "#4b3327"
+                                            : "#a39489",
+                                        fontWeight:
+                                          "950",
+                                        cursor:
+                                          safeMapUrl
+                                            ? "pointer"
+                                            : "not-allowed",
+                                      }}
+                                    >
+                                      {safeMapUrl
+                                        ? "فتح الموقع"
+                                        : "الموقع غير محدد"}
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      disabled={
+                                        deliveryStatusBusyKey ===
+                                        appointment.key
+                                      }
+                                      onClick={() =>
+                                        setDeliveryAppointmentCompleted(
+                                          appointment,
+                                          !deliveryCompleted
+                                        )
+                                      }
+                                      style={{
+                                        minHeight:
+                                          "40px",
+                                        borderRadius:
+                                          "12px",
+                                        border:
+                                          "none",
+                                        background:
+                                          deliveryCompleted
+                                            ? "#b9a89b"
+                                            : "linear-gradient(135deg, #61745a, #82937a)",
+                                        color:
+                                          "#ffffff",
+                                        fontWeight:
+                                          "950",
+                                        cursor:
+                                          deliveryStatusBusyKey ===
+                                          appointment.key
+                                            ? "not-allowed"
+                                            : "pointer",
+                                      }}
+                                    >
+                                      {deliveryStatusBusyKey ===
+                                      appointment.key
+                                        ? "جاري الحفظ..."
+                                        : deliveryCompleted
+                                          ? "تراجع عن تم التوصيل"
+                                          : "تم التوصيل"}
+                                    </button>
                                   </div>
                                 </article>
                               );
