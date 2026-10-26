@@ -27434,7 +27434,7 @@ const leavingTime = addMinutesToDisplayTime(
       (item) => item.key
     );
 
-  const mobileMoreSections =
+  const getMobileMoreSections = () =>
     dashboardMenuSections
       .map((section) => ({
         ...section,
@@ -41090,7 +41090,7 @@ const welcomeBoardNameStyle = {
                     </button>
                   </div>
 
-                  {mobileMoreSections.map(
+                  {getMobileMoreSections().map(
                     (section) => (
                       <div
                         key={
