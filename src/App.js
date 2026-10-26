@@ -94,6 +94,7 @@ function App() {
     "menu",
     "dashboard",
     "appointments",
+    "delivery",
     "loyalty",
     "clients",
     "referrals",
@@ -3208,6 +3209,39 @@ function fetchSharedClientLists() {
     selectedScheduleDate,
     setSelectedScheduleDate,
   ] = useState(todayDate);
+
+  const [
+    selectedDeliveryDate,
+    setSelectedDeliveryDate,
+  ] = useState(todayDate);
+
+  const [
+    selectedDeliveryDriverFilter,
+    setSelectedDeliveryDriverFilter,
+  ] = useState(() => {
+    try {
+      return (
+        localStorage.getItem(
+          "paradise-delivery-driver-filter"
+        ) || "all"
+      );
+    } catch {
+      return "all";
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "paradise-delivery-driver-filter",
+        selectedDeliveryDriverFilter
+      );
+    } catch {
+      // Local filter only.
+    }
+  }, [
+    selectedDeliveryDriverFilter,
+  ]);
 
   /*
     تاريخ إصدار الفاتورة مستقل عن
@@ -25481,6 +25515,547 @@ const sendWhatsApp = async (client) => {
     setSelectedScheduleDate(date.toISOString().slice(0, 10));
   };
 
+  const changeDeliveryDateByDays = (
+    days
+  ) => {
+    const date = new Date(
+      `${selectedDeliveryDate || todayDate}T12:00:00`
+    );
+
+    date.setDate(
+      date.getDate() + days
+    );
+
+    setSelectedDeliveryDate(
+      date
+        .toISOString()
+        .slice(0, 10)
+    );
+  };
+
+  const deliveryExcludedStatuses = [
+    "Cancel",
+    "Postponed",
+    "Gift Giver",
+    "Availability",
+  ];
+
+  const getDeliveryMemberDriver = (
+    member
+  ) => {
+    const driverId =
+      getAppointmentDriverId(
+        member
+      );
+
+    const configuredDriver =
+      driverId
+        ? getDeliveryDriverById(
+            driverId
+          )
+        : null;
+
+    const legacyDriverName =
+      String(
+        member?.driver || ""
+      ).trim();
+
+    if (configuredDriver) {
+      return {
+        key:
+          String(
+            configuredDriver.id
+          ),
+
+        id:
+          String(
+            configuredDriver.id
+          ),
+
+        name:
+          configuredDriver.name,
+
+        legacy:
+          false,
+      };
+    }
+
+    if (legacyDriverName) {
+      return {
+        key:
+          `legacy:${legacyDriverName}`,
+
+        id: "",
+
+        name:
+          legacyDriverName,
+
+        legacy:
+          true,
+      };
+    }
+
+    return null;
+  };
+
+  const getDeliveryAppointmentsForDate =
+    (
+      date
+    ) => {
+      const groups = [];
+
+      getRowsForDate(
+        date
+      ).forEach(
+        (
+          row,
+          rowIndex
+        ) => {
+          const members = [];
+
+          const primaryHasData =
+            Boolean(
+              String(
+                row.client || ""
+              ).trim() ||
+              String(
+                row.number || ""
+              ).trim() ||
+              String(
+                row.services || ""
+              ).trim()
+            );
+
+          if (
+            primaryHasData &&
+            !deliveryExcludedStatuses.includes(
+              String(
+                row.status || ""
+              ).trim()
+            )
+          ) {
+            members.push({
+              role: "primary",
+
+              clientId:
+                row.clientId || "",
+
+              name:
+                row.client || "",
+
+              phone:
+                row.number || "",
+
+              therapist:
+                row.therapist || "",
+
+              service:
+                row.services || "",
+
+              order:
+                row.order || "",
+
+              note:
+                row.note || "",
+
+              serviceTime:
+                row.serviceTime || "",
+
+              driver:
+                row.driver || "",
+
+              driverId:
+                row.driverId || "",
+
+              status:
+                row.status || "",
+            });
+          }
+
+          getAdditionalClientsForRow(
+            row
+          ).forEach(
+            (
+              extraClient,
+              extraClientIndex
+            ) => {
+              const extraHasData =
+                Boolean(
+                  String(
+                    extraClient.name ||
+                      ""
+                  ).trim() ||
+                  String(
+                    extraClient.phone ||
+                      ""
+                  ).trim() ||
+                  String(
+                    extraClient.service ||
+                      ""
+                  ).trim()
+                );
+
+              if (
+                !extraHasData
+              ) {
+                return;
+              }
+
+              const effectiveStatus =
+                String(
+                  extraClient.status ||
+                    row.status ||
+                    ""
+                ).trim();
+
+              if (
+                deliveryExcludedStatuses.includes(
+                  effectiveStatus
+                )
+              ) {
+                return;
+              }
+
+              members.push({
+                role:
+                  "additional",
+
+                extraClientIndex,
+
+                clientId:
+                  extraClient.clientId ||
+                  "",
+
+                name:
+                  extraClient.name ||
+                  "",
+
+                phone:
+                  extraClient.phone ||
+                  "",
+
+                therapist:
+                  extraClient.therapist ||
+                  row.therapist ||
+                  "",
+
+                service:
+                  extraClient.service ||
+                  "",
+
+                order:
+                  extraClient.order ||
+                  "",
+
+                note:
+                  extraClient.note ||
+                  "",
+
+                serviceTime:
+                  extraClient.serviceTime ||
+                  row.serviceTime ||
+                  "",
+
+                driver:
+                  extraClient.driver ||
+                  row.driver ||
+                  "",
+
+                driverId:
+                  extraClient.driverId ||
+                  row.driverId ||
+                  "",
+
+                status:
+                  effectiveStatus,
+              });
+            }
+          );
+
+          const groupsByDriver =
+            {};
+
+          members.forEach(
+            (member) => {
+              const driver =
+                getDeliveryMemberDriver(
+                  member
+                );
+
+              if (!driver) {
+                return;
+              }
+
+              if (
+                !groupsByDriver[
+                  driver.key
+                ]
+              ) {
+                groupsByDriver[
+                  driver.key
+                ] = {
+                  key:
+                    `${date}-${rowIndex}-${driver.key}`,
+
+                  rowIndex,
+
+                  row,
+
+                  driverKey:
+                    driver.key,
+
+                  driverId:
+                    driver.id,
+
+                  driverName:
+                    driver.name,
+
+                  driverLegacy:
+                    driver.legacy,
+
+                  members: [],
+                };
+              }
+
+              groupsByDriver[
+                driver.key
+              ].members.push(
+                member
+              );
+            }
+          );
+
+          Object.values(
+            groupsByDriver
+          ).forEach(
+            (group) => {
+              if (
+                group.members
+                  .length > 0
+              ) {
+                groups.push(
+                  group
+                );
+              }
+            }
+          );
+        }
+      );
+
+      return groups.sort(
+        (
+          firstGroup,
+          secondGroup
+        ) =>
+          firstGroup.rowIndex -
+          secondGroup.rowIndex
+      );
+    };
+
+  const deliveryAppointments =
+    getDeliveryAppointmentsForDate(
+      selectedDeliveryDate
+    );
+
+  const getDeliveryDriverColumns =
+    () => {
+      const assignedDrivers =
+        new Map();
+
+      deliveryAppointments.forEach(
+        (appointment) => {
+          assignedDrivers.set(
+            appointment.driverKey,
+            {
+              key:
+                appointment.driverKey,
+
+              id:
+                appointment.driverId,
+
+              name:
+                appointment.driverName,
+
+              legacy:
+                appointment.driverLegacy,
+            }
+          );
+        }
+      );
+
+      const configuredColumns =
+        deliveryDrivers
+          .filter(
+            (driver) =>
+              driver.active ||
+              assignedDrivers.has(
+                String(
+                  driver.id
+                )
+              )
+          )
+          .map(
+            (driver) => ({
+              key:
+                String(
+                  driver.id
+                ),
+
+              id:
+                String(
+                  driver.id
+                ),
+
+              name:
+                driver.name,
+
+              legacy:
+                false,
+
+              sortOrder:
+                driver.sortOrder,
+            })
+          );
+
+      const configuredKeys =
+        new Set(
+          configuredColumns.map(
+            (driver) =>
+              driver.key
+          )
+        );
+
+      const legacyColumns =
+        Array.from(
+          assignedDrivers.values()
+        ).filter(
+          (driver) =>
+            driver.legacy &&
+            !configuredKeys.has(
+              driver.key
+            )
+        );
+
+      return [
+        ...configuredColumns,
+        ...legacyColumns,
+      ];
+    };
+
+  const deliveryDriverColumns =
+    getDeliveryDriverColumns();
+
+  const effectiveDeliveryDriverFilter =
+    selectedDeliveryDriverFilter ===
+      "all" ||
+    deliveryDriverColumns.some(
+      (driver) =>
+        driver.key ===
+        selectedDeliveryDriverFilter
+    )
+      ? selectedDeliveryDriverFilter
+      : "all";
+
+  const visibleDeliveryDriverColumns =
+    effectiveDeliveryDriverFilter ===
+    "all"
+      ? deliveryDriverColumns
+      : deliveryDriverColumns.filter(
+          (driver) =>
+            driver.key ===
+            effectiveDeliveryDriverFilter
+        );
+
+  const getDeliveryLocationForRow =
+    (
+      row
+    ) => {
+      const locationId =
+        String(
+          row?.clientLocationId ||
+            ""
+        ).trim();
+
+      if (
+        !locationId ||
+        !row?.clientId
+      ) {
+        return null;
+      }
+
+      return (
+        getScheduleClientDeliveryLocations(
+          row.clientId
+        ).find(
+          (location) =>
+            String(
+              location.id
+            ) ===
+            locationId
+        ) || null
+      );
+    };
+
+  useEffect(() => {
+    if (
+      !isLoggedIn ||
+      screen !== "delivery" ||
+      !selectedDeliveryDate
+    ) {
+      return;
+    }
+
+    loadScheduleRowsForDate(
+      selectedDeliveryDate
+    );
+  }, [
+    isLoggedIn,
+    screen,
+    selectedDeliveryDate,
+  ]);
+
+  useEffect(() => {
+    if (
+      !isLoggedIn ||
+      screen !== "delivery"
+    ) {
+      return;
+    }
+
+    const clientIds =
+      new Set();
+
+    getRowsForDate(
+      selectedDeliveryDate
+    ).forEach(
+      (row) => {
+        if (
+          row?.clientId &&
+          row?.clientLocationId
+        ) {
+          clientIds.add(
+            String(
+              row.clientId
+            )
+          );
+        }
+      }
+    );
+
+    clientIds.forEach(
+      (clientId) => {
+        loadScheduleClientDeliveryLocations(
+          clientId
+        );
+      }
+    );
+  }, [
+    isLoggedIn,
+    screen,
+    selectedDeliveryDate,
+    scheduleData,
+  ]);
+
   const getDashboardAppointments = (
     date
   ) => {
@@ -25859,6 +26434,10 @@ const leavingTime = addMinutesToDisplayTime(
         [
           "appointments",
           "جدول المواعيد",
+        ],
+        [
+          "delivery",
+          "التوصيل",
         ],
       ],
     },
@@ -39600,6 +40179,776 @@ if (screen === "menu") {
               )}
             </section>
           ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === "delivery") {
+    if (
+      !canViewMenu(
+        "delivery"
+      )
+    ) {
+      return withGreeting(
+        <div
+          style={{
+            minHeight:
+              "70vh",
+            display:
+              "flex",
+            alignItems:
+              "center",
+            justifyContent:
+              "center",
+            padding:
+              "30px",
+          }}
+        >
+          <div
+            style={{
+              maxWidth:
+                "520px",
+              padding:
+                "28px",
+              borderRadius:
+                "24px",
+              background:
+                "#fffaf5",
+              border:
+                "1px solid #d9c6b5",
+              color:
+                "#4b2e1f",
+              textAlign:
+                "center",
+              fontWeight:
+                "900",
+            }}
+          >
+            لا توجد لديك صلاحية لعرض صفحة التوصيل.
+          </div>
+        </div>
+      );
+    }
+
+    return withGreeting(
+      <div
+        className="paradise-delivery-page"
+        style={{
+          minHeight:
+            "100vh",
+          background:
+            "linear-gradient(to bottom right, #f6f1ea, #ebe1d3)",
+          padding:
+            "24px",
+          fontFamily:
+            "Arial",
+        }}
+      >
+        <div
+          style={{
+            maxWidth:
+              "1800px",
+            margin:
+              "0 auto",
+            background:
+              "rgba(255,255,255,0.92)",
+            borderRadius:
+              "30px",
+            padding:
+              "24px",
+            boxShadow:
+              "0 15px 35px rgba(0,0,0,0.08)",
+          }}
+        >
+          <div
+            style={{
+              textAlign:
+                "center",
+              marginBottom:
+                "20px",
+            }}
+          >
+            <img
+              src={logo}
+              alt="logo"
+              style={{
+                width:
+                  "100px",
+                marginBottom:
+                  "12px",
+              }}
+            />
+
+            <h2
+              style={{
+                margin:
+                  "0 0 7px",
+                color:
+                  "#4b2e1f",
+                fontSize:
+                  "28px",
+              }}
+            >
+              التوصيل
+            </h2>
+
+            <div
+              style={{
+                color:
+                  "#8a7a68",
+                fontWeight:
+                  "bold",
+                marginBottom:
+                  "14px",
+              }}
+            >
+              {formatAppointmentDate(
+                selectedDeliveryDate
+              )}
+            </div>
+
+            <div
+              style={{
+                display:
+                  "flex",
+                justifyContent:
+                  "center",
+                alignItems:
+                  "center",
+                gap:
+                  "10px",
+                flexWrap:
+                  "wrap",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() =>
+                  changeDeliveryDateByDays(
+                    -1
+                  )
+                }
+                style={{
+                  ...buttonStyle,
+                  background:
+                    "linear-gradient(135deg, #4b2e1f, #7a5a43)",
+                  color:
+                    "white",
+                  borderRadius:
+                    "16px",
+                  padding:
+                    "10px 14px",
+                }}
+              >
+                اليوم السابق
+              </button>
+
+              <input
+                type="date"
+                value={
+                  selectedDeliveryDate
+                }
+                max={`${new Date().getFullYear() + 5}-12-31`}
+                onChange={(
+                  event
+                ) =>
+                  setSelectedDeliveryDate(
+                    event.target
+                      .value
+                  )
+                }
+                style={{
+                  padding:
+                    "12px 16px",
+                  borderRadius:
+                    "16px",
+                  border:
+                    "1px solid #d6c7b8",
+                  backgroundColor:
+                    "#faf7f2",
+                  color:
+                    "#4b2e1f",
+                  outline:
+                    "none",
+                  fontWeight:
+                    "bold",
+                }}
+              />
+
+              <button
+                type="button"
+                onClick={() =>
+                  changeDeliveryDateByDays(
+                    1
+                  )
+                }
+                style={{
+                  ...buttonStyle,
+                  background:
+                    "linear-gradient(135deg, #d8c5b3, #f3e8df)",
+                  color:
+                    "#4b2e1f",
+                  border:
+                    "1px solid #d6c7b8",
+                  borderRadius:
+                    "16px",
+                  padding:
+                    "10px 14px",
+                }}
+              >
+                اليوم التالي
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setSelectedDeliveryDate(
+                    todayDate
+                  )
+                }
+                style={{
+                  ...buttonStyle,
+                  background:
+                    "#fffaf3",
+                  color:
+                    "#4b2e1f",
+                  border:
+                    "1px solid #d6c7b8",
+                  borderRadius:
+                    "16px",
+                  padding:
+                    "10px 14px",
+                }}
+              >
+                اليوم
+              </button>
+            </div>
+          </div>
+
+          <div
+            style={{
+              display:
+                "flex",
+              justifyContent:
+                "center",
+              gap:
+                "8px",
+              flexWrap:
+                "wrap",
+              marginBottom:
+                "20px",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() =>
+                setSelectedDeliveryDriverFilter(
+                  "all"
+                )
+              }
+              style={{
+                minHeight:
+                  "38px",
+                padding:
+                  "8px 16px",
+                borderRadius:
+                  "999px",
+                border:
+                  "1px solid rgba(117,82,60,0.25)",
+                cursor:
+                  "pointer",
+                fontWeight:
+                  "900",
+                background:
+                  effectiveDeliveryDriverFilter ===
+                  "all"
+                    ? "linear-gradient(135deg, #4b3327, #76543f)"
+                    : "#f5e8dc",
+                color:
+                  effectiveDeliveryDriverFilter ===
+                  "all"
+                    ? "#ffffff"
+                    : "#4b3327",
+              }}
+            >
+              الكل
+            </button>
+
+            {deliveryDriverColumns.map(
+              (driver) => (
+                <button
+                  key={
+                    driver.key
+                  }
+                  type="button"
+                  onClick={() =>
+                    setSelectedDeliveryDriverFilter(
+                      driver.key
+                    )
+                  }
+                  style={{
+                    minHeight:
+                      "38px",
+                    padding:
+                      "8px 16px",
+                    borderRadius:
+                      "999px",
+                    border:
+                      "1px solid rgba(117,82,60,0.25)",
+                    cursor:
+                      "pointer",
+                    fontWeight:
+                      "900",
+                    background:
+                      effectiveDeliveryDriverFilter ===
+                      driver.key
+                        ? "linear-gradient(135deg, #4b3327, #76543f)"
+                        : "#f5e8dc",
+                    color:
+                      effectiveDeliveryDriverFilter ===
+                      driver.key
+                        ? "#ffffff"
+                        : "#4b3327",
+                  }}
+                >
+                  {driver.name}
+                  {driver.legacy
+                    ? " (قديم)"
+                    : ""}
+                </button>
+              )
+            )}
+          </div>
+
+          {deliveryDriverColumns.length ===
+          0 ? (
+            <div
+              style={{
+                padding:
+                  "30px",
+                borderRadius:
+                  "22px",
+                border:
+                  "1px dashed #cfbaa7",
+                background:
+                  "#fffaf5",
+                textAlign:
+                  "center",
+                color:
+                  "#82654f",
+                fontWeight:
+                  "900",
+              }}
+            >
+              لا يوجد مناديب توصيل مفعّلون حتى الآن.
+            </div>
+          ) : (
+            <div
+              style={{
+                display:
+                  "grid",
+                gridAutoFlow:
+                  "column",
+                gridAutoColumns:
+                  "minmax(315px, 1fr)",
+                gap:
+                  "16px",
+                overflowX:
+                  "auto",
+                paddingBottom:
+                  "10px",
+                direction:
+                  "ltr",
+              }}
+            >
+              {visibleDeliveryDriverColumns.map(
+                (driver) => {
+                  const driverAppointments =
+                    deliveryAppointments.filter(
+                      (
+                        appointment
+                      ) =>
+                        appointment.driverKey ===
+                        driver.key
+                    );
+
+                  return (
+                    <section
+                      key={
+                        driver.key
+                      }
+                      style={{
+                        minWidth:
+                          0,
+                        padding:
+                          "14px",
+                        borderRadius:
+                          "24px",
+                        border:
+                          "1px solid rgba(183,151,124,0.34)",
+                        background:
+                          "linear-gradient(180deg, rgba(255,250,245,0.98), rgba(239,225,213,0.88))",
+                        direction:
+                          "rtl",
+                      }}
+                    >
+                      <div
+                        style={{
+                          padding:
+                            "12px 14px",
+                          marginBottom:
+                            "12px",
+                          borderRadius:
+                            "17px",
+                          background:
+                            "linear-gradient(135deg, #4b3327, #76543f)",
+                          color:
+                            "#fffaf5",
+                          textAlign:
+                            "center",
+                          fontSize:
+                            "17px",
+                          fontWeight:
+                            "950",
+                        }}
+                      >
+                        {driver.name}
+                      </div>
+
+                      {driverAppointments.length ===
+                      0 ? (
+                        <div
+                          style={{
+                            padding:
+                              "28px 12px",
+                            borderRadius:
+                              "17px",
+                            background:
+                              "rgba(255,255,255,0.66)",
+                            color:
+                              "#8d705a",
+                            textAlign:
+                              "center",
+                            fontWeight:
+                              "900",
+                          }}
+                        >
+                          لا توجد مواعيد
+                        </div>
+                      ) : (
+                        <div
+                          style={{
+                            display:
+                              "grid",
+                            gap:
+                              "12px",
+                          }}
+                        >
+                          {driverAppointments.map(
+                            (
+                              appointment
+                            ) => {
+                              const location =
+                                getDeliveryLocationForRow(
+                                  appointment.row
+                                );
+
+                              const hasSelectedLocation =
+                                Boolean(
+                                  String(
+                                    appointment
+                                      .row
+                                      ?.clientLocationId ||
+                                      ""
+                                  ).trim()
+                                );
+
+                              const locationsLoaded =
+                                hasScheduleClientDeliveryLocationsLoaded(
+                                  appointment
+                                    .row
+                                    ?.clientId
+                                );
+
+                              return (
+                                <article
+                                  key={
+                                    appointment.key
+                                  }
+                                  style={{
+                                    padding:
+                                      "15px",
+                                    borderRadius:
+                                      "19px",
+                                    border:
+                                      "1px solid rgba(167,127,96,0.28)",
+                                    background:
+                                      "#ffffff",
+                                    boxShadow:
+                                      "0 8px 22px rgba(75,46,31,0.07)",
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      display:
+                                        "flex",
+                                      justifyContent:
+                                        "space-between",
+                                      gap:
+                                        "10px",
+                                      marginBottom:
+                                        "11px",
+                                    }}
+                                  >
+                                    <strong
+                                      style={{
+                                        color:
+                                          "#4b2e1f",
+                                        fontSize:
+                                          "15px",
+                                      }}
+                                    >
+                                      {appointment
+                                        .members?.[0]
+                                        ?.serviceTime ||
+                                        appointment
+                                          .row
+                                          ?.serviceTime ||
+                                        "-"}
+                                    </strong>
+
+                                    <span
+                                      style={{
+                                        padding:
+                                          "4px 9px",
+                                        borderRadius:
+                                          "999px",
+                                        background:
+                                          "#efe0d3",
+                                        color:
+                                          "#674a39",
+                                        fontSize:
+                                          "10px",
+                                        fontWeight:
+                                          "900",
+                                      }}
+                                    >
+                                      {appointment
+                                        .members
+                                        .length}{" "}
+                                      {appointment
+                                        .members
+                                        .length ===
+                                      1
+                                        ? "عميلة"
+                                        : "عميلات"}
+                                    </span>
+                                  </div>
+
+                                  <div
+                                    style={{
+                                      display:
+                                        "grid",
+                                      gap:
+                                        "10px",
+                                    }}
+                                  >
+                                    {appointment.members.map(
+                                      (
+                                        member,
+                                        memberIndex
+                                      ) => (
+                                        <div
+                                          key={`${appointment.key}-${member.role}-${member.extraClientIndex ?? memberIndex}`}
+                                          style={{
+                                            padding:
+                                              "11px",
+                                            borderRadius:
+                                              "14px",
+                                            background:
+                                              "#faf5f0",
+                                            border:
+                                              "1px solid rgba(183,151,124,0.20)",
+                                          }}
+                                        >
+                                          <div
+                                            style={{
+                                              color:
+                                                "#3f2b21",
+                                              fontSize:
+                                                "14px",
+                                              fontWeight:
+                                                "950",
+                                              marginBottom:
+                                                "6px",
+                                            }}
+                                          >
+                                            {member.name ||
+                                              "العميلة غير محددة"}
+                                          </div>
+
+                                          <div
+                                            style={{
+                                              color:
+                                                "#745541",
+                                              fontSize:
+                                                "11px",
+                                              fontWeight:
+                                                "800",
+                                              lineHeight:
+                                                1.8,
+                                            }}
+                                          >
+                                            الجوال:{" "}
+                                            {member.phone ||
+                                              "-"}
+                                            <br />
+
+                                            الأخصائية:{" "}
+                                            {member.therapist ||
+                                              "-"}
+                                            <br />
+
+                                            الخدمة:{" "}
+                                            {member.service ||
+                                              "-"}
+                                            <br />
+
+                                            رقم الخدمة:{" "}
+                                            {member.order ||
+                                              "-"}
+                                            <br />
+
+                                            الوقت:{" "}
+                                            {member.serviceTime ||
+                                              "-"}
+                                          </div>
+
+                                          {String(
+                                            member.note ||
+                                              ""
+                                          ).trim() ? (
+                                            <div
+                                              style={{
+                                                marginTop:
+                                                  "7px",
+                                                padding:
+                                                  "7px 9px",
+                                                borderRadius:
+                                                  "10px",
+                                                background:
+                                                  "#f2e5d9",
+                                                color:
+                                                  "#654938",
+                                                fontSize:
+                                                  "10px",
+                                                fontWeight:
+                                                  "850",
+                                              }}
+                                            >
+                                              ملاحظة:{" "}
+                                              {
+                                                member.note
+                                              }
+                                            </div>
+                                          ) : null}
+                                        </div>
+                                      )
+                                    )}
+                                  </div>
+
+                                  <div
+                                    style={{
+                                      marginTop:
+                                        "11px",
+                                      padding:
+                                        "11px",
+                                      borderRadius:
+                                        "14px",
+                                      background:
+                                        location
+                                          ? "#eef2e8"
+                                          : "#fff0dc",
+                                      border:
+                                        location
+                                          ? "1px solid rgba(101,133,88,0.24)"
+                                          : "1px solid rgba(193,127,55,0.28)",
+                                      color:
+                                        "#5c4434",
+                                      fontSize:
+                                        "11px",
+                                      fontWeight:
+                                        "850",
+                                      lineHeight:
+                                        1.8,
+                                    }}
+                                  >
+                                    {!hasSelectedLocation ? (
+                                      <strong
+                                        style={{
+                                          color:
+                                            "#a55d27",
+                                        }}
+                                      >
+                                        ⚠ الموقع غير محدد
+                                      </strong>
+                                    ) : !locationsLoaded ? (
+                                      <strong>
+                                        جاري تحميل الموقع...
+                                      </strong>
+                                    ) : !location ? (
+                                      <strong
+                                        style={{
+                                          color:
+                                            "#a55d27",
+                                        }}
+                                      >
+                                        ⚠ الموقع المحفوظ غير متاح
+                                      </strong>
+                                    ) : (
+                                      <>
+                                        <strong>
+                                          {location.name}
+                                        </strong>
+                                        <br />
+
+                                        الحي:{" "}
+                                        {location.district ||
+                                          appointment
+                                            .row
+                                            ?.district ||
+                                          "-"}
+                                        <br />
+
+                                        رقم المبنى:{" "}
+                                        {location.buildingNumber ||
+                                          "-"}
+                                        <br />
+
+                                        الدور:{" "}
+                                        {location.floor ||
+                                          "-"}
+                                        <br />
+
+                                        الشقة:{" "}
+                                        {location.apartment ||
+                                          "-"}
+                                      </>
+                                    )}
+                                  </div>
+                                </article>
+                              );
+                            }
+                          )}
+                        </div>
+                      )}
+                    </section>
+                  );
+                }
+              )}
+            </div>
+          )}
         </div>
       </div>
     );
