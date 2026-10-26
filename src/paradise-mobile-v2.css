@@ -1,0 +1,2606 @@
+/* ========================================================================== */
+/* PARADISE SPA — MOBILE V2                                                  */
+/*                                                                            */
+/* هذا الملف مخصص لواجهة الجوال فقط.                                         */
+/* لا يغيّر واجهة الكمبيوتر لأن كل قواعد العرض محصورة تحت 820px.            */
+/*                                                                            */
+/* الترتيب:                                                                  */
+/* 01. Tokens / Reset                                                        */
+/* 02. Login / Welcome / Menu                                                */
+/* 03. Global Mobile Shell                                                   */
+/* 04. Header / Search / Bottom Navigation                                   */
+/* 05. Shared Mobile Components                                              */
+/* 06. Dashboard                                                             */
+/* 07. Appointments                                                          */
+/* 08. Delivery                                                              */
+/* 09. Clients                                                               */
+/* 10. Client Profile                                                        */
+/* 11. Loyalty                                                               */
+/* 12. Gift Clients                                                          */
+/* 13. Referrals / Potential / Inactive                                      */
+/* 14. Invoices                                                              */
+/* 15. Purchases                                                             */
+/* 16. Finance                                                               */
+/* 17. Income / Expenses                                                     */
+/* 18. Government Reports                                                   */
+/* 19. Available Appointments                                                */
+/* 20. Gift Card Editor                                                      */
+/* 21. Welcome Boards                                                        */
+/* 22. Settings                                                              */
+/* 23. Modals / Bottom Sheets                                                */
+/* 24. Small Phones / Landscape / Accessibility                              */
+/* ========================================================================== */
+
+/* Mobile-only UI stays completely hidden on laptop/desktop. */
+.paradise-mobile-v2-header,
+.paradise-mobile-v2-nav,
+.paradise-mobile-v2-more-overlay,
+.paradise-mobile-v2-only,
+.paradise-mobile-v2-appointments,
+.paradise-mobile-v2-client-list,
+.paradise-mobile-v2-card-list {
+  display: none;
+}
+
+@media (max-width: 820px) {
+  /* ======================================================================== */
+  /* 01. TOKENS / RESET                                                       */
+  /* ======================================================================== */
+
+  :root {
+    --pm-bg: #eee4d9;
+    --pm-bg-deep: #d8c3b1;
+    --pm-surface: #fffdf9;
+    --pm-surface-2: #f8efe7;
+    --pm-surface-3: #efe0d3;
+    --pm-text: #3f2b21;
+    --pm-text-soft: #856751;
+    --pm-text-faint: #a38672;
+    --pm-brown: #5a3c2d;
+    --pm-brown-2: #76513b;
+    --pm-brown-dark: #3b271e;
+    --pm-border: rgba(157, 117, 87, 0.25);
+    --pm-border-strong: rgba(126, 88, 62, 0.34);
+    --pm-shadow-sm: 0 7px 18px rgba(69, 43, 29, 0.08);
+    --pm-shadow: 0 14px 34px rgba(69, 43, 29, 0.12);
+    --pm-shadow-lg: 0 24px 60px rgba(50, 31, 21, 0.18);
+    --pm-radius-sm: 13px;
+    --pm-radius: 18px;
+    --pm-radius-lg: 24px;
+    --pm-control-height: 48px;
+    --pm-page-gap: 10px;
+    --pm-safe-top: env(safe-area-inset-top, 0px);
+    --pm-safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  html {
+    width: 100%;
+    max-width: 100%;
+    min-height: 100%;
+    overflow-x: hidden !important;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    background: var(--pm-bg) !important;
+  }
+
+  html body {
+    width: 100%;
+    max-width: 100%;
+    min-height: 100dvh;
+    margin: 0 !important;
+    overflow-x: hidden !important;
+    overscroll-behavior-x: none;
+    background:
+      linear-gradient(
+        180deg,
+        #f7f0e9 0%,
+        var(--pm-bg) 46%,
+        var(--pm-bg-deep) 100%
+      ) !important;
+    color: var(--pm-text) !important;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  #root {
+    width: 100%;
+    max-width: 100%;
+    min-height: 100dvh;
+    overflow-x: hidden !important;
+  }
+
+  html body *,
+  html body *::before,
+  html body *::after {
+    box-sizing: border-box;
+  }
+
+  html body button,
+  html body input,
+  html body select,
+  html body textarea {
+    font-family: Arial, sans-serif !important;
+  }
+
+  html body button,
+  html body [role="button"] {
+    touch-action: manipulation;
+  }
+
+  html body img,
+  html body canvas,
+  html body svg,
+  html body video {
+    max-width: 100%;
+  }
+
+  html body input,
+  html body select,
+  html body textarea {
+    font-size: 16px;
+  }
+
+  html body textarea {
+    resize: vertical;
+  }
+
+  html body .paradise-mobile-v2-only {
+    display: block !important;
+  }
+
+  html body .paradise-mobile-v2-flex {
+    display: flex !important;
+  }
+
+  html body .paradise-mobile-v2-grid {
+    display: grid !important;
+  }
+
+  html body .paradise-mobile-v2-hide-on-mobile,
+  html body .paradise-desktop-v2-only {
+    display: none !important;
+  }
+
+  html body .paradise-mobile-v2-scroll-lock {
+    overflow: hidden !important;
+  }
+
+  /* ======================================================================== */
+  /* 02. LOGIN / WELCOME / MENU                                               */
+  /* ======================================================================== */
+
+  html body .paradise-login-page,
+  html body .paradise-welcome-entry-page,
+  html body .paradise-menu-page {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 100dvh !important;
+    padding:
+      calc(var(--pm-safe-top) + 18px)
+      14px
+      calc(var(--pm-safe-bottom) + 18px) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    overflow-x: hidden !important;
+    background:
+      radial-gradient(circle at top, #fffaf3 0%, #eee4d8 52%, #d7c1ae 100%) !important;
+  }
+
+  html body .paradise-login-card,
+  html body .paradise-welcome-entry-card,
+  html body .paradise-menu-card {
+    width: min(100%, 440px) !important;
+    max-width: 100% !important;
+    min-height: 0 !important;
+    margin: 0 auto !important;
+    padding: 25px 17px !important;
+    border-radius: 27px !important;
+    border: 1px solid rgba(255,255,255,0.82) !important;
+    background: rgba(255,253,249,0.94) !important;
+    box-shadow: var(--pm-shadow-lg) !important;
+    backdrop-filter: blur(14px) !important;
+    -webkit-backdrop-filter: blur(14px) !important;
+  }
+
+  html body .paradise-login-logo,
+  html body .paradise-welcome-entry-logo,
+  html body .paradise-menu-logo {
+    width: min(42vw, 150px) !important;
+    height: auto !important;
+    margin: 0 auto 22px !important;
+    display: block !important;
+  }
+
+  html body .paradise-login-fields,
+  html body .paradise-menu-buttons {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  html body .paradise-login-input {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 50px !important;
+    margin: 0 !important;
+    padding: 0 14px !important;
+    border: 1px solid var(--pm-border) !important;
+    border-radius: 15px !important;
+    background: #fffdf9 !important;
+    color: var(--pm-text) !important;
+    font-size: 16px !important;
+  }
+
+  html body .paradise-login-button,
+  html body .paradise-welcome-entry-button,
+  html body .paradise-menu-button {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 50px !important;
+    margin: 0 !important;
+    padding: 10px 14px !important;
+    border-radius: 16px !important;
+    font-size: 15px !important;
+    font-weight: 900 !important;
+  }
+
+  html body .paradise-menu-title {
+    margin: 0 0 18px !important;
+    font-size: 24px !important;
+    line-height: 1.25 !important;
+  }
+
+  /* ======================================================================== */
+  /* 03. GLOBAL MOBILE SHELL                                                  */
+  /* ======================================================================== */
+
+  html body .paradise-global-sidebar {
+    display: none !important;
+  }
+
+  html body .paradise-global-page {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 100dvh !important;
+    margin: 0 !important;
+    padding:
+      calc(var(--pm-safe-top) + 127px)
+      8px
+      calc(var(--pm-safe-bottom) + 94px) !important;
+    background: transparent !important;
+    overflow-x: hidden !important;
+  }
+
+  html body .paradise-unified-panel {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: calc(100dvh - 220px) !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    overflow: visible !important;
+  }
+
+  html body .paradise-unified-panel > div,
+  html body .paradise-unified-panel > div > div {
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Remove desktop page backgrounds/paddings, keep the content itself. */
+  html body .paradise-dashboard-page,
+  html body .paradise-delivery-page,
+  html body .paradise-appointments-page,
+  html body .paradise-clients-page,
+  html body .paradise-loyalty-page,
+  html body .paradise-gift-page,
+  html body .paradise-referrals-page,
+  html body .paradise-potential-page,
+  html body .paradise-inactive-page,
+  html body .paradise-invoices-page,
+  html body .paradise-purchases-page,
+  html body .paradise-finance-page,
+  html body .paradise-income-expenses-page,
+  html body .paradise-available-page,
+  html body .paradise-gift-cards-page,
+  html body .paradise-welcome-page,
+  html body .paradise-settings-page,
+  html body .page-container {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    overflow-x: hidden !important;
+  }
+
+  html body .paradise-appointments-shell,
+  html body .paradise-clients-shell,
+  html body .paradise-loyalty-shell,
+  html body .paradise-inactive-shell,
+  html body .paradise-invoices-shell,
+  html body .paradise-finance-shell,
+  html body .paradise-income-expenses-shell,
+  html body .paradise-gift-cards-shell,
+  html body .paradise-welcome-shell,
+  html body .paradise-settings-surface {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 12px !important;
+    border: 1px solid rgba(255,255,255,0.76) !important;
+    border-radius: 23px !important;
+    background: rgba(255,253,249,0.90) !important;
+    box-shadow: var(--pm-shadow) !important;
+    overflow: visible !important;
+  }
+
+  html body .paradise-unified-panel h1 {
+    font-size: clamp(23px, 7vw, 29px) !important;
+    line-height: 1.2 !important;
+  }
+
+  html body .paradise-unified-panel h2 {
+    font-size: clamp(20px, 6vw, 26px) !important;
+    line-height: 1.25 !important;
+  }
+
+  html body .paradise-unified-panel h3 {
+    font-size: clamp(16px, 5vw, 20px) !important;
+    line-height: 1.3 !important;
+  }
+
+  html body .paradise-unified-panel input,
+  html body .paradise-unified-panel select,
+  html body .paradise-unified-panel textarea {
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* ======================================================================== */
+  /* 04. HEADER / SEARCH / BOTTOM NAVIGATION                                  */
+  /* ======================================================================== */
+
+  html body .paradise-mobile-v2-header {
+    position: fixed !important;
+    top: calc(var(--pm-safe-top) + 7px) !important;
+    left: 9px !important;
+    right: 9px !important;
+    z-index: 9800 !important;
+    min-height: 54px !important;
+    padding: 7px 9px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 9px !important;
+    direction: rtl !important;
+    border: 1px solid rgba(255,255,255,0.82) !important;
+    border-radius: 21px !important;
+    background:
+      linear-gradient(145deg, rgba(255,253,249,0.98), rgba(240,226,214,0.96)) !important;
+    box-shadow:
+      0 12px 30px rgba(67,42,29,0.14),
+      inset 0 1px 0 rgba(255,255,255,0.82) !important;
+    backdrop-filter: blur(18px) !important;
+    -webkit-backdrop-filter: blur(18px) !important;
+  }
+
+  .paradise-mobile-v2-brand {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    flex: 1;
+  }
+
+  .paradise-mobile-v2-brand-mark {
+    width: 39px;
+    min-width: 39px;
+    height: 39px;
+    display: grid;
+    place-items: center;
+    border-radius: 14px;
+    background: linear-gradient(145deg, var(--pm-brown-dark), #89644b);
+    color: #fffaf5;
+    font-size: 18px;
+    font-weight: 950;
+    line-height: 1;
+    box-shadow: 0 8px 18px rgba(65,39,26,0.18);
+  }
+
+  .paradise-mobile-v2-brand-copy {
+    min-width: 0;
+    display: grid;
+    gap: 1px;
+  }
+
+  .paradise-mobile-v2-brand-name {
+    color: #98745d;
+    font-size: 8px;
+    line-height: 1.1;
+    font-weight: 900;
+    letter-spacing: 1.1px;
+    white-space: nowrap;
+  }
+
+  .paradise-mobile-v2-screen-title {
+    max-width: min(47vw, 190px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--pm-text);
+    font-size: 15px;
+    line-height: 1.25;
+    font-weight: 950;
+  }
+
+  .paradise-mobile-v2-add-client {
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(102,69,50,0.14);
+    border-radius: 14px;
+    background: linear-gradient(145deg, #5b3d2e, #866047);
+    color: #fffaf5;
+    font-size: 23px;
+    line-height: 1;
+    font-weight: 500;
+    box-shadow: 0 8px 18px rgba(75,46,31,0.16);
+    cursor: pointer;
+  }
+
+  .paradise-mobile-v2-add-client:active {
+    transform: scale(0.96);
+  }
+
+  /* Keep the existing global search logic, but turn its desktop topbar into
+     a dedicated mobile search row. */
+  html body .paradise-global-topbar {
+    position: fixed !important;
+    top: calc(var(--pm-safe-top) + 69px) !important;
+    left: 9px !important;
+    right: 9px !important;
+    width: auto !important;
+    height: 47px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    display: block !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    z-index: 9750 !important;
+    pointer-events: none !important;
+  }
+
+  html body .paradise-global-topbar .paradise-topbar-search-slot {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    display: block !important;
+    pointer-events: auto !important;
+  }
+
+  html body .paradise-global-topbar .paradise-topbar-search-slot > div {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: 47px !important;
+    border: 1px solid var(--pm-border) !important;
+    border-radius: 18px !important;
+    background: rgba(255,253,249,0.97) !important;
+    box-shadow: 0 9px 24px rgba(67,42,29,0.09) !important;
+    backdrop-filter: blur(14px) !important;
+    -webkit-backdrop-filter: blur(14px) !important;
+  }
+
+  html body .paradise-global-topbar .paradise-topbar-search-slot input {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    height: 47px !important;
+    min-height: 47px !important;
+    padding: 0 15px !important;
+    border-radius: 18px !important;
+    font-size: 16px !important;
+    font-weight: 800 !important;
+    text-align: right !important;
+  }
+
+  html body .paradise-global-topbar .paradise-topbar-add-client,
+  html body .paradise-global-topbar .paradise-topbar-date,
+  html body .paradise-global-topbar .paradise-topbar-account {
+    display: none !important;
+  }
+
+  html body .paradise-dashboard-search-result {
+    width: 100% !important;
+    min-height: 64px !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 2px !important;
+    padding: 10px 13px !important;
+    text-align: right !important;
+    direction: rtl !important;
+    border-radius: 14px !important;
+  }
+
+  .paradise-search-result-name {
+    color: var(--pm-text);
+    font-size: 15px;
+    font-weight: 950;
+  }
+
+  .paradise-search-result-address {
+    color: var(--pm-text-soft);
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .paradise-search-result-phone {
+    color: #5f4434;
+    font-size: 13px;
+    font-weight: 900;
+    text-align: right;
+  }
+
+  html body .paradise-mobile-v2-nav {
+    position: fixed !important;
+    left: 8px !important;
+    right: 8px !important;
+    bottom: calc(var(--pm-safe-bottom) + 7px) !important;
+    z-index: 9900 !important;
+    min-height: 67px !important;
+    padding: 6px !important;
+    display: flex !important;
+    align-items: stretch !important;
+    gap: 3px !important;
+    direction: rtl !important;
+    border: 1px solid rgba(255,255,255,0.82) !important;
+    border-radius: 23px !important;
+    background: rgba(255,252,247,0.97) !important;
+    box-shadow: 0 14px 42px rgba(54,34,23,0.20) !important;
+    backdrop-filter: blur(20px) !important;
+    -webkit-backdrop-filter: blur(20px) !important;
+  }
+
+  .paradise-mobile-v2-nav-button {
+    min-width: 0;
+    min-height: 53px;
+    flex: 1 1 0;
+    padding: 5px 2px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    border: 0;
+    border-radius: 17px;
+    background: transparent;
+    color: #81614e;
+    cursor: pointer;
+    transition: transform 0.16s ease, background 0.18s ease, color 0.18s ease;
+  }
+
+  .paradise-mobile-v2-nav-button:active {
+    transform: scale(0.96);
+  }
+
+  .paradise-mobile-v2-nav-button-active {
+    background: linear-gradient(145deg, #503427, #795741);
+    color: #fffaf6;
+    box-shadow: 0 7px 18px rgba(70,44,30,0.18);
+  }
+
+  .paradise-mobile-v2-nav-icon {
+    min-height: 20px;
+    display: grid;
+    place-items: center;
+    font-size: 18px;
+    line-height: 1;
+    font-weight: 950;
+  }
+
+  .paradise-mobile-v2-nav-label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10px;
+    line-height: 1.1;
+    font-weight: 900;
+  }
+
+  html body .paradise-mobile-v2-more-overlay {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 12000 !important;
+    display: flex !important;
+    align-items: flex-end !important;
+    background: rgba(43,27,18,0.46) !important;
+    backdrop-filter: blur(6px) !important;
+    -webkit-backdrop-filter: blur(6px) !important;
+    direction: rtl !important;
+  }
+
+  .paradise-mobile-v2-more-sheet {
+    width: 100%;
+    max-height: 82dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 9px 14px calc(var(--pm-safe-bottom) + 18px);
+    border: 1px solid rgba(255,255,255,0.76);
+    border-bottom: 0;
+    border-radius: 29px 29px 0 0;
+    background: linear-gradient(180deg, #fffdf9 0%, #f3e6da 100%);
+    box-shadow: 0 -22px 60px rgba(48,29,19,0.23);
+  }
+
+  .paradise-mobile-v2-sheet-handle {
+    width: 43px;
+    height: 5px;
+    margin: 2px auto 13px;
+    border-radius: 999px;
+    background: #cdb6a4;
+  }
+
+  .paradise-mobile-v2-more-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 13px;
+  }
+
+  .paradise-mobile-v2-more-user {
+    min-width: 0;
+  }
+
+  .paradise-mobile-v2-more-eyebrow {
+    margin-bottom: 2px;
+    color: #98745d;
+    font-size: 10px;
+    font-weight: 900;
+  }
+
+  .paradise-mobile-v2-more-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #3e291f;
+    font-size: 18px;
+    font-weight: 950;
+  }
+
+  .paradise-mobile-v2-more-close {
+    width: 42px;
+    min-width: 42px;
+    height: 42px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 1px solid rgba(144,105,77,0.20);
+    border-radius: 14px;
+    background: #f1e3d7;
+    color: #513629;
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .paradise-mobile-v2-utilities {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0,1fr));
+    gap: 8px;
+    margin-bottom: 17px;
+  }
+
+  .paradise-mobile-v2-utility,
+  .paradise-mobile-v2-utility-date {
+    width: 100%;
+    min-width: 0;
+    min-height: 48px;
+    margin: 0;
+    padding: 8px 11px;
+    border: 1px solid rgba(156,116,87,0.23);
+    border-radius: 15px;
+    background: #fffaf5;
+    color: #51372a;
+    font-size: 13px;
+    font-weight: 900;
+    cursor: pointer;
+  }
+
+  .paradise-mobile-v2-utility-date {
+    display: grid;
+    gap: 4px;
+    cursor: default;
+  }
+
+  .paradise-mobile-v2-utility-date span {
+    color: #98745d;
+    font-size: 9px;
+    font-weight: 900;
+  }
+
+  .paradise-mobile-v2-utility-date input {
+    width: 100%;
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: #4b3327;
+    font-size: 13px;
+    font-weight: 900;
+  }
+
+  .paradise-mobile-v2-utility-logout {
+    grid-column: 1 / -1;
+    background: linear-gradient(145deg, #5b3b2c, #7b5842);
+    color: #fffaf5;
+  }
+
+  .paradise-mobile-v2-menu-section {
+    margin-bottom: 12px;
+  }
+
+  .paradise-mobile-v2-menu-title {
+    margin: 0 2px 7px;
+    color: #8d6952;
+    font-size: 11px;
+    font-weight: 950;
+  }
+
+  .paradise-mobile-v2-menu-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0,1fr));
+    gap: 7px;
+  }
+
+  .paradise-mobile-v2-menu-item {
+    width: 100%;
+    min-width: 0;
+    min-height: 48px;
+    padding: 9px 10px;
+    border: 1px solid rgba(156,116,87,0.21);
+    border-radius: 15px;
+    background: rgba(255,252,247,0.95);
+    color: #51372a;
+    font-size: 12px;
+    font-weight: 900;
+    cursor: pointer;
+  }
+
+  .paradise-mobile-v2-menu-item-active {
+    border-color: rgba(77,50,37,0.20);
+    background: linear-gradient(145deg, #533629, #7b5841);
+    color: #fffaf5;
+    box-shadow: 0 8px 18px rgba(70,43,29,0.16);
+  }
+
+  /* ======================================================================== */
+  /* 05. SHARED MOBILE COMPONENTS                                             */
+  /* ======================================================================== */
+
+  .paradise-mobile-v2-section,
+  .paradise-mobile-v2-card,
+  .paradise-mobile-v2-surface {
+    width: 100%;
+    min-width: 0;
+    border: 1px solid var(--pm-border);
+    border-radius: var(--pm-radius);
+    background: rgba(255,253,249,0.96);
+    box-shadow: var(--pm-shadow-sm);
+  }
+
+  .paradise-mobile-v2-section {
+    padding: 13px;
+  }
+
+  .paradise-mobile-v2-card {
+    padding: 13px;
+  }
+
+  .paradise-mobile-v2-stack {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .paradise-mobile-v2-two-column {
+    display: grid;
+    grid-template-columns: repeat(2,minmax(0,1fr));
+    gap: 8px;
+  }
+
+  .paradise-mobile-v2-page-title {
+    margin: 0;
+    color: var(--pm-text);
+    font-size: 23px;
+    line-height: 1.22;
+    font-weight: 950;
+  }
+
+  .paradise-mobile-v2-page-subtitle {
+    margin: 4px 0 0;
+    color: var(--pm-text-soft);
+    font-size: 13px;
+    line-height: 1.6;
+    font-weight: 750;
+  }
+
+  .paradise-mobile-v2-section-title {
+    margin: 0;
+    color: var(--pm-text);
+    font-size: 17px;
+    line-height: 1.3;
+    font-weight: 950;
+  }
+
+  .paradise-mobile-v2-muted {
+    color: var(--pm-text-soft);
+    font-size: 12px;
+    line-height: 1.5;
+    font-weight: 750;
+  }
+
+  .paradise-mobile-v2-button,
+  .paradise-mobile-v2-action {
+    min-height: 48px;
+    padding: 9px 13px;
+    border: 1px solid var(--pm-border);
+    border-radius: 15px;
+    background: #fffaf5;
+    color: var(--pm-text);
+    font-size: 14px;
+    font-weight: 900;
+    cursor: pointer;
+  }
+
+  .paradise-mobile-v2-button-primary,
+  .paradise-mobile-v2-action-primary {
+    border-color: rgba(79,51,38,0.18);
+    background: linear-gradient(145deg, #4e3327, #7b5841);
+    color: #fffaf5;
+    box-shadow: 0 8px 18px rgba(69,43,29,0.15);
+  }
+
+  .paradise-mobile-v2-button-danger {
+    border-color: rgba(133,68,53,0.22);
+    background: #f7e6e2;
+    color: #7e3d31;
+  }
+
+  .paradise-mobile-v2-field {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .paradise-mobile-v2-field-label {
+    color: var(--pm-text-soft);
+    font-size: 11px;
+    font-weight: 900;
+  }
+
+  .paradise-mobile-v2-field input,
+  .paradise-mobile-v2-field select,
+  .paradise-mobile-v2-field textarea {
+    width: 100%;
+    min-width: 0;
+    min-height: 48px;
+    padding: 10px 12px;
+    border: 1px solid var(--pm-border);
+    border-radius: 14px;
+    outline: 0;
+    background: #fffdf9;
+    color: var(--pm-text);
+    font-size: 16px;
+    font-weight: 750;
+  }
+
+  .paradise-mobile-v2-chip-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .paradise-mobile-v2-chip {
+    min-height: 30px;
+    padding: 5px 9px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--pm-border);
+    border-radius: 999px;
+    background: #f5e9de;
+    color: #694936;
+    font-size: 11px;
+    font-weight: 900;
+  }
+
+  /* Table-to-card utility used by App.js Mobile V2. */
+  html body table.paradise-mobile-card-table,
+  html body .paradise-mobile-card-table table {
+    width: 100% !important;
+    min-width: 0 !important;
+    display: block !important;
+    border: 0 !important;
+    background: transparent !important;
+  }
+
+  html body table.paradise-mobile-card-table thead,
+  html body .paradise-mobile-card-table table thead {
+    display: none !important;
+  }
+
+  html body table.paradise-mobile-card-table tbody,
+  html body .paradise-mobile-card-table table tbody {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  html body table.paradise-mobile-card-table tr,
+  html body .paradise-mobile-card-table table tr {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 0 !important;
+    overflow: hidden !important;
+    border: 1px solid var(--pm-border) !important;
+    border-radius: 18px !important;
+    background: rgba(255,253,249,0.97) !important;
+    box-shadow: var(--pm-shadow-sm) !important;
+  }
+
+  html body table.paradise-mobile-card-table td,
+  html body .paradise-mobile-card-table table td {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    min-height: 43px !important;
+    padding: 9px 11px !important;
+    display: grid !important;
+    grid-template-columns: minmax(88px, 34%) minmax(0, 1fr) !important;
+    align-items: center !important;
+    gap: 9px !important;
+    border: 0 !important;
+    border-bottom: 1px solid rgba(157,117,87,0.13) !important;
+    white-space: normal !important;
+    text-align: right !important;
+    overflow: visible !important;
+  }
+
+  html body table.paradise-mobile-card-table td:last-child,
+  html body .paradise-mobile-card-table table td:last-child {
+    border-bottom: 0 !important;
+  }
+
+  html body table.paradise-mobile-card-table td::before,
+  html body .paradise-mobile-card-table table td::before {
+    content: attr(data-mobile-label);
+    color: var(--pm-text-soft);
+    font-size: 11px;
+    font-weight: 900;
+    line-height: 1.25;
+  }
+
+  html body table.paradise-mobile-card-table td[data-mobile-hide="true"],
+  html body .paradise-mobile-card-table table td[data-mobile-hide="true"] {
+    display: none !important;
+  }
+
+  html body table.paradise-mobile-card-table td[data-mobile-full="true"],
+  html body .paradise-mobile-card-table table td[data-mobile-full="true"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  html body table.paradise-mobile-card-table td input,
+  html body table.paradise-mobile-card-table td select,
+  html body table.paradise-mobile-card-table td textarea,
+  html body .paradise-mobile-card-table table td input,
+  html body .paradise-mobile-card-table table td select,
+  html body .paradise-mobile-card-table table td textarea {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 43px !important;
+    font-size: 15px !important;
+  }
+
+  html body table.paradise-mobile-card-table td button,
+  html body .paradise-mobile-card-table table td button {
+    max-width: 100% !important;
+    min-height: 42px !important;
+  }
+
+  /* Generic scroll table for financial / analytical tables that should not be
+     converted to cards. */
+  .paradise-mobile-v2-table-scroll {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto !important;
+    overflow-y: visible;
+    border: 1px solid var(--pm-border);
+    border-radius: 16px;
+    background: #fffdf9;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .paradise-mobile-v2-table-scroll table {
+    margin: 0 !important;
+  }
+
+  /* ======================================================================== */
+  /* 06. DASHBOARD                                                            */
+  /* ======================================================================== */
+
+  html body .paradise-dashboard-page {
+    color: var(--pm-text) !important;
+  }
+
+  html body .paradise-dashboard-page > div:first-child {
+    margin-bottom: 12px !important;
+  }
+
+  html body .paradise-dashboard-appointments {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 11px !important;
+  }
+
+  html body .paradise-dashboard-appointments > div {
+    width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 13px !important;
+    border-radius: 19px !important;
+    border: 1px solid var(--pm-border) !important;
+    background: rgba(255,253,249,0.96) !important;
+    box-shadow: var(--pm-shadow-sm) !important;
+  }
+
+  html body .paradise-dashboard-appointments button {
+    min-height: 44px !important;
+    border-radius: 14px !important;
+  }
+
+  /* ======================================================================== */
+  /* 07. APPOINTMENTS                                                         */
+  /* ======================================================================== */
+
+  html body .paradise-appointments-shell {
+    padding: 10px !important;
+  }
+
+  html body .paradise-schedule-format-toolbar {
+    width: 100% !important;
+    max-width: 100% !important;
+    display: flex !important;
+    gap: 6px !important;
+    flex-wrap: wrap !important;
+    overflow: visible !important;
+    padding: 8px !important;
+    border-radius: 15px !important;
+  }
+
+  html body .paradise-schedule-format-toolbar button,
+  html body .paradise-schedule-format-toolbar select,
+  html body .paradise-schedule-format-toolbar input {
+    min-height: 42px !important;
+    font-size: 13px !important;
+  }
+
+  html body .paradise-schedule-settings {
+    width: 100% !important;
+    max-width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 9px !important;
+  }
+
+  html body .paradise-schedule-table-scroll {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    border-radius: 16px !important;
+  }
+
+  html body .paradise-schedule-table {
+    font-size: 13px !important;
+  }
+
+  /* New dedicated appointment cards rendered by App.js. */
+  html body .paradise-mobile-v2-appointments {
+    width: 100%;
+    display: grid !important;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .paradise-mobile-v2-appointment-card {
+    width: 100%;
+    overflow: hidden;
+    border: 1px solid var(--pm-border);
+    border-radius: 20px;
+    background: rgba(255,253,249,0.98);
+    box-shadow: var(--pm-shadow-sm);
+  }
+
+  .paradise-mobile-v2-appointment-card-completed {
+    opacity: 0.82;
+  }
+
+  .paradise-mobile-v2-appointment-head {
+    padding: 12px 13px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 9px;
+    border-bottom: 1px solid rgba(157,117,87,0.14);
+    background: linear-gradient(145deg, #f6e9dd, #fffaf5);
+  }
+
+  .paradise-mobile-v2-appointment-time {
+    color: var(--pm-text);
+    font-size: 19px;
+    line-height: 1;
+    font-weight: 950;
+    direction: ltr;
+  }
+
+  .paradise-mobile-v2-appointment-status {
+    max-width: 55%;
+    padding: 6px 9px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    border: 1px solid var(--pm-border);
+    border-radius: 999px;
+    background: #f2e3d7;
+    color: #664735;
+    font-size: 11px;
+    font-weight: 950;
+  }
+
+  .paradise-mobile-v2-appointment-body {
+    padding: 5px 13px 9px;
+  }
+
+  .paradise-mobile-v2-appointment-field {
+    min-height: 40px;
+    padding: 7px 0;
+    display: grid;
+    grid-template-columns: 92px minmax(0,1fr);
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid rgba(157,117,87,0.11);
+  }
+
+  .paradise-mobile-v2-appointment-field:last-child {
+    border-bottom: 0;
+  }
+
+  .paradise-mobile-v2-appointment-field-label {
+    color: var(--pm-text-soft);
+    font-size: 11px;
+    font-weight: 900;
+  }
+
+  .paradise-mobile-v2-appointment-field-value {
+    min-width: 0;
+    color: var(--pm-text);
+    font-size: 14px;
+    line-height: 1.5;
+    font-weight: 850;
+    overflow-wrap: anywhere;
+  }
+
+  .paradise-mobile-v2-appointment-note {
+    margin: 8px 13px 11px;
+    padding: 10px 11px;
+    border-radius: 13px;
+    background: #f5eadf;
+    color: #654735;
+    font-size: 13px;
+    line-height: 1.55;
+    font-weight: 800;
+  }
+
+  .paradise-mobile-v2-appointment-actions {
+    padding: 0 13px 13px;
+    display: grid;
+    grid-template-columns: repeat(2,minmax(0,1fr));
+    gap: 7px;
+  }
+
+  .paradise-mobile-v2-appointment-actions button {
+    width: 100%;
+    min-width: 0;
+    min-height: 46px;
+    margin: 0;
+    border-radius: 14px;
+    font-size: 13px;
+    font-weight: 900;
+  }
+
+  .paradise-mobile-v2-household {
+    margin: 0 13px 12px;
+    padding: 10px;
+    display: grid;
+    gap: 8px;
+    border: 1px solid rgba(157,117,87,0.17);
+    border-radius: 14px;
+    background: #fbf5ef;
+  }
+
+  /* ======================================================================== */
+  /* 08. DELIVERY                                                             */
+  /* ======================================================================== */
+
+  html body .paradise-delivery-page {
+    overflow: visible !important;
+  }
+
+  html body .paradise-delivery-page > div {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 12px !important;
+    border-radius: 22px !important;
+    background: rgba(255,253,249,0.92) !important;
+    box-shadow: var(--pm-shadow) !important;
+  }
+
+  html body .paradise-delivery-driver-filter {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 48px !important;
+    font-size: 15px !important;
+    border-radius: 14px !important;
+  }
+
+  html body .paradise-delivery-page button {
+    min-height: 44px !important;
+  }
+
+  html body .paradise-delivery-page img {
+    height: auto !important;
+    object-fit: cover !important;
+    border-radius: 14px !important;
+  }
+
+  .paradise-mobile-v2-delivery-list {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .paradise-mobile-v2-delivery-card {
+    width: 100%;
+    padding: 13px;
+    border: 1px solid var(--pm-border);
+    border-radius: 20px;
+    background: rgba(255,253,249,0.98);
+    box-shadow: var(--pm-shadow-sm);
+  }
+
+  .paradise-mobile-v2-delivery-actions {
+    display: grid;
+    grid-template-columns: repeat(2,minmax(0,1fr));
+    gap: 7px;
+  }
+
+  .paradise-mobile-v2-delivery-actions button,
+  .paradise-mobile-v2-delivery-actions a {
+    min-height: 47px;
+    padding: 9px 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 14px;
+    font-size: 13px;
+    font-weight: 900;
+    text-decoration: none;
+  }
+
+  /* ======================================================================== */
+  /* 09. CLIENTS                                                              */
+  /* ======================================================================== */
+
+  html body .paradise-clients-shell {
+    padding: 11px !important;
+  }
+
+  html body .paradise-clients-toolbar {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+    margin-bottom: 12px !important;
+  }
+
+  html body .paradise-clients-search,
+  html body .paradise-clients-sort {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    min-height: 48px !important;
+    margin: 0 !important;
+    font-size: 15px !important;
+  }
+
+  html body .paradise-clients-count {
+    position: static !important;
+    width: 100% !important;
+    min-height: 42px !important;
+    margin: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 13px !important;
+    font-size: 13px !important;
+  }
+
+  html body .paradise-clients-list {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: visible !important;
+  }
+
+  html body .paradise-clients-table {
+    width: 100%;
+  }
+
+  /* Dedicated client cards for App.js Mobile V2. */
+  html body .paradise-mobile-v2-client-list {
+    width: 100%;
+    display: grid !important;
+    grid-template-columns: 1fr;
+    gap: 9px;
+  }
+
+  .paradise-mobile-v2-client-card {
+    width: 100%;
+    padding: 13px;
+    display: grid;
+    gap: 9px;
+    border: 1px solid var(--pm-border);
+    border-radius: 18px;
+    background: rgba(255,253,249,0.98);
+    box-shadow: var(--pm-shadow-sm);
+  }
+
+  .paradise-mobile-v2-client-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 9px;
+  }
+
+  .paradise-mobile-v2-client-name {
+    min-width: 0;
+    color: var(--pm-text);
+    font-size: 17px;
+    line-height: 1.35;
+    font-weight: 950;
+  }
+
+  .paradise-mobile-v2-client-phone {
+    color: #6b4c3a;
+    font-size: 14px;
+    font-weight: 900;
+    direction: ltr;
+    text-align: right;
+  }
+
+  .paradise-mobile-v2-client-meta {
+    display: grid;
+    grid-template-columns: repeat(2,minmax(0,1fr));
+    gap: 7px;
+  }
+
+  .paradise-mobile-v2-client-meta > div {
+    min-width: 0;
+    padding: 8px 9px;
+    border-radius: 12px;
+    background: #f6ebe1;
+  }
+
+  .paradise-mobile-v2-client-meta-label {
+    color: var(--pm-text-soft);
+    font-size: 10px;
+    font-weight: 900;
+  }
+
+  .paradise-mobile-v2-client-meta-value {
+    margin-top: 2px;
+    color: var(--pm-text);
+    font-size: 13px;
+    font-weight: 900;
+    overflow-wrap: anywhere;
+  }
+
+  .paradise-mobile-v2-client-card-actions {
+    display: grid;
+    grid-template-columns: repeat(2,minmax(0,1fr));
+    gap: 7px;
+  }
+
+  .paradise-mobile-v2-client-card-actions button {
+    min-height: 45px;
+    margin: 0;
+    border-radius: 13px;
+    font-size: 13px;
+    font-weight: 900;
+  }
+
+  /* ======================================================================== */
+  /* 10. CLIENT PROFILE                                                       */
+  /* ======================================================================== */
+
+  html body .paradise-client-profile {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow-x: hidden !important;
+  }
+
+  html body .paradise-client-profile-shell {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 11px !important;
+    border-radius: 22px !important;
+    border: 1px solid rgba(255,255,255,0.75) !important;
+    background: rgba(255,253,249,0.94) !important;
+    box-shadow: var(--pm-shadow) !important;
+  }
+
+  html body .paradise-client-profile-header {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+    padding: 13px !important;
+    border-radius: 18px !important;
+  }
+
+  html body .paradise-client-profile-identity {
+    width: 100% !important;
+    min-width: 0 !important;
+    text-align: right !important;
+  }
+
+  html body .paradise-client-profile-summary {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+    gap: 7px !important;
+  }
+
+  html body .paradise-client-profile-summary > div {
+    min-width: 0 !important;
+    min-height: 72px !important;
+    padding: 10px !important;
+    border-radius: 14px !important;
+  }
+
+  html body .paradise-client-status-chips {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+  }
+
+  html body .paradise-client-profile-lower-grid {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 11px !important;
+  }
+
+  html body .paradise-client-profile-settings,
+  html body .paradise-client-profile-loyalty,
+  html body .paradise-client-profile-history,
+  html body .paradise-client-profile-locations,
+  html body .paradise-profile-referral-card {
+    width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 0 11px !important;
+    padding: 13px !important;
+    border-radius: 18px !important;
+    border: 1px solid var(--pm-border) !important;
+    background: rgba(255,253,249,0.96) !important;
+    box-shadow: var(--pm-shadow-sm) !important;
+  }
+
+  html body .paradise-client-profile-edit-form {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  html body .paradise-client-profile-edit-form input,
+  html body .paradise-client-profile-edit-form select,
+  html body .paradise-client-profile-edit-form textarea {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 48px !important;
+    margin: 0 !important;
+    font-size: 16px !important;
+  }
+
+  html body .paradise-client-profile-save-button {
+    width: 100% !important;
+    min-height: 49px !important;
+    margin: 0 !important;
+    border-radius: 15px !important;
+    font-size: 14px !important;
+  }
+
+  html body .paradise-client-profile-locations button {
+    min-height: 43px !important;
+    font-size: 13px !important;
+  }
+
+  html body .paradise-client-profile-locations img {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    max-height: 250px !important;
+    object-fit: cover !important;
+    border-radius: 14px !important;
+  }
+
+  html body .paradise-client-history-scroll {
+    width: 100% !important;
+    max-height: none !important;
+    overflow-x: hidden !important;
+    overflow-y: visible !important;
+  }
+
+  html body .paradise-client-history-content,
+  html body .paradise-client-history-body {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  html body .paradise-client-history-row {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 5px !important;
+    padding: 10px !important;
+    border-radius: 13px !important;
+  }
+
+  html body .paradise-client-note-card {
+    width: 100% !important;
+    padding: 11px !important;
+    border-radius: 14px !important;
+  }
+
+  html body .paradise-client-note-header {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    gap: 6px !important;
+  }
+
+  html body .paradise-client-note-text,
+  html body .paradise-client-note-meta {
+    font-size: 13px !important;
+    line-height: 1.6 !important;
+  }
+
+  html body .paradise-client-note-editor {
+    width: 100% !important;
+    min-height: 94px !important;
+    font-size: 15px !important;
+  }
+
+  html body .paradise-note-action,
+  html body .paradise-note-edit,
+  html body .paradise-note-delete,
+  html body .paradise-note-edit-cancel {
+    min-height: 40px !important;
+    padding: 7px 10px !important;
+    font-size: 12px !important;
+  }
+
+  html body .paradise-profile-referral-details {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 7px !important;
+  }
+
+  html body .paradise-profile-referral-open {
+    width: 100% !important;
+    min-height: 44px !important;
+  }
+
+  /* ======================================================================== */
+  /* 11. LOYALTY                                                              */
+  /* ======================================================================== */
+
+  html body .paradise-loyalty-shell {
+    padding: 11px !important;
+  }
+
+  html body .paradise-loyalty-toolbar {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  html body .paradise-loyalty-search,
+  html body .paradise-loyalty-visits-filter,
+  html body .paradise-loyalty-add-button {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 48px !important;
+    margin: 0 !important;
+    font-size: 14px !important;
+  }
+
+  html body .paradise-loyalty-add-form {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+    padding: 12px !important;
+    border-radius: 17px !important;
+  }
+
+  html body .paradise-loyalty-list {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 9px !important;
+  }
+
+  html body .paradise-loyalty-card,
+  html body .paradise-loyalty-item {
+    width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    border-radius: 18px !important;
+  }
+
+  html body .paradise-loyalty-row {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 6px !important;
+  }
+
+  html body .paradise-loyalty-expanded {
+    width: 100% !important;
+    padding: 10px !important;
+    border-radius: 14px !important;
+  }
+
+  html body .paradise-loyalty-list-header {
+    display: none !important;
+  }
+
+  /* ======================================================================== */
+  /* 12. GIFT CLIENTS                                                         */
+  /* ======================================================================== */
+
+  html body .paradise-gift-header,
+  html body .paradise-gift-toolbar {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  html body .paradise-gift-search,
+  html body .paradise-gift-status-filter,
+  html body .paradise-gift-add-button,
+  html body .paradise-gift-count {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 47px !important;
+    margin: 0 !important;
+    position: static !important;
+  }
+
+  html body .paradise-gift-form {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+    padding: 12px !important;
+    border-radius: 17px !important;
+  }
+
+  html body .paradise-gift-list {
+    width: 100% !important;
+    overflow: visible !important;
+  }
+
+  html body .paradise-gift-table {
+    width: 100% !important;
+  }
+
+  /* ======================================================================== */
+  /* 13. REFERRALS / POTENTIAL / INACTIVE                                     */
+  /* ======================================================================== */
+
+  html body .paradise-referrals-header,
+  html body .paradise-referrals-toolbar,
+  html body .paradise-potential-header,
+  html body .paradise-potential-toolbar,
+  html body .paradise-inactive-toolbar {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  html body .paradise-referrals-header-actions {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 7px !important;
+  }
+
+  html body .paradise-referrals-search,
+  html body .paradise-referrals-filter,
+  html body .paradise-referrals-count,
+  html body .paradise-potential-search,
+  html body .paradise-potential-filter,
+  html body .paradise-potential-count,
+  html body .paradise-inactive-search,
+  html body .paradise-inactive-days-select,
+  html body .paradise-inactive-tab-select,
+  html body .paradise-inactive-count,
+  html body .paradise-open-referral-modal {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    min-height: 47px !important;
+    margin: 0 !important;
+    position: static !important;
+    font-size: 14px !important;
+  }
+
+  html body .paradise-referrals-list,
+  html body .paradise-potential-list,
+  html body .paradise-inactive-table-wrapper {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: visible !important;
+  }
+
+  html body .paradise-referrals-table,
+  html body .paradise-potential-table {
+    width: 100% !important;
+  }
+
+  html body .paradise-inactive-logo {
+    width: min(34vw, 120px) !important;
+    margin: 0 auto 10px !important;
+    display: block !important;
+  }
+
+  html body .paradise-inactive-title {
+    text-align: center !important;
+    font-size: 22px !important;
+  }
+
+  html body .paradise-inactive-load-more {
+    width: 100% !important;
+    min-height: 48px !important;
+    margin-top: 10px !important;
+  }
+
+  html body .paradise-inactive-follow-up-notice {
+    left: 10px !important;
+    right: 10px !important;
+    bottom: calc(var(--pm-safe-bottom) + 87px) !important;
+    width: auto !important;
+    border-radius: 20px !important;
+  }
+
+  /* ======================================================================== */
+  /* 14. INVOICES                                                             */
+  /* ======================================================================== */
+
+  html body .paradise-invoices-shell {
+    padding: 11px !important;
+  }
+
+  html body .paradise-invoices-header,
+  html body .paradise-invoices-actions {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  html body .paradise-invoices-filters-card {
+    width: 100% !important;
+    padding: 11px !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+    border-radius: 17px !important;
+  }
+
+  html body .paradise-invoices-filters-card input,
+  html body .paradise-invoices-filters-card select,
+  html body .paradise-invoices-actions button {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 47px !important;
+    margin: 0 !important;
+  }
+
+  html body .paradise-invoices-list-card {
+    width: 100% !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    border-radius: 18px !important;
+  }
+
+  html body .paradise-invoices-table-scroll {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  html body .paradise-invoices-table {
+    font-size: 12px !important;
+  }
+
+  /* ======================================================================== */
+  /* 15. PURCHASES                                                            */
+  /* ======================================================================== */
+
+  html body .paradise-purchases-page {
+    color: var(--pm-text) !important;
+  }
+
+  html body .paradise-purchases-filter-card {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+    padding: 11px !important;
+    border-radius: 17px !important;
+  }
+
+  html body .paradise-purchases-filter-card input,
+  html body .paradise-purchases-filter-card select,
+  html body .paradise-purchases-filter-card button {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 47px !important;
+    margin: 0 !important;
+  }
+
+  html body .paradise-purchases-list-header {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 6px !important;
+  }
+
+  html body .paradise-purchases-table-wrapper {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    border-radius: 16px !important;
+  }
+
+  /* ======================================================================== */
+  /* 16. FINANCE                                                              */
+  /* ======================================================================== */
+
+  html body .paradise-finance-shell {
+    padding: 11px !important;
+  }
+
+  html body .paradise-finance-header,
+  html body .paradise-finance-header-content,
+  html body .paradise-finance-header-actions {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  html body .paradise-finance-header-identity {
+    width: 100% !important;
+    min-width: 0 !important;
+    text-align: right !important;
+  }
+
+  html body .paradise-finance-header-title {
+    font-size: 22px !important;
+    line-height: 1.25 !important;
+  }
+
+  html body .paradise-finance-header-select,
+  html body .paradise-finance-header-button {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 48px !important;
+    margin: 0 !important;
+  }
+
+  html body .paradise-finance-overview-grid {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+    gap: 8px !important;
+  }
+
+  html body .paradise-finance-overview-grid > div {
+    min-width: 0 !important;
+    min-height: 92px !important;
+    padding: 12px !important;
+    border-radius: 16px !important;
+  }
+
+  html body .paradise-finance-details-layout {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  html body .paradise-finance-details-column {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  html body .paradise-finance-details-group-title {
+    font-size: 15px !important;
+  }
+
+  html body .paradise-finance-monthly-settings,
+  html body .paradise-daily-manual-data {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  html body .paradise-finance-daily-card {
+    width: 100% !important;
+    padding: 11px !important;
+    border-radius: 18px !important;
+  }
+
+  html body .paradise-finance-daily-title {
+    font-size: 15px !important;
+    line-height: 1.35 !important;
+  }
+
+  html body .paradise-finance-daily-scroll {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    border-radius: 14px !important;
+  }
+
+  html body .paradise-finance-daily-table {
+    min-width: 680px !important;
+    font-size: 11px !important;
+  }
+
+  html body .paradise-finance-daily-table th,
+  html body .paradise-finance-daily-table td {
+    padding: 10px 8px !important;
+    white-space: nowrap !important;
+  }
+
+  /* ======================================================================== */
+  /* 17. INCOME / EXPENSES                                                    */
+  /* ======================================================================== */
+
+  html body .paradise-income-expenses-shell {
+    padding: 11px !important;
+  }
+
+  html body .paradise-income-expenses-hero {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+    padding: 14px !important;
+    border-radius: 19px !important;
+  }
+
+  html body .paradise-income-expenses-filter-card {
+    width: 100% !important;
+    padding: 12px !important;
+    border-radius: 18px !important;
+  }
+
+  html body .paradise-income-expenses-controls {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  html body .paradise-income-expenses-controls label,
+  html body .paradise-income-expenses-controls input,
+  html body .paradise-income-expenses-controls select,
+  html body .paradise-income-expenses-controls button {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 47px !important;
+    margin: 0 !important;
+  }
+
+  html body .paradise-income-expenses-summary {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+    gap: 8px !important;
+    margin-bottom: 12px !important;
+  }
+
+  html body .paradise-income-expenses-summary > div {
+    min-width: 0 !important;
+    min-height: 100px !important;
+    padding: 12px !important;
+    border-radius: 16px !important;
+  }
+
+  html body .paradise-income-expenses-table-card {
+    width: 100% !important;
+    border-radius: 18px !important;
+  }
+
+  html body .paradise-income-expenses-table-scroll {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 62dvh !important;
+    overflow: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  html body .paradise-income-expenses-table {
+    min-width: 1550px !important;
+    font-size: 11px !important;
+  }
+
+  html body .paradise-income-expenses-table th,
+  html body .paradise-income-expenses-table td {
+    padding: 10px 8px !important;
+    white-space: nowrap !important;
+  }
+
+  /* ======================================================================== */
+  /* 18. GOVERNMENT REPORTS                                                   */
+  /* ======================================================================== */
+
+  html body .page-container > div {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+  }
+
+  html body .page-container > div > div {
+    max-width: 100% !important;
+  }
+
+  html body .page-container button {
+    max-width: 100% !important;
+  }
+
+  html body .page-container input,
+  html body .page-container select {
+    max-width: 100% !important;
+    min-height: 47px !important;
+  }
+
+  html body .page-container table {
+    font-size: 11px !important;
+  }
+
+  /* ======================================================================== */
+  /* 19. AVAILABLE APPOINTMENTS                                               */
+  /* ======================================================================== */
+
+  html body .paradise-available-page {
+    overflow: visible !important;
+  }
+
+  html body .paradise-available-header {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+    text-align: center !important;
+  }
+
+  html body .paradise-available-logo {
+    width: min(36vw, 125px) !important;
+    margin: 0 auto !important;
+  }
+
+  html body .paradise-available-title {
+    font-size: 23px !important;
+    line-height: 1.25 !important;
+  }
+
+  html body .paradise-available-subtitle {
+    font-size: 13px !important;
+    line-height: 1.6 !important;
+  }
+
+  html body .paradise-available-toolbar,
+  html body .paradise-available-controls-card,
+  html body .paradise-available-controls-list {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  html body .paradise-available-date-field,
+  html body .paradise-available-control-time,
+  html body .paradise-available-all-button,
+  html body .paradise-available-save-button {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 47px !important;
+    margin: 0 !important;
+  }
+
+  html body .paradise-available-layout {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 11px !important;
+  }
+
+  html body .paradise-available-poster-stage {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    padding: 5px !important;
+  }
+
+  html body .paradise-available-poster {
+    max-width: 100% !important;
+    transform-origin: top center !important;
+  }
+
+  html body .paradise-available-poster-times {
+    gap: 6px !important;
+  }
+
+  html body .paradise-available-poster-time-button {
+    min-height: 40px !important;
+  }
+
+  html body .paradise-available-spacer {
+    display: none !important;
+  }
+
+  /* ======================================================================== */
+  /* 20. GIFT CARD EDITOR                                                     */
+  /* ======================================================================== */
+
+  html body .paradise-gift-cards-shell {
+    padding: 10px !important;
+  }
+
+  html body .paradise-gift-cards-header,
+  html body .paradise-gift-card-editor,
+  html body .paradise-gift-card-editor-grid,
+  html body .paradise-gift-card-fields-grid,
+  html body .paradise-gift-card-basic-fields {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 9px !important;
+  }
+
+  html body .paradise-gift-card-template-list,
+  html body .paradise-gift-card-category-list {
+    width: 100% !important;
+    display: flex !important;
+    gap: 7px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    padding-bottom: 5px !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  html body .paradise-gift-card-template-list > *,
+  html body .paradise-gift-card-category-list > * {
+    flex: 0 0 auto !important;
+  }
+
+  html body .paradise-gift-card-preview-stage {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: auto !important;
+    padding: 6px !important;
+    border-radius: 16px !important;
+  }
+
+  html body .paradise-gift-card-canvas {
+    max-width: none !important;
+    transform-origin: top center !important;
+  }
+
+  html body .paradise-gift-card-text-tabs,
+  html body .paradise-gift-card-actions,
+  html body .paradise-gift-card-size-controls,
+  html body .paradise-gift-card-move-grid {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+    gap: 7px !important;
+  }
+
+  html body .paradise-gift-card-message-field,
+  html body .paradise-gift-card-font-panel,
+  html body .paradise-gift-card-position-panel,
+  html body .paradise-gift-card-text-settings-v1 {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  html body .paradise-gift-card-save-button {
+    width: 100% !important;
+    min-height: 49px !important;
+    margin: 0 !important;
+  }
+
+  /* ======================================================================== */
+  /* 21. WELCOME BOARDS                                                       */
+  /* ======================================================================== */
+
+  html body .paradise-welcome-shell,
+  html body .paradise-welcome-surface {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  html body .paradise-welcome-header,
+  html body .paradise-welcome-layout {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  html body .paradise-welcome-designs-card,
+  html body .paradise-welcome-board-card {
+    width: 100% !important;
+    min-width: 0 !important;
+    padding: 12px !important;
+    border-radius: 18px !important;
+  }
+
+  html body .paradise-welcome-board-name {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 47px !important;
+    font-size: 16px !important;
+  }
+
+  /* ======================================================================== */
+  /* 22. SETTINGS                                                             */
+  /* ======================================================================== */
+
+  html body .paradise-settings-surface {
+    padding: 10px !important;
+  }
+
+  html body .paradise-settings-header {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+    text-align: right !important;
+  }
+
+  html body .paradise-settings-tabs {
+    width: 100% !important;
+    display: flex !important;
+    gap: 6px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    padding: 4px 0 7px !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  html body .paradise-settings-tab-button {
+    flex: 0 0 auto !important;
+    min-height: 44px !important;
+    margin: 0 !important;
+    padding: 8px 12px !important;
+    border-radius: 14px !important;
+    white-space: nowrap !important;
+    font-size: 12px !important;
+  }
+
+  html body .paradise-settings-content {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+  }
+
+  html body .paradise-settings-content > div {
+    max-width: 100% !important;
+  }
+
+  html body .paradise-settings-content input,
+  html body .paradise-settings-content select,
+  html body .paradise-settings-content textarea {
+    max-width: 100% !important;
+    min-height: 47px !important;
+    font-size: 15px !important;
+  }
+
+  html body .paradise-settings-content button {
+    min-height: 43px !important;
+    max-width: 100% !important;
+  }
+
+  html body .paradise-settings-lock-card {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 16px !important;
+    border-radius: 19px !important;
+  }
+
+  html body .paradise-settings-status,
+  html body .paradise-settings-logout-version {
+    width: 100% !important;
+    max-width: 100% !important;
+    position: static !important;
+  }
+
+  /* ======================================================================== */
+  /* 23. MODALS / BOTTOM SHEETS                                               */
+  /* ======================================================================== */
+
+  html body .paradise-global-client-modal-overlay,
+  html body .paradise-duplicate-client-modal-overlay,
+  html body .paradise-household-modal-overlay,
+  html body .paradise-invoice-modal-overlay,
+  html body .paradise-invoice-note-overlay,
+  html body .paradise-gift-link-modal-overlay,
+  html body .paradise-referral-modal-overlay {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 13000 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    display: flex !important;
+    align-items: flex-end !important;
+    justify-content: center !important;
+    overflow: hidden !important;
+    background: rgba(46,31,23,0.46) !important;
+    backdrop-filter: blur(5px) !important;
+    -webkit-backdrop-filter: blur(5px) !important;
+  }
+
+  html body .paradise-global-client-modal-card,
+  html body .paradise-duplicate-client-modal-card,
+  html body .paradise-household-modal-card,
+  html body .paradise-invoice-modal-card,
+  html body .paradise-invoice-note-card,
+  html body .paradise-gift-link-modal-card,
+  html body .paradise-referral-modal-card {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 90dvh !important;
+    margin: 0 !important;
+    padding: 20px 15px calc(var(--pm-safe-bottom) + 18px) !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain !important;
+    border: 1px solid rgba(255,255,255,0.76) !important;
+    border-bottom: 0 !important;
+    border-radius: 27px 27px 0 0 !important;
+    background: linear-gradient(180deg, #fffdf9, #f2e4d8) !important;
+    box-shadow: 0 -20px 56px rgba(48,29,19,0.23) !important;
+  }
+
+  html body .paradise-global-client-modal-card input,
+  html body .paradise-global-client-modal-card select,
+  html body .paradise-global-client-modal-card textarea,
+  html body .paradise-duplicate-client-modal-card input,
+  html body .paradise-household-modal-card input,
+  html body .paradise-household-modal-card select,
+  html body .paradise-household-modal-card textarea,
+  html body .paradise-invoice-modal-card input,
+  html body .paradise-invoice-modal-card select,
+  html body .paradise-invoice-modal-card textarea,
+  html body .paradise-invoice-note-card input,
+  html body .paradise-invoice-note-card textarea,
+  html body .paradise-gift-link-modal-card input,
+  html body .paradise-gift-link-modal-card select,
+  html body .paradise-referral-modal-card input,
+  html body .paradise-referral-modal-card select,
+  html body .paradise-referral-modal-card textarea {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    min-height: 48px !important;
+    font-size: 16px !important;
+  }
+
+  html body .paradise-global-client-modal-actions,
+  html body .paradise-referral-modal-footer {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+    gap: 8px !important;
+  }
+
+  html body .paradise-global-client-modal-actions button,
+  html body .paradise-referral-modal-footer button {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 48px !important;
+    margin: 0 !important;
+  }
+
+  html body .paradise-household-form-grid,
+  html body .paradise-referral-modal-grid {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  html body .paradise-referral-modal-header {
+    width: 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 8px !important;
+  }
+
+  html body .paradise-referral-modal-save,
+  html body .paradise-referral-modal-cancel {
+    min-height: 47px !important;
+  }
+
+  /* ======================================================================== */
+  /* 24. SMALL PHONES / LANDSCAPE / ACCESSIBILITY                             */
+  /* ======================================================================== */
+
+  @media (max-width: 430px) {
+    html body .paradise-finance-overview-grid,
+    html body .paradise-income-expenses-summary,
+    html body .paradise-client-profile-summary {
+      grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+    }
+  }
+
+  @media (max-width: 360px) {
+    html body .paradise-mobile-v2-header {
+      left: 6px !important;
+      right: 6px !important;
+    }
+
+    html body .paradise-global-topbar {
+      left: 6px !important;
+      right: 6px !important;
+    }
+
+    html body .paradise-mobile-v2-nav {
+      left: 5px !important;
+      right: 5px !important;
+      gap: 1px !important;
+      padding: 5px !important;
+    }
+
+    .paradise-mobile-v2-nav-label {
+      font-size: 9px;
+    }
+
+    .paradise-mobile-v2-screen-title {
+      max-width: 145px;
+      font-size: 14px;
+    }
+
+    .paradise-mobile-v2-menu-grid,
+    .paradise-mobile-v2-utilities,
+    .paradise-mobile-v2-two-column,
+    .paradise-mobile-v2-client-meta,
+    .paradise-mobile-v2-client-card-actions,
+    .paradise-mobile-v2-appointment-actions,
+    .paradise-mobile-v2-delivery-actions,
+    html body .paradise-finance-overview-grid,
+    html body .paradise-income-expenses-summary,
+    html body .paradise-client-profile-summary {
+      grid-template-columns: 1fr !important;
+    }
+
+    html body .paradise-global-client-modal-actions,
+    html body .paradise-referral-modal-footer {
+      grid-template-columns: 1fr !important;
+    }
+  }
+
+  @media (orientation: landscape) and (max-height: 520px) {
+    html body .paradise-global-page {
+      padding-bottom: calc(var(--pm-safe-bottom) + 78px) !important;
+    }
+
+    html body .paradise-mobile-v2-nav {
+      min-height: 56px !important;
+    }
+
+    .paradise-mobile-v2-nav-button {
+      min-height: 45px;
+    }
+
+    .paradise-mobile-v2-more-sheet {
+      max-height: 94dvh;
+    }
+
+    html body .paradise-global-client-modal-card,
+    html body .paradise-duplicate-client-modal-card,
+    html body .paradise-household-modal-card,
+    html body .paradise-invoice-modal-card,
+    html body .paradise-invoice-note-card,
+    html body .paradise-gift-link-modal-card,
+    html body .paradise-referral-modal-card {
+      max-height: 94dvh !important;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html body *,
+    html body *::before,
+    html body *::after {
+      scroll-behavior: auto !important;
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  html body button:focus-visible,
+  html body input:focus-visible,
+  html body select:focus-visible,
+  html body textarea:focus-visible,
+  html body [tabindex]:focus-visible {
+    outline: 3px solid rgba(118,81,59,0.28) !important;
+    outline-offset: 2px !important;
+  }
+}

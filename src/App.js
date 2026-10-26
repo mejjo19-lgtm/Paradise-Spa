@@ -87,6 +87,7 @@ import {
 } from "./supabase";
 
 import "./paradise-responsive.css";
+import "./paradise-mobile-v2.css";
 
 function App() {
   const restorableScreensRef = useRef([
@@ -27358,6 +27359,468 @@ const leavingTime = addMinutesToDisplayTime(
     setOpenSidebarSectionId,
   ] = useState("");
 
+  /*
+    Paradise Mobile V2
+
+    نسخة الجوال تستخدم نفس screen
+    والصلاحيات الحالية بالكامل.
+
+    لا توجد نسخة ثانية من البيانات،
+    ولا منطق حفظ منفصل، ولا أي تغيير
+    على Realtime أو Supabase.
+  */
+  const [
+    mobileMoreOpen,
+    setMobileMoreOpen,
+  ] = useState(false);
+
+  const mobilePrimaryNavigation = [
+    {
+      key: "dashboard",
+      label: "الرئيسية",
+      icon: "⌂",
+      activeScreens: [
+        "dashboard",
+      ],
+    },
+    {
+      key: "appointments",
+      label: "الجدول",
+      icon: "▤",
+      activeScreens: [
+        "appointments",
+      ],
+    },
+    {
+      key: "delivery",
+      label: "التوصيل",
+      icon: "↗",
+      activeScreens: [
+        "delivery",
+      ],
+    },
+    {
+      key: "clients",
+      label: "العملاء",
+      icon: "◎",
+      activeScreens: [
+        "clients",
+        "clientProfile",
+        "loyalty",
+        "inactiveClients",
+        "giftClients",
+        "referrals",
+        "potentialClients",
+      ],
+    },
+  ];
+
+  const mobileScreenLabel =
+    screen === "clientProfile"
+      ? "بروفايل العميلة"
+      : dashboardMenuSections
+          .flatMap(
+            (section) =>
+              section.items
+          )
+          .find(
+            ([key]) =>
+              key === screen
+          )?.[1] ||
+        "Paradise Spa";
+
+  const mobilePrimaryKeys =
+    mobilePrimaryNavigation.map(
+      (item) => item.key
+    );
+
+  const mobileMoreSections =
+    dashboardMenuSections
+      .map((section) => ({
+        ...section,
+
+        items:
+          section.items.filter(
+            ([key]) =>
+              !mobilePrimaryKeys.includes(
+                key
+              ) &&
+              (
+                key === "dashboard" ||
+                canViewMenu(key)
+              )
+          ),
+      }))
+      .filter(
+        (section) =>
+          section.items.length > 0
+      );
+
+  const mobileMoreIsActive =
+    !mobilePrimaryNavigation.some(
+      (item) =>
+        item.activeScreens.includes(
+          screen
+        )
+    );
+
+  useEffect(() => {
+    if (!mobileMoreOpen) {
+      return undefined;
+    }
+
+    const previousOverflow =
+      document.body.style.overflow;
+
+    document.body.style.overflow =
+      "hidden";
+
+    return () => {
+      document.body.style.overflow =
+        previousOverflow;
+    };
+  }, [mobileMoreOpen]);
+
+  useEffect(() => {
+    setMobileMoreOpen(false);
+  }, [screen]);
+
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      typeof document === "undefined"
+    ) {
+      return undefined;
+    }
+
+    const mobileMedia =
+      window.matchMedia(
+        "(max-width: 820px)"
+      );
+
+    const mobileCardTableSelectors = [
+      ".paradise-schedule-table",
+      ".paradise-clients-table",
+      ".paradise-gift-table",
+      ".paradise-referrals-table",
+      ".paradise-potential-table",
+      ".inactive-clients-table",
+      ".paradise-invoices-table",
+      ".purchases-page-fit-table",
+      ".paradise-client-profile table",
+      ".paradise-settings-content table",
+    ];
+
+    const mobileTableLabelMap = {
+      "#": "رقم",
+      Actions: "الإجراءات",
+      Completed: "اكتمال الخدمة",
+      Status: "الحالة",
+      "Client By": "بواسطة",
+      "Service Time": "وقت الخدمة",
+      Note: "الملاحظة",
+      Driver: "المندوب",
+      Therapist: "الأخصائية",
+      District: "الحي",
+      Client: "العميلة",
+      Profile: "البروفايل",
+      Frame: "اللوحة الترحيبية",
+      Orders: "الطلب",
+      Services: "الخدمة",
+      Number: "رقم الجوال",
+      Transportation: "التوصيل",
+      "Service Amount": "قيمة الخدمة",
+      "Total Price": "الإجمالي",
+      "Payment Method": "طريقة الدفع",
+      "Cash Received By": "استلام المبلغ",
+      "Send To": "الإرسال إلى",
+      "Gift From": "الهدية من",
+      "Phone No.": "رقم المُهدي",
+    };
+
+    const getMobileTableLabel = (
+      headerCell
+    ) => {
+      const rawLabel =
+        String(
+          headerCell?.textContent || ""
+        )
+          .replace(
+            /\s+/g,
+            " "
+          )
+          .trim();
+
+      return (
+        mobileTableLabelMap[
+          rawLabel
+        ] ||
+        rawLabel
+      );
+    };
+
+    const clearMobileTablePresentation =
+      () => {
+        document
+          .querySelectorAll(
+            "table.paradise-mobile-card-table"
+          )
+          .forEach((table) => {
+            table.classList.remove(
+              "paradise-mobile-card-table"
+            );
+
+            const colgroup =
+              table.querySelector(
+                "colgroup"
+              );
+
+            if (colgroup) {
+              colgroup.style.display =
+                "";
+            }
+
+            table
+              .querySelectorAll(
+                "tbody td"
+              )
+              .forEach((cell) => {
+                cell.removeAttribute(
+                  "data-mobile-label"
+                );
+
+                cell.removeAttribute(
+                  "data-mobile-hide"
+                );
+
+                cell.removeAttribute(
+                  "data-mobile-full"
+                );
+              });
+          });
+      };
+
+    const applyMobileTablePresentation =
+      () => {
+        if (!mobileMedia.matches) {
+          clearMobileTablePresentation();
+
+          return;
+        }
+
+        document
+          .querySelectorAll(
+            mobileCardTableSelectors.join(
+              ","
+            )
+          )
+          .forEach((table) => {
+            const headerCells =
+              Array.from(
+                table.querySelectorAll(
+                  "thead tr:first-child th"
+                )
+              );
+
+            if (
+              headerCells.length === 0
+            ) {
+              return;
+            }
+
+            const labels =
+              headerCells.map(
+                getMobileTableLabel
+              );
+
+            table.classList.add(
+              "paradise-mobile-card-table"
+            );
+
+            const colgroup =
+              table.querySelector(
+                "colgroup"
+              );
+
+            if (colgroup) {
+              colgroup.style.display =
+                "none";
+            }
+
+            table
+              .querySelectorAll(
+                "tbody > tr"
+              )
+              .forEach((row) => {
+                const cells =
+                  Array.from(
+                    row.children
+                  ).filter(
+                    (child) =>
+                      child.tagName ===
+                      "TD"
+                  );
+
+                cells.forEach(
+                  (
+                    cell,
+                    cellIndex
+                  ) => {
+                    const columnSpan =
+                      Number(
+                        cell.getAttribute(
+                          "colspan"
+                        ) || 1
+                      );
+
+                    if (
+                      columnSpan > 1
+                    ) {
+                      cell.setAttribute(
+                        "data-mobile-label",
+                        ""
+                      );
+
+                      cell.setAttribute(
+                        "data-mobile-full",
+                        "true"
+                      );
+
+                      cell.removeAttribute(
+                        "data-mobile-hide"
+                      );
+
+                      return;
+                    }
+
+                    const label =
+                      labels[
+                        cellIndex
+                      ] || "";
+
+                    cell.setAttribute(
+                      "data-mobile-label",
+                      label
+                    );
+
+                    if (
+                      label === "رقم"
+                    ) {
+                      cell.setAttribute(
+                        "data-mobile-hide",
+                        "true"
+                      );
+                    } else {
+                      cell.removeAttribute(
+                        "data-mobile-hide"
+                      );
+                    }
+
+                    if (
+                      [
+                        "الإجراءات",
+                        "البروفايل",
+                        "اكتمال الخدمة",
+                      ].includes(
+                        label
+                      )
+                    ) {
+                      cell.setAttribute(
+                        "data-mobile-full",
+                        "true"
+                      );
+                    } else {
+                      cell.removeAttribute(
+                        "data-mobile-full"
+                      );
+                    }
+                  }
+                );
+              });
+          });
+      };
+
+    let scheduledFrame = null;
+
+    const scheduleMobileTableRefresh =
+      () => {
+        if (scheduledFrame) {
+          cancelAnimationFrame(
+            scheduledFrame
+          );
+        }
+
+        scheduledFrame =
+          requestAnimationFrame(
+            () => {
+              scheduledFrame = null;
+
+              applyMobileTablePresentation();
+            }
+          );
+      };
+
+    const mobileTableObserver =
+      new MutationObserver(
+        scheduleMobileTableRefresh
+      );
+
+    mobileTableObserver.observe(
+      document.body,
+      {
+        childList: true,
+        subtree: true,
+      }
+    );
+
+    const handleMobileMediaChange =
+      () => {
+        scheduleMobileTableRefresh();
+      };
+
+    if (
+      typeof mobileMedia.addEventListener ===
+      "function"
+    ) {
+      mobileMedia.addEventListener(
+        "change",
+        handleMobileMediaChange
+      );
+    } else {
+      mobileMedia.addListener(
+        handleMobileMediaChange
+      );
+    }
+
+    scheduleMobileTableRefresh();
+
+    return () => {
+      mobileTableObserver.disconnect();
+
+      if (scheduledFrame) {
+        cancelAnimationFrame(
+          scheduledFrame
+        );
+      }
+
+      if (
+        typeof mobileMedia.removeEventListener ===
+        "function"
+      ) {
+        mobileMedia.removeEventListener(
+          "change",
+          handleMobileMediaChange
+        );
+      } else {
+        mobileMedia.removeListener(
+          handleMobileMediaChange
+        );
+      }
+
+      clearMobileTablePresentation();
+    };
+  }, [screen]);
+
   const settingsTables = [
     "clients",
     "schedule_rows",
@@ -39493,6 +39956,59 @@ const welcomeBoardNameStyle = {
         )}
 
         {showGlobalLayout && (
+          <header
+            className="paradise-mobile-v2-header"
+            dir="rtl"
+          >
+            <div
+              className="paradise-mobile-v2-brand"
+            >
+              <div
+                className="paradise-mobile-v2-brand-mark"
+              >
+                P
+              </div>
+
+              <div
+                className="paradise-mobile-v2-brand-copy"
+              >
+                <div
+                  className="paradise-mobile-v2-brand-name"
+                >
+                  PARADISE SPA
+                </div>
+
+                <div
+                  className="paradise-mobile-v2-screen-title"
+                >
+                  {mobileScreenLabel}
+                </div>
+              </div>
+            </div>
+
+            {canAddData && (
+              <button
+                type="button"
+                className="paradise-mobile-v2-add-client"
+                aria-label="إضافة عميلة"
+                title="إضافة عميلة"
+                onClick={() => {
+                  if (
+                    ensureSystemWritable()
+                  ) {
+                    setShowGlobalClientForm(
+                      true
+                    );
+                  }
+                }}
+              >
+                +
+              </button>
+            )}
+          </header>
+        )}
+
+        {showGlobalLayout && (
           <aside
             className="paradise-global-sidebar"
             style={{
@@ -40326,6 +40842,314 @@ const welcomeBoardNameStyle = {
               </button>
             </div>
           )}
+
+        {showGlobalLayout && (
+          <>
+            <nav
+              className="paradise-mobile-v2-nav"
+              aria-label="التنقل الرئيسي"
+            >
+              {mobilePrimaryNavigation
+                .filter(
+                  (item) =>
+                    item.key ===
+                      "dashboard" ||
+                    canViewMenu(
+                      item.key
+                    )
+                )
+                .map((item) => {
+                  const isActive =
+                    item.activeScreens.includes(
+                      screen
+                    );
+
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      aria-current={
+                        isActive
+                          ? "page"
+                          : undefined
+                      }
+                      className={`paradise-mobile-v2-nav-button ${
+                        isActive
+                          ? "paradise-mobile-v2-nav-button-active"
+                          : ""
+                      }`}
+                      onClick={() => {
+                        setMobileMoreOpen(
+                          false
+                        );
+
+                        goToScreen(
+                          item.key
+                        );
+                      }}
+                    >
+                      <span
+                        className="paradise-mobile-v2-nav-icon"
+                      >
+                        {item.icon}
+                      </span>
+
+                      <span
+                        className="paradise-mobile-v2-nav-label"
+                      >
+                        {item.label}
+                      </span>
+                    </button>
+                  );
+                })}
+
+              <button
+                type="button"
+                className={`paradise-mobile-v2-nav-button ${
+                  mobileMoreOpen ||
+                  mobileMoreIsActive
+                    ? "paradise-mobile-v2-nav-button-active"
+                    : ""
+                }`}
+                aria-expanded={
+                  mobileMoreOpen
+                }
+                onClick={() =>
+                  setMobileMoreOpen(
+                    (previous) =>
+                      !previous
+                  )
+                }
+              >
+                <span
+                  className="paradise-mobile-v2-nav-icon"
+                >
+                  •••
+                </span>
+
+                <span
+                  className="paradise-mobile-v2-nav-label"
+                >
+                  المزيد
+                </span>
+              </button>
+            </nav>
+
+            {mobileMoreOpen && (
+              <div
+                className="paradise-mobile-v2-more-overlay"
+                onMouseDown={(
+                  event
+                ) => {
+                  if (
+                    event.target ===
+                    event.currentTarget
+                  ) {
+                    setMobileMoreOpen(
+                      false
+                    );
+                  }
+                }}
+              >
+                <section
+                  className="paradise-mobile-v2-more-sheet"
+                  aria-label="المزيد"
+                  onMouseDown={(
+                    event
+                  ) =>
+                    event.stopPropagation()
+                  }
+                >
+                  <div
+                    className="paradise-mobile-v2-sheet-handle"
+                  />
+
+                  <div
+                    className="paradise-mobile-v2-more-head"
+                  >
+                    <div
+                      className="paradise-mobile-v2-more-user"
+                    >
+                      <div
+                        className="paradise-mobile-v2-more-eyebrow"
+                      >
+                        PARADISE SPA
+                      </div>
+
+                      <div
+                        className="paradise-mobile-v2-more-name"
+                      >
+                        مرحبًا{" "}
+                        {loggedInUser}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="paradise-mobile-v2-more-close"
+                      aria-label="إغلاق"
+                      onClick={() =>
+                        setMobileMoreOpen(
+                          false
+                        )
+                      }
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <div
+                    className="paradise-mobile-v2-utilities"
+                  >
+                    {canAddData && (
+                      <button
+                        type="button"
+                        className="paradise-mobile-v2-utility"
+                        onClick={() => {
+                          setMobileMoreOpen(
+                            false
+                          );
+
+                          if (
+                            ensureSystemWritable()
+                          ) {
+                            setShowGlobalClientForm(
+                              true
+                            );
+                          }
+                        }}
+                      >
+                        + إضافة عميلة
+                      </button>
+                    )}
+
+                    <label
+                      className="paradise-mobile-v2-utility-date"
+                    >
+                      <span>
+                        تاريخ إصدار الفاتورة
+                      </span>
+
+                      <input
+                        type="date"
+                        value={
+                          selectedInvoiceIssueDate ||
+                          todayDate
+                        }
+                        max={todayDate}
+                        onChange={(
+                          event
+                        ) => {
+                          const nextDate =
+                            String(
+                              event
+                                .target
+                                .value ||
+                                ""
+                            ).slice(
+                              0,
+                              10
+                            );
+
+                          if (
+                            !nextDate
+                          ) {
+                            return;
+                          }
+
+                          if (
+                            nextDate >
+                            todayDate
+                          ) {
+                            alert(
+                              "لا يمكن اختيار تاريخ مستقبلي من الأعلى لإصدار الفواتير."
+                            );
+
+                            return;
+                          }
+
+                          setSelectedInvoiceIssueDate(
+                            nextDate
+                          );
+                        }}
+                      />
+                    </label>
+
+                    <button
+                      type="button"
+                      className="paradise-mobile-v2-utility paradise-mobile-v2-utility-logout"
+                      onClick={() => {
+                        setMobileMoreOpen(
+                          false
+                        );
+
+                        globalLogout();
+                      }}
+                    >
+                      تسجيل خروج
+                    </button>
+                  </div>
+
+                  {mobileMoreSections.map(
+                    (section) => (
+                      <div
+                        key={
+                          section.id
+                        }
+                        className="paradise-mobile-v2-menu-section"
+                      >
+                        <div
+                          className="paradise-mobile-v2-menu-title"
+                        >
+                          {
+                            section.title
+                          }
+                        </div>
+
+                        <div
+                          className="paradise-mobile-v2-menu-grid"
+                        >
+                          {section.items.map(
+                            ([
+                              key,
+                              label,
+                            ]) => (
+                              <button
+                                key={
+                                  key
+                                }
+                                type="button"
+                                className={`paradise-mobile-v2-menu-item ${
+                                  screen ===
+                                  key
+                                    ? "paradise-mobile-v2-menu-item-active"
+                                    : ""
+                                }`}
+                                onClick={() => {
+                                  setMobileMoreOpen(
+                                    false
+                                  );
+
+                                  goToScreen(
+                                    key
+                                  );
+                                }}
+                              >
+                                {
+                                  label
+                                }
+                              </button>
+                            )
+                          )}
+                        </div>
+                      </div>
+                    )
+                  )}
+                </section>
+              </div>
+            )}
+          </>
+        )}
 
         <div className="paradise-global-page">
           {showGlobalLayout ? (
