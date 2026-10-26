@@ -29736,15 +29736,38 @@ const welcomeBoardNameStyle = {
         );
       }
 
-      const encodedContent =
-        new TextEncoder().encode(
+      let hashInput;
+
+      if (
+        typeof content ===
+        "string"
+      ) {
+        hashInput =
+          new TextEncoder().encode(
+            content
+          );
+      } else if (
+        content instanceof Blob
+      ) {
+        hashInput =
+          await content.arrayBuffer();
+      } else if (
+        content instanceof ArrayBuffer ||
+        ArrayBuffer.isView(
           content
+        )
+      ) {
+        hashInput = content;
+      } else {
+        throw new Error(
+          "تعذر حساب بصمة أحد ملفات النسخة الاحتياطية."
         );
+      }
 
       const hashBuffer =
         await window.crypto.subtle.digest(
           "SHA-256",
-          encodedContent
+          hashInput
         );
 
       return Array.from(
@@ -29794,6 +29817,376 @@ const welcomeBoardNameStyle = {
         sha256:
           fileHash,
       });
+    };
+
+  const addBinaryFileToBackup =
+    async (
+      zipFile,
+      filePath,
+      fileBlob,
+      integrityFiles
+    ) => {
+      if (
+        !(fileBlob instanceof Blob)
+      ) {
+        throw new Error(
+          `ملف Storage غير صالح: ${filePath}`
+        );
+      }
+
+      const fileHash =
+        await calculateBackupSha256(
+          fileBlob
+        );
+
+      zipFile.file(
+        filePath,
+        fileBlob
+      );
+
+      integrityFiles.push({
+        path:
+          filePath,
+
+        bytes:
+          fileBlob.size,
+
+        sha256:
+          fileHash,
+      });
+    };
+
+  const backupStorageBucket =
+    async (
+      accessToken,
+      zipFile,
+      bucket,
+      integrityFiles
+    ) => {
+      const bucketName =
+        String(
+          bucket?.name ||
+            bucket?.id ||
+            ""
+        ).trim();
+
+      if (
+        !bucketName ||
+        bucketName.includes("/")
+      ) {
+        throw new Error(
+          "اسم أحد Buckets في Storage غير صالح."
+        );
+      }
+
+      const pendingFolders = [
+        "",
+      ];
+
+      const visitedFolders =
+        new Set();
+
+      const bucketFiles = [];
+      let bucketBytes = 0;
+
+      while (
+        pendingFolders.length >
+        0
+      ) {
+        const folderPath =
+          pendingFolders.shift();
+
+        if (
+          visitedFolders.has(
+            folderPath
+          )
+        ) {
+          continue;
+        }
+
+        visitedFolders.add(
+          folderPath
+        );
+
+        let offset = 0;
+        let pageCount = 0;
+
+        while (
+          offset !== null
+        ) {
+          pageCount += 1;
+
+          if (
+            pageCount > 100000
+          ) {
+            throw new Error(
+              `تجاوز Bucket ${bucketName} الحد الآمن لعدد الصفحات.`
+            );
+          }
+
+          const storagePage =
+            await requestBackupApi(
+              accessToken,
+              {
+                action:
+                  "storage-list",
+
+                bucketName,
+
+                folderPath,
+
+                offset,
+
+                limit:
+                  1000,
+              }
+            );
+
+          if (
+            storagePage
+              ?.bucketName !==
+              bucketName ||
+            storagePage
+              ?.folderPath !==
+              folderPath ||
+            !Array.isArray(
+              storagePage?.items
+            )
+          ) {
+            throw new Error(
+              `حدث عدم تطابق أثناء قراءة Storage داخل ${bucketName}.`
+            );
+          }
+
+          for (
+            const item of
+            storagePage.items
+          ) {
+            const objectPath =
+              String(
+                item?.objectPath ||
+                  ""
+              )
+                .replace(
+                  /\\/g,
+                  "/"
+                )
+                .replace(
+                  /^\/+|\/+$/g,
+                  ""
+                );
+
+            const pathSegments =
+              objectPath
+                .split("/")
+                .filter(Boolean);
+
+            const hasUnsafePathSegment =
+              pathSegments.some(
+                (pathSegment) =>
+                  pathSegment ===
+                    "." ||
+                  pathSegment ===
+                    ".."
+              );
+
+            if (
+              !objectPath ||
+              hasUnsafePathSegment
+            ) {
+              throw new Error(
+                `تم العثور على مسار Storage غير صالح داخل ${bucketName}.`
+              );
+            }
+
+            if (
+              item?.isFolder
+            ) {
+              if (
+                !visitedFolders.has(
+                  objectPath
+                )
+              ) {
+                pendingFolders.push(
+                  objectPath
+                );
+              }
+
+              continue;
+            }
+
+            const signedUrlData =
+              await requestBackupApi(
+                accessToken,
+                {
+                  action:
+                    "storage-signed-url",
+
+                  bucketName,
+
+                  objectPath,
+                }
+              );
+
+            if (
+              signedUrlData
+                ?.bucketName !==
+                bucketName ||
+              signedUrlData
+                ?.objectPath !==
+                objectPath ||
+              !signedUrlData
+                ?.signedUrl
+            ) {
+              throw new Error(
+                `تعذر تجهيز ملف Storage: ${bucketName}/${objectPath}`
+              );
+            }
+
+            let storageResponse;
+
+            try {
+              storageResponse =
+                await fetch(
+                  signedUrlData
+                    .signedUrl
+                );
+            } catch (
+              storageNetworkError
+            ) {
+              console.error(
+                "Backup storage download network error:",
+                {
+                  bucketName,
+                  objectPath,
+                  error:
+                    storageNetworkError,
+                }
+              );
+
+              throw new Error(
+                `تعذر تنزيل ملف Storage: ${bucketName}/${objectPath}`
+              );
+            }
+
+            if (
+              !storageResponse.ok
+            ) {
+              throw new Error(
+                `فشل تنزيل ملف Storage: ${bucketName}/${objectPath}`
+              );
+            }
+
+            const fileBlob =
+              await storageResponse.blob();
+
+            const backupFilePath =
+              `storage/files/${bucketName}/${objectPath}`;
+
+            await addBinaryFileToBackup(
+              zipFile,
+              backupFilePath,
+              fileBlob,
+              integrityFiles
+            );
+
+            bucketFiles.push({
+              objectPath,
+
+              file:
+                backupFilePath,
+
+              bytes:
+                fileBlob.size,
+
+              contentType:
+                fileBlob.type ||
+                item?.metadata
+                  ?.mimetype ||
+                null,
+
+              created_at:
+                item?.created_at ||
+                null,
+
+              updated_at:
+                item?.updated_at ||
+                null,
+
+              metadata:
+                item?.metadata ||
+                null,
+            });
+
+            bucketBytes +=
+              fileBlob.size;
+
+            if (
+              bucketFiles.length >
+              1000000
+            ) {
+              throw new Error(
+                `تجاوز Bucket ${bucketName} الحد الآمن لعدد الملفات.`
+              );
+            }
+          }
+
+          const nextOffset =
+            storagePage
+              ?.nextOffset;
+
+          if (
+            nextOffset === null ||
+            nextOffset ===
+              undefined
+          ) {
+            offset = null;
+          } else {
+            const parsedNextOffset =
+              Number(
+                nextOffset
+              );
+
+            if (
+              !Number.isInteger(
+                parsedNextOffset
+              ) ||
+              parsedNextOffset <=
+                offset
+            ) {
+              throw new Error(
+                `توقف ترقيم صفحات Storage داخل ${bucketName} بطريقة غير صحيحة.`
+              );
+            }
+
+            offset =
+              parsedNextOffset;
+          }
+        }
+      }
+
+      return {
+        id:
+          bucket?.id ||
+          bucketName,
+
+        name:
+          bucketName,
+
+        public:
+          Boolean(
+            bucket?.public
+          ),
+
+        fileCount:
+          bucketFiles.length,
+
+        totalBytes:
+          bucketBytes,
+
+        files:
+          bucketFiles,
+      };
     };
 
   const createFullBackup =
@@ -29859,14 +30252,61 @@ const welcomeBoardNameStyle = {
             }
           );
 
-        if (
+        const expectedStorageBucketCount =
           Number(
             storageInventory
-              ?.bucketCount || 0
-          ) > 0
+              ?.bucketCount
+          );
+
+        if (
+          !Number.isInteger(
+            expectedStorageBucketCount
+          ) ||
+          expectedStorageBucketCount <
+            0 ||
+          !Array.isArray(
+            storageInventory
+              ?.buckets
+          ) ||
+          storageInventory
+            .buckets.length !==
+            expectedStorageBucketCount
         ) {
           throw new Error(
-            "تم العثور على ملفات أو Buckets داخل Supabase Storage. أوقف النظام النسخة حتى لا ينزّل نسخة ناقصة."
+            "بيانات فحص Supabase Storage غير مكتملة."
+          );
+        }
+
+        const storageBucketNames =
+          new Set();
+
+        for (
+          const storageBucket of
+          storageInventory.buckets
+        ) {
+          const storageBucketName =
+            String(
+              storageBucket?.name ||
+                storageBucket?.id ||
+                ""
+            ).trim();
+
+          if (
+            !storageBucketName ||
+            storageBucketName.includes(
+              "/"
+            ) ||
+            storageBucketNames.has(
+              storageBucketName
+            )
+          ) {
+            throw new Error(
+              "بيانات أحد Buckets في Supabase Storage غير صالحة."
+            );
+          }
+
+          storageBucketNames.add(
+            storageBucketName
           );
         }
 
@@ -30134,10 +30574,87 @@ const welcomeBoardNameStyle = {
           integrityFiles
         );
 
+        const storageSummaries = [];
+
+        const storageBuckets =
+          Array.isArray(
+            storageInventory
+              ?.buckets
+          )
+            ? storageInventory
+                .buckets
+            : [];
+
+        for (
+          const storageBucket of
+          storageBuckets
+        ) {
+          const storageSummary =
+            await backupStorageBucket(
+              accessToken,
+              zipFile,
+              storageBucket,
+              integrityFiles
+            );
+
+          storageSummaries.push(
+            storageSummary
+          );
+        }
+
+        const totalStorageFiles =
+          storageSummaries.reduce(
+            (
+              total,
+              bucketSummary
+            ) =>
+              total +
+              Number(
+                bucketSummary
+                  ?.fileCount ||
+                  0
+              ),
+            0
+          );
+
+        const totalStorageBytes =
+          storageSummaries.reduce(
+            (
+              total,
+              bucketSummary
+            ) =>
+              total +
+              Number(
+                bucketSummary
+                  ?.totalBytes ||
+                  0
+              ),
+            0
+          );
+
         await addJsonFileToBackup(
           zipFile,
           "storage/buckets.json",
           storageInventory,
+          integrityFiles
+        );
+
+        await addJsonFileToBackup(
+          zipFile,
+          "storage/objects.json",
+          {
+            bucketCount:
+              storageBuckets.length,
+
+            fileCount:
+              totalStorageFiles,
+
+            totalBytes:
+              totalStorageBytes,
+
+            buckets:
+              storageSummaries,
+          },
           integrityFiles
         );
 
@@ -30206,14 +30723,25 @@ const welcomeBoardNameStyle = {
           storage:
             {
               bucketCount:
-                Number(
-                  storageInventory
-                    ?.bucketCount ||
-                    0
-                ),
+                storageBuckets.length,
+
+              fileCount:
+                totalStorageFiles,
+
+              totalBytes:
+                totalStorageBytes,
 
               included:
                 true,
+
+              inventoryFile:
+                "storage/buckets.json",
+
+              objectsFile:
+                "storage/objects.json",
+
+              filesRoot:
+                "storage/files",
             },
 
           integrityAlgorithm:
@@ -30242,12 +30770,17 @@ const welcomeBoardNameStyle = {
             `عدد الجداول: ${tableSummaries.length}`,
             `إجمالي الصفوف: ${finalManifest.totalPublicRows}`,
             `عدد حسابات الدخول: ${authUsers.length}`,
+            `عدد Buckets في Storage: ${storageBuckets.length}`,
+            `عدد ملفات Storage: ${totalStorageFiles}`,
+            `حجم ملفات Storage: ${totalStorageBytes} بايت`,
             "",
             "محتويات النسخة:",
             "- جميع صفوف الجداول العامة المعتمدة داخل مجلد tables.",
             "- قائمة حسابات Supabase Auth داخل auth/users.json بدون كلمات المرور.",
-            "- فحص Supabase Storage داخل storage/buckets.json.",
-            "- بصمات SHA-256 داخل manifest.json للتحقق من سلامة الملفات.",
+            "- تعريف Buckets في Supabase Storage داخل storage/buckets.json.",
+            "- فهرس ملفات Storage داخل storage/objects.json.",
+            "- جميع ملفات Storage الفعلية داخل storage/files مع الحفاظ على مساراتها.",
+            "- بصمات SHA-256 داخل manifest.json للتحقق من سلامة ملفات البيانات وStorage.",
             "",
             "مهم:",
             "- النسخة لا تحتوي على كلمات مرور حسابات Auth.",
@@ -30306,7 +30839,7 @@ const welcomeBoardNameStyle = {
         );
 
         alert(
-          `تم إنشاء نسخة ZIP مكتملة تضم ${tableSummaries.length} جدولًا و${finalManifest.totalPublicRows} سجلًا.`
+          `تم إنشاء نسخة ZIP مكتملة تضم ${tableSummaries.length} جدولًا و${finalManifest.totalPublicRows} سجلًا و${totalStorageFiles} ملف Storage.`
         );
       } catch (error) {
         console.log(

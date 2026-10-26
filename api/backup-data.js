@@ -655,6 +655,262 @@ module.exports =
           });
       }
 
+      if (
+        action ===
+        "storage-list"
+      ) {
+        const bucketName =
+          String(
+            requestBody.bucketName ||
+              ""
+          ).trim();
+
+        const folderPath =
+          String(
+            requestBody.folderPath ||
+              ""
+          )
+            .replace(/\\/g, "/")
+            .replace(/^\/+|\/+$/g, "");
+
+        const hasUnsafePathSegment =
+          folderPath
+            .split("/")
+            .filter(Boolean)
+            .some(
+              (pathSegment) =>
+                pathSegment === "." ||
+                pathSegment === ".."
+            );
+
+        if (
+          !bucketName ||
+          bucketName.includes(
+            "/"
+          ) ||
+          hasUnsafePathSegment
+        ) {
+          return response
+            .status(400)
+            .json({
+              error:
+                "مسار Storage المطلوب غير صالح.",
+            });
+        }
+
+        const offset =
+          normalizeInteger(
+            requestBody.offset,
+            0,
+            0,
+            100000000
+          );
+
+        const limit =
+          normalizeInteger(
+            requestBody.limit,
+            1000,
+            1,
+            1000
+          );
+
+        const {
+          data,
+          error,
+        } =
+          await adminSupabase
+            .storage
+            .from(
+              bucketName
+            )
+            .list(
+              folderPath,
+              {
+                limit,
+                offset,
+                sortBy: {
+                  column:
+                    "name",
+                  order:
+                    "asc",
+                },
+              }
+            );
+
+        if (error) {
+          console.error(
+            `Backup storage list error (${bucketName}/${folderPath}):`,
+            error
+          );
+
+          return response
+            .status(500)
+            .json({
+              error:
+                `تعذر قراءة ملفات Storage داخل ${bucketName}.`,
+            });
+        }
+
+        const items =
+          (data || []).map(
+            (item) => {
+              const itemName =
+                String(
+                  item?.name ||
+                    ""
+                );
+
+              const objectPath =
+                folderPath
+                  ? `${folderPath}/${itemName}`
+                  : itemName;
+
+              const isFolder =
+                !item?.id &&
+                !item?.metadata;
+
+              return {
+                name:
+                  itemName,
+
+                objectPath,
+
+                isFolder,
+
+                id:
+                  item?.id ||
+                  null,
+
+                created_at:
+                  item?.created_at ||
+                  null,
+
+                updated_at:
+                  item?.updated_at ||
+                  null,
+
+                last_accessed_at:
+                  item?.last_accessed_at ||
+                  null,
+
+                metadata:
+                  item?.metadata ||
+                  null,
+              };
+            }
+          );
+
+        return response
+          .status(200)
+          .json({
+            bucketName,
+            folderPath,
+            offset,
+            limit,
+            returnedCount:
+              items.length,
+            nextOffset:
+              items.length ===
+              limit
+                ? offset +
+                  items.length
+                : null,
+            items,
+          });
+      }
+
+      if (
+        action ===
+        "storage-signed-url"
+      ) {
+        const bucketName =
+          String(
+            requestBody.bucketName ||
+              ""
+          ).trim();
+
+        const objectPath =
+          String(
+            requestBody.objectPath ||
+              ""
+          )
+            .replace(/\\/g, "/")
+            .replace(/^\/+|\/+$/g, "");
+
+        const hasUnsafePathSegment =
+          objectPath
+            .split("/")
+            .filter(Boolean)
+            .some(
+              (pathSegment) =>
+                pathSegment === "." ||
+                pathSegment === ".."
+            );
+
+        if (
+          !bucketName ||
+          bucketName.includes(
+            "/"
+          ) ||
+          !objectPath ||
+          hasUnsafePathSegment
+        ) {
+          return response
+            .status(400)
+            .json({
+              error:
+                "ملف Storage المطلوب غير صالح.",
+            });
+        }
+
+        const expiresIn = 600;
+
+        const {
+          data,
+          error,
+        } =
+          await adminSupabase
+            .storage
+            .from(
+              bucketName
+            )
+            .createSignedUrl(
+              objectPath,
+              expiresIn,
+              {
+                download:
+                  true,
+              }
+            );
+
+        if (
+          error ||
+          !data?.signedUrl
+        ) {
+          console.error(
+            `Backup storage signed URL error (${bucketName}/${objectPath}):`,
+            error
+          );
+
+          return response
+            .status(500)
+            .json({
+              error:
+                `تعذر تجهيز ملف Storage من ${bucketName}.`,
+            });
+        }
+
+        return response
+          .status(200)
+          .json({
+            bucketName,
+            objectPath,
+            expiresIn,
+            signedUrl:
+              data.signedUrl,
+          });
+      }
+
       return response
         .status(400)
         .json({
