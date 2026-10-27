@@ -27760,28 +27760,7 @@ messageType === "reminder"
             .join("\n");
         })();
 
-      const riyadhNow =
-        getRiyadhNowInfo();
-
-      const todayDateText =
-        formatEnglishDigits(
-          new Date(
-            `${riyadhNow.dateKey}T12:00:00`
-          ).toLocaleDateString(
-            "ar-SA-u-ca-gregory",
-            {
-              weekday: "long",
-              year: "numeric",
-              month: "long",
-              day: "numeric",
-            }
-          )
-        );
-
       const message = [
-        `${riyadhNow.greeting} ${staffName}`,
-        `تاريخ اليوم: ${todayDateText}`,
-        "",
         `Appointment date: ${appointmentDate}`,
         `Staff’s Name: ${staffName}`,
         `Appointment time: ${appointmentStartTime}`,
@@ -66339,7 +66318,7 @@ if (screen === "potentialClients") {
           fontWeight: "900",
         }}
       >
-        رقم الجوال
+        رقم الجوال الأساسي
       </span>
 
       <input
@@ -66347,7 +66326,15 @@ if (screen === "potentialClients") {
         onChange={(e) =>
           setEditedPhone(e.target.value)
         }
-        placeholder="رقم الجوال"
+        onBlur={() =>
+          setEditedPhone(
+            formatSaudiPhoneForStorage(
+              editedPhone
+            )
+          )
+        }
+        inputMode="tel"
+        placeholder="05XXXXXXXX"
         style={{
           width: "100%",
           minHeight: "47px",
@@ -66366,6 +66353,71 @@ if (screen === "potentialClients") {
             "inset 0 2px 6px rgba(75,46,31,0.04)",
         }}
       />
+    </label>
+
+    <label
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: "7px",
+        textAlign: "right",
+      }}
+    >
+      <span
+        style={{
+          color: "#80614c",
+          fontSize: "10px",
+          fontWeight: "900",
+        }}
+      >
+        رقم إضافي للبحث فقط
+      </span>
+
+      <input
+        value={editedSecondaryPhone}
+        onChange={(e) =>
+          setEditedSecondaryPhone(
+            e.target.value
+          )
+        }
+        onBlur={() =>
+          setEditedSecondaryPhone(
+            formatSaudiPhoneForStorage(
+              editedSecondaryPhone
+            )
+          )
+        }
+        inputMode="tel"
+        placeholder="رقم الأم أو الأخت مثلاً"
+        style={{
+          width: "100%",
+          minHeight: "47px",
+          padding: "11px 14px",
+          boxSizing: "border-box",
+          borderRadius: "14px",
+          border:
+            "1px solid rgba(169,130,100,0.42)",
+          background:
+            "linear-gradient(145deg, #fffdf9, #f8eee5)",
+          color: "#3f2b21",
+          fontSize: "14px",
+          fontWeight: "850",
+          outline: "none",
+          boxShadow:
+            "inset 0 2px 6px rgba(75,46,31,0.04)",
+        }}
+      />
+
+      <span
+        style={{
+          color: "#9a7963",
+          fontSize: "9px",
+          fontWeight: "800",
+          lineHeight: 1.5,
+        }}
+      >
+        يستخدم للبحث عن العميلة فقط، ولا يستخدم للواتساب أو المواعيد أو الفواتير.
+      </span>
     </label>
 
     <label
@@ -66582,7 +66634,11 @@ if (screen === "potentialClients") {
                 [
                   "☎",
                   "رقم الجوال",
-                  selectedClient.phone,
+                  selectedClient
+                    .secondaryPhone
+                    ? `${selectedClient.phone || "-"}\nبحث: ${selectedClient.secondaryPhone}`
+                    : selectedClient.phone ||
+                      "-",
                 ],
                 [
                   "⌂",
