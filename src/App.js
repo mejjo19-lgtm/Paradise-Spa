@@ -1678,6 +1678,12 @@ const [
 const [duplicateClientModal, setDuplicateClientModal] = useState(null);
 const [duplicateClientSearch, setDuplicateClientSearch] = useState("");
 
+// نافذة اختيار موقع التوصيل للموعد
+const [
+  scheduleLocationModal,
+  setScheduleLocationModal,
+] = useState(null);
+
 // نافذة ربط موعد Gift Done بسجل الهدية الصحيح
 const [giftDoneLinkModal, setGiftDoneLinkModal] = useState(null);
 const [giftDoneLinkSearch, setGiftDoneLinkSearch] = useState("");
@@ -3124,6 +3130,8 @@ function fetchSharedClientLists() {
         setDuplicateClientModal(null);
         setDuplicateClientSearch("");
 
+        setScheduleLocationModal(null);
+
         setGiftDoneLinkModal(null);
         setGiftDoneLinkSearch("");
 
@@ -3156,6 +3164,8 @@ function fetchSharedClientLists() {
 
     setDuplicateClientModal(null);
     setDuplicateClientSearch("");
+
+    setScheduleLocationModal(null);
 
     setGiftDoneLinkModal(null);
     setGiftDoneLinkSearch("");
@@ -4407,6 +4417,7 @@ function fetchSharedClientLists() {
   const createEmptyTherapistDraft = () => ({
     therapistId: "",
     name: "",
+    whatsappPhone: "",
     iqamaNumber: "",
     contractStartDate: "",
     contractEndDate: "",
@@ -11325,7 +11336,7 @@ const updateClientLastActivity = async (id) => {
         } = await supabase
           .from("therapists")
           .select(
-            "id,name,active,sort_order"
+            "id,name,whatsapp_phone,active,sort_order"
           )
           .eq("active", true)
           .order("sort_order", {
@@ -11349,6 +11360,12 @@ const updateClientLastActivity = async (id) => {
               name: String(
                 therapist.name || ""
               ).trim(),
+
+              whatsappPhone:
+                formatSaudiPhoneForStorage(
+                  therapist.whatsapp_phone ||
+                    ""
+                ),
 
               sortOrder: Number(
                 therapist.sort_order ||
@@ -12423,19 +12440,32 @@ const loadIncomeExpenseReportDataRange =
             return row;
           }
 
-          const primaryLocation =
+          const activeLocations =
             getScheduleClientDeliveryLocations(
               clientId
-            ).find(
+            ).filter(
               (location) =>
                 location.active !==
-                  false &&
-                location.isPrimary
+                false
             );
 
-          if (!primaryLocation) {
+          /*
+            إذا عند العميلة موقع واحد فقط
+            نعتمده تلقائيًا.
+
+            إذا عندها أكثر من موقع نترك
+            الاختيار للمستخدمة من لوحة
+            اختيار موقع الموعد.
+          */
+          if (
+            activeLocations.length !==
+            1
+          ) {
             return row;
           }
+
+          const onlyLocation =
+            activeLocations[0];
 
           changedRowIndexes.push(
             rowIndex
@@ -12446,12 +12476,12 @@ const loadIncomeExpenseReportDataRange =
 
             clientLocationId:
               String(
-                primaryLocation.id
+                onlyLocation.id
               ),
 
             district:
               String(
-                primaryLocation
+                onlyLocation
                   .district ||
                 row.district ||
                 ""
@@ -15908,6 +15938,265 @@ const getScheduleClientBadges = (
     };
   }, [scheduleSelection, selectedScheduleDate, scheduleData, scheduleSettings]);
 
+  const saveScheduleLocationForAppointment =
+    async ({
+      scheduleDate,
+      rowIndex,
+      clientId,
+      location,
+      rowSnapshot = null,
+    }) => {
+      if (
+        !location?.id ||
+        !ensureSystemWritable() ||
+        !canEditData
+      ) {
+        return false;
+      }
+
+      const targetDate =
+        scheduleDate ||
+        selectedScheduleDate;
+
+      const numericRowIndex =
+        Number(rowIndex);
+
+      if (
+        !targetDate ||
+        !Number.isInteger(
+          numericRowIndex
+        ) ||
+        numericRowIndex < 0
+      ) {
+        return false;
+      }
+
+      const currentDayData =
+        scheduleData[targetDate] ||
+        {};
+
+      const currentRows =
+        currentDayData.rows ||
+        timeSlots.map(
+          createEmptyAppointmentRow
+        );
+
+      const currentRow =
+        rowSnapshot ||
+        currentRows[
+          numericRowIndex
+        ];
+
+      if (
+        !currentRow ||
+        String(
+          currentRow.clientId || ""
+        ) !==
+          String(clientId || "")
+      ) {
+        return false;
+      }
+
+      const updatedRowSnapshot = {
+        ...currentRow,
+
+        clientLocationId:
+          String(location.id),
+
+        district:
+          String(
+            location.district ||
+              currentRow.district ||
+              ""
+          ).trim(),
+      };
+
+      scheduleLastEditRef.current =
+        Date.now();
+
+      setScheduleData(
+        (previousScheduleData) => {
+          const dayData =
+            previousScheduleData[
+              targetDate
+            ] || {};
+
+          const rowsForDate =
+            dayData.rows ||
+            timeSlots.map(
+              createEmptyAppointmentRow
+            );
+
+          const nextRows =
+            rowsForDate.map(
+              (
+                scheduleRow,
+                index
+              ) =>
+                index ===
+                numericRowIndex
+                  ? {
+                      ...scheduleRow,
+                      clientLocationId:
+                        String(
+                          location.id
+                        ),
+                      district:
+                        String(
+                          location
+                            .district ||
+                            scheduleRow
+                              ?.district ||
+                            ""
+                        ).trim(),
+                    }
+                  : scheduleRow
+            );
+
+          return {
+            ...previousScheduleData,
+
+            [targetDate]: {
+              ...dayData,
+              rows: nextRows,
+            },
+          };
+        }
+      );
+
+      /*
+        نلغي أي حفظ مؤجل أقدم من
+        اختيار الموقع حتى لا يرجع
+        clientLocationId للقيمة القديمة.
+      */
+      const scheduleRowId =
+        getScheduleRowId(
+          targetDate,
+          numericRowIndex
+        );
+
+      if (
+        scheduleRowSaveTimersRef
+          .current[
+            scheduleRowId
+          ]
+      ) {
+        clearTimeout(
+          scheduleRowSaveTimersRef
+            .current[
+              scheduleRowId
+            ]
+        );
+
+        delete scheduleRowSaveTimersRef
+          .current[
+            scheduleRowId
+          ];
+      }
+
+      await saveScheduleRowToSupabase(
+        targetDate,
+        numericRowIndex,
+        updatedRowSnapshot,
+        currentDayData.cellStyles ||
+          {}
+      );
+
+      return true;
+    };
+
+  const prepareScheduleLocationChoice =
+    async ({
+      client,
+      scheduleDate,
+      rowIndex,
+      rowSnapshot = null,
+    }) => {
+      if (!client?.id) {
+        return false;
+      }
+
+      if (
+        String(
+          rowSnapshot
+            ?.clientLocationId ||
+            ""
+        ).trim()
+      ) {
+        return true;
+      }
+
+      const loadedLocations =
+        await loadScheduleClientDeliveryLocations(
+          client.id
+        );
+
+      const activeLocations =
+        (loadedLocations || []).filter(
+          (location) =>
+            location.active !== false
+        );
+
+      if (
+        activeLocations.length === 0
+      ) {
+        return true;
+      }
+
+      /*
+        موقع واحد فقط:
+        نعتمده مباشرة بدون إزعاج
+        المستخدم بلوحة إضافية.
+      */
+      if (
+        activeLocations.length === 1
+      ) {
+        return (
+          await saveScheduleLocationForAppointment(
+            {
+              scheduleDate,
+              rowIndex,
+              clientId:
+                String(client.id),
+              location:
+                activeLocations[0],
+              rowSnapshot,
+            }
+          )
+        );
+      }
+
+      /*
+        موقعان أو أكثر:
+        يجب اختيار الموقع الخاص
+        بهذا الموعد تحديدًا.
+      */
+      setScheduleLocationModal({
+        scheduleDate:
+          scheduleDate ||
+          selectedScheduleDate,
+
+        rowIndex,
+
+        clientId:
+          String(client.id),
+
+        clientName:
+          client.name ||
+          client.arabic_name ||
+          "",
+
+        client,
+
+        locations:
+          activeLocations,
+
+        rowSnapshot,
+      });
+
+      return true;
+    };
+
   const applyScheduleNumberLookup = (
     rowIndex,
     phoneValue
@@ -15919,6 +16208,7 @@ const getScheduleClientBadges = (
     let stylesToSave = {};
     let selectableMatches = [];
     let shouldOpenClientModal = false;
+    let matchedClientForLocation = null;
 
     setScheduleData(
       (previousScheduleData) => {
@@ -16015,6 +16305,9 @@ const getScheduleClientBadges = (
               matchedClients[0];
           }
         }
+
+        matchedClientForLocation =
+          matchedClient;
 
         selectableMatches =
           matchedClients;
@@ -16167,6 +16460,39 @@ const getScheduleClientBadges = (
             matches:
               selectableMatches,
           });
+        }
+
+        if (
+          !shouldOpenClientModal &&
+          matchedClientForLocation &&
+          rowToSave?.clientId &&
+          !String(
+            rowToSave
+              ?.clientLocationId ||
+              ""
+          ).trim()
+        ) {
+          prepareScheduleLocationChoice(
+            {
+              client:
+                matchedClientForLocation,
+
+              scheduleDate:
+                selectedScheduleDate,
+
+              rowIndex,
+
+              rowSnapshot:
+                rowToSave,
+            }
+          ).catch(
+            (error) => {
+              console.error(
+                "Schedule location choice error:",
+                error
+              );
+            }
+          );
         }
 
         if (
@@ -18737,9 +19063,30 @@ const getScheduleClientBadges = (
         ""
       );
 
-      loadScheduleClientDeliveryLocations(
-        client.id
-      );
+      if (
+        !openProfileAfterSelect &&
+        modalSnapshot.targetType ===
+          "primary"
+      ) {
+        await prepareScheduleLocationChoice(
+          {
+            client,
+
+            scheduleDate:
+              targetDate,
+
+            rowIndex:
+              numericRowIndex,
+
+            rowSnapshot:
+              updatedRowSnapshot,
+          }
+        );
+      } else {
+        loadScheduleClientDeliveryLocations(
+          client.id
+        );
+      }
 
       return client;
     };
@@ -22566,11 +22913,6 @@ const normalizeOrderLabelForStats = (orderValue) =>
     return `${displayHour}:${String(displayMinute).padStart(2, "0")}`;
   };
 
-  const staffWhatsAppNumbers = {
-    Joce: "0541901434",
-    Caren: "0572954871",
-  };
-
   const formatCurrency = (value) => String(Math.round(parseAmount(value)));
 
   const getFinanceMonthLabel = (monthKey) => {
@@ -25788,6 +26130,130 @@ const sendWhatsApp = async (client) => {
       .replace(/[٠-٩]/g, (digit) => "٠١٢٣٤٥٦٧٨٩".indexOf(digit))
       .replace(/[۰-۹]/g, (digit) => "۰۱۲۳۴۵۶۷۸۹".indexOf(digit));
 
+  const getRiyadhNowInfo = () => {
+    const dateParts =
+      new Intl.DateTimeFormat(
+        "en-CA",
+        {
+          timeZone: "Asia/Riyadh",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          hourCycle: "h23",
+        }
+      ).formatToParts(
+        new Date()
+      );
+
+    const parts =
+      dateParts.reduce(
+        (
+          result,
+          part
+        ) => {
+          if (
+            part.type !==
+            "literal"
+          ) {
+            result[
+              part.type
+            ] =
+              part.value;
+          }
+
+          return result;
+        },
+        {}
+      );
+
+    const dateKey =
+      `${parts.year}-${parts.month}-${parts.day}`;
+
+    const hour =
+      Number(
+        parts.hour || 0
+      );
+
+    return {
+      dateKey,
+      hour,
+
+      greeting:
+        hour < 12
+          ? "صباح الخير"
+          : "مساء الخير",
+    };
+  };
+
+  const getDateDifferenceByKeys = (
+    fromDateKey,
+    toDateKey
+  ) => {
+    const parseDateKey = (
+      dateKey
+    ) => {
+      const [
+        year,
+        month,
+        day,
+      ] =
+        String(
+          dateKey || ""
+        )
+          .split("-")
+          .map(Number);
+
+      if (
+        !year ||
+        !month ||
+        !day
+      ) {
+        return NaN;
+      }
+
+      return Date.UTC(
+        year,
+        month - 1,
+        day
+      );
+    };
+
+    const fromTimestamp =
+      parseDateKey(
+        fromDateKey
+      );
+
+    const toTimestamp =
+      parseDateKey(
+        toDateKey
+      );
+
+    if (
+      !Number.isFinite(
+        fromTimestamp
+      ) ||
+      !Number.isFinite(
+        toTimestamp
+      )
+    ) {
+      return null;
+    }
+
+    return Math.round(
+      (
+        toTimestamp -
+        fromTimestamp
+      ) /
+        (
+          24 *
+          60 *
+          60 *
+          1000
+        )
+    );
+  };
+
   const formatAppointmentMessageDate = (dateString) => {
     const date = new Date(
       `${dateString}T12:00:00`
@@ -27106,12 +27572,30 @@ const appointmentServicesText = (() => {
     .map(([service, count]) => `${count} ${service}`)
     .join("\n");
 })();
+
+    const riyadhNow =
+      getRiyadhNowInfo();
+
+    const reminderDayDifference =
+      getDateDifferenceByKeys(
+        riyadhNow.dateKey,
+        date
+      );
+
+    const reminderDayText =
+      reminderDayDifference === 0
+        ? "اليوم"
+        : reminderDayDifference ===
+            1
+          ? "بكرا"
+          : `يوم ${appointmentWeekday} ${appointmentDate}`;
+
     const message =
 messageType === "reminder"
   ? [
-      "صباح الخير",
+      riyadhNow.greeting,
       `كيف حالك أستاذة ${appointment.displayName || ""}💗`,
-      `كنت حابه أذكرك بموعدك اليوم إن شاء الله ما بين الساعة ${appointmentServiceTime}💗`,
+      `كنت حابه أذكرك بموعدك ${reminderDayText} إن شاء الله ما بين الساعة ${appointmentServiceTime}💗`,
     ].join("\n")
         : [
             `تم تأكيد موعدك يوم ${appointmentWeekday} ${appointmentDate}`,
@@ -27133,67 +27617,186 @@ messageType === "reminder"
     window.location.href = whatsappAppLink;
   };
 
-  const openStaffAppointmentWhatsApp = (appointment, date, staffName) => {
-    const staffPhone = staffWhatsAppNumbers[staffName];
+  const openStaffAppointmentWhatsApp =
+    (
+      appointment,
+      date,
+      therapistId
+    ) => {
+      if (!therapistId) {
+        alert(
+          "اختاري اسم الأخصائية أولاً"
+        );
+        return;
+      }
 
-    if (!staffPhone) {
-      alert("اختاري اسم الأخصائية أولاً");
-      return;
-    }
+      const selectedTherapist =
+        activeTherapists.find(
+          (therapist) =>
+            String(
+              therapist.id
+            ) ===
+            String(
+              therapistId
+            )
+        ) || null;
 
-    const cleanPhone = cleanSaudiPhone(staffPhone);
-    const appointmentDate = formatAppointmentDate(date);
-    const appointmentStartTime =
-  String(appointment.serviceTime || "-").split("-")[0].trim() || "-";
-    const appointmentTime = appointment.serviceTime || "-";
-    const totalStaffServices =
-  1 + (appointment.additionalClients || []).filter(
-    (client) => client.service || client.services
-  ).length;
+      if (!selectedTherapist) {
+        alert(
+          "تعذر العثور على بيانات الأخصائية."
+        );
+        return;
+      }
 
-const leavingMinutes =
-  totalStaffServices <= 1 ? 90 : 90 + (totalStaffServices - 1) * 75;
+      const staffName =
+        selectedTherapist.name ||
+        "";
 
-const leavingTime = addMinutesToDisplayTime(
-  appointmentStartTime,
-  leavingMinutes
-);
-    const staffServicesText = (() => {
-  const allServices = [
-    appointment.services,
-    ...(appointment.additionalClients || []).map(
-      (client) => client.service || client.services || ""
-    ),
-  ]
-    .filter(Boolean)
-    .map((service) => String(service).trim());
+      const staffPhone =
+        formatSaudiPhoneForStorage(
+          selectedTherapist
+            .whatsappPhone ||
+            ""
+        );
 
-  const counts = {};
+      if (!staffPhone) {
+        alert(
+          `رقم واتساب ${staffName || "الأخصائية"} غير مسجل. أضيفيه من الإعدادات أولاً.`
+        );
+        return;
+      }
 
-  allServices.forEach((service) => {
-    counts[service] = (counts[service] || 0) + 1;
-  });
+      const cleanPhone =
+        cleanSaudiPhone(
+          staffPhone
+        );
 
-  return Object.entries(counts)
-    .map(([service, count]) => `${count} ${service}`)
-    .join("\n");
-})();
+      const appointmentDate =
+        formatAppointmentDate(
+          date
+        );
 
-    const message = [
-      appointmentDate,
-      `Staff’s Name: ${staffName}`,
-      `Appointment time: ${appointmentStartTime}`,
-      "",
-      "Service:",
-      staffServicesText || "-",
-      "",
-      "Payment: will transfer",
-      `Clients Name : ${appointment.displayName || appointment.client || "-"}`,
-      `Leaving Time: ${leavingTime}`,
-    ].join("\n");
+      const appointmentStartTime =
+        String(
+          appointment.serviceTime ||
+            "-"
+        )
+          .split("-")[0]
+          .trim() || "-";
 
-    window.location.href = `whatsapp://send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
-  };
+      const totalStaffServices =
+        1 +
+        (
+          appointment.additionalClients ||
+          []
+        ).filter(
+          (client) =>
+            client.service ||
+            client.services
+        ).length;
+
+      const leavingMinutes =
+        totalStaffServices <= 1
+          ? 90
+          : 90 +
+            (
+              totalStaffServices -
+              1
+            ) *
+              75;
+
+      const leavingTime =
+        addMinutesToDisplayTime(
+          appointmentStartTime,
+          leavingMinutes
+        );
+
+      const staffServicesText =
+        (() => {
+          const allServices = [
+            appointment.services,
+
+            ...(
+              appointment.additionalClients ||
+              []
+            ).map(
+              (client) =>
+                client.service ||
+                client.services ||
+                ""
+            ),
+          ]
+            .filter(Boolean)
+            .map(
+              (service) =>
+                String(
+                  service
+                ).trim()
+            );
+
+          const counts = {};
+
+          allServices.forEach(
+            (service) => {
+              counts[service] =
+                (
+                  counts[
+                    service
+                  ] || 0
+                ) + 1;
+            }
+          );
+
+          return Object.entries(
+            counts
+          )
+            .map(
+              ([
+                service,
+                count,
+              ]) =>
+                `${count} ${service}`
+            )
+            .join("\n");
+        })();
+
+      const riyadhNow =
+        getRiyadhNowInfo();
+
+      const todayDateText =
+        formatEnglishDigits(
+          new Date(
+            `${riyadhNow.dateKey}T12:00:00`
+          ).toLocaleDateString(
+            "ar-SA-u-ca-gregory",
+            {
+              weekday: "long",
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+            }
+          )
+        );
+
+      const message = [
+        `${riyadhNow.greeting} ${staffName}`,
+        `تاريخ اليوم: ${todayDateText}`,
+        "",
+        `Appointment date: ${appointmentDate}`,
+        `Staff’s Name: ${staffName}`,
+        `Appointment time: ${appointmentStartTime}`,
+        "",
+        "Service:",
+        staffServicesText || "-",
+        "",
+        "Payment: will transfer",
+        `Clients Name : ${appointment.displayName || appointment.client || "-"}`,
+        `Leaving Time: ${leavingTime}`,
+      ].join("\n");
+
+      window.location.href =
+        `whatsapp://send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
+    };
 
 
   useEffect(() => {
@@ -27499,7 +28102,6 @@ const leavingTime = addMinutesToDisplayTime(
       );
 
     const mobileCardTableSelectors = [
-      ".paradise-schedule-table",
       ".paradise-clients-table",
       ".paradise-gift-table",
       ".paradise-referrals-table",
@@ -29769,9 +30371,27 @@ const leavingTime = addMinutesToDisplayTime(
   boxSizing: "border-box",
 }}
           >
-            <option value="">الأخصائية</option>
-            <option value="Joce">Joce</option>
-            <option value="Caren">Caren</option>
+            <option value="">
+              الأخصائية
+            </option>
+
+            {activeTherapists.map(
+              (therapist) => (
+                <option
+                  key={
+                    therapist.id
+                  }
+                  value={
+                    therapist.id
+                  }
+                >
+                  {therapist.name}
+                  {therapist.whatsappPhone
+                    ? ""
+                    : " — بدون رقم"}
+                </option>
+              )
+            )}
           </select>
 
           <button
@@ -32765,6 +33385,13 @@ const welcomeBoardNameStyle = {
       therapist.therapist_name ||
       "",
 
+    whatsappPhone:
+      formatSaudiPhoneForStorage(
+        therapist.whatsapp_phone ||
+          therapist.whatsappPhone ||
+          ""
+      ),
+
     iqamaNumber:
       therapist.iqama_number ||
       "",
@@ -32832,6 +33459,14 @@ const welcomeBoardNameStyle = {
 
     if (
       errorMessage.includes(
+        "INVALID_THERAPIST_PHONE"
+      )
+    ) {
+      return "رقم واتساب الأخصائية غير صحيح.";
+    }
+
+    if (
+      errorMessage.includes(
         "INVALID_CONTRACT_DATE_RANGE"
       )
     ) {
@@ -32894,10 +33529,58 @@ const welcomeBoardNameStyle = {
           throw error;
         }
 
+        const {
+          data:
+            therapistPhoneRows,
+          error:
+            therapistPhonesError,
+        } = await supabase
+          .from("therapists")
+          .select(
+            "id,whatsapp_phone"
+          );
+
+        if (
+          therapistPhonesError
+        ) {
+          throw therapistPhonesError;
+        }
+
+        const therapistPhoneById =
+          new Map(
+            (
+              therapistPhoneRows ||
+              []
+            ).map(
+              (therapist) => [
+                String(
+                  therapist.id
+                ),
+                therapist
+                  .whatsapp_phone ||
+                  "",
+              ]
+            )
+          );
+
         const normalizedTherapists =
           (data || [])
             .map(
-              normalizeTherapistAdminRecord
+              (therapist) =>
+                normalizeTherapistAdminRecord(
+                  {
+                    ...therapist,
+
+                    whatsapp_phone:
+                      therapistPhoneById.get(
+                        String(
+                          therapist
+                            .therapist_id ||
+                            ""
+                        )
+                      ) || "",
+                  }
+                )
             )
             .sort(
               (
@@ -32963,6 +33646,10 @@ const welcomeBoardNameStyle = {
       name:
         therapist.name || "",
 
+      whatsappPhone:
+        therapist.whatsappPhone ||
+        "",
+
       iqamaNumber:
         therapist.iqamaNumber ||
         "",
@@ -33005,6 +33692,13 @@ const welcomeBoardNameStyle = {
             ""
         ).trim();
 
+      const normalizedWhatsAppPhone =
+        formatSaudiPhoneForStorage(
+          therapistDraft
+            .whatsappPhone ||
+            ""
+        );
+
       const normalizedIqamaNumber =
         String(
           therapistDraft
@@ -33014,6 +33708,19 @@ const welcomeBoardNameStyle = {
       if (!normalizedName) {
         alert(
           "اكتب اسم الأخصائية."
+        );
+
+        return;
+      }
+
+      if (
+        normalizedWhatsAppPhone &&
+        !/^05\d{8}$/.test(
+          normalizedWhatsAppPhone
+        )
+      ) {
+        alert(
+          "رقم واتساب الأخصائية غير صحيح. اكتبه مثل 05XXXXXXXX."
         );
 
         return;
@@ -33078,6 +33785,8 @@ const welcomeBoardNameStyle = {
 
       try {
         const {
+          data:
+            savedTherapistId,
           error,
         } = await supabase.rpc(
           "save_therapist_admin",
@@ -33122,6 +33831,38 @@ const welcomeBoardNameStyle = {
 
         if (error) {
           throw error;
+        }
+
+        const effectiveTherapistId =
+          savedTherapistId ||
+          therapistDraft
+            .therapistId;
+
+        if (
+          !effectiveTherapistId
+        ) {
+          throw new Error(
+            "THERAPIST_NOT_FOUND"
+          );
+        }
+
+        const {
+          error:
+            phoneSaveError,
+        } = await supabase.rpc(
+          "set_therapist_whatsapp_phone_admin",
+          {
+            p_therapist_id:
+              effectiveTherapistId,
+
+            p_whatsapp_phone:
+              normalizedWhatsAppPhone ||
+              null,
+          }
+        );
+
+        if (phoneSaveError) {
+          throw phoneSaveError;
         }
 
         const wasEditing =
@@ -36954,6 +37695,54 @@ const welcomeBoardNameStyle = {
                       fontWeight: 900,
                     }}
                   >
+                    رقم واتساب
+
+                    <input
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="off"
+                      placeholder="05XXXXXXXX"
+                      value={
+                        therapistDraft
+                          .whatsappPhone
+                      }
+                      onChange={(event) =>
+                        setTherapistDraft(
+                          (previous) => ({
+                            ...previous,
+
+                            whatsappPhone:
+                              event.target
+                                .value,
+                          })
+                        )
+                      }
+                      onBlur={() =>
+                        setTherapistDraft(
+                          (previous) => ({
+                            ...previous,
+
+                            whatsappPhone:
+                              formatSaudiPhoneForStorage(
+                                previous
+                                  .whatsappPhone
+                              ),
+                          })
+                        )
+                      }
+                      style={settingsInputStyle}
+                    />
+                  </label>
+
+                  <label
+                    style={{
+                      display: "grid",
+                      gap: "7px",
+                      color: "#684b38",
+                      fontSize: "13px",
+                      fontWeight: 900,
+                    }}
+                  >
                     رقم الإقامة
 
                     <input
@@ -37339,6 +38128,12 @@ const welcomeBoardNameStyle = {
                             }}
                           >
                             {[
+                              [
+                                "رقم واتساب",
+                                therapist
+                                  .whatsappPhone ||
+                                  "غير مسجل",
+                              ],
                               [
                                 "رقم الإقامة",
                                 therapist
@@ -43551,6 +44346,357 @@ if (screen === "menu") {
               document.body
             );
           })()}
+
+          {scheduleLocationModal &&
+            createPortal(
+              <div
+                className="paradise-duplicate-client-modal-overlay paradise-location-choice-modal-overlay"
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  width: "100vw",
+                  height: "100dvh",
+                  zIndex: 999999,
+                  background:
+                    "rgba(75,46,31,0.30)",
+                  padding: "24px",
+                  boxSizing:
+                    "border-box",
+                  display: "grid",
+                  placeItems: "center",
+                  overflow: "hidden",
+                }}
+                onMouseDown={(
+                  event
+                ) => {
+                  if (
+                    event.target !==
+                    event.currentTarget
+                  ) {
+                    return;
+                  }
+
+                  setScheduleLocationModal(
+                    null
+                  );
+                }}
+              >
+                <div
+                  className="paradise-duplicate-client-modal-card paradise-location-choice-modal-card"
+                  style={{
+                    width: "100%",
+                    maxWidth: "580px",
+                    maxHeight:
+                      "calc(100dvh - 48px)",
+                    overflowY: "auto",
+                    overscrollBehavior:
+                      "contain",
+                    background:
+                      "linear-gradient(145deg, #fffaf7, #f2e7da)",
+                    border:
+                      "1px solid #d6c7b8",
+                    borderRadius:
+                      "26px",
+                    padding: "18px",
+                    boxSizing:
+                      "border-box",
+                    boxShadow:
+                      "0 28px 70px rgba(75,46,31,0.3)",
+                    color: "#4b2e1f",
+                    direction: "rtl",
+                    fontFamily:
+                      "Arial, sans-serif",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent:
+                        "space-between",
+                      alignItems:
+                        "center",
+                      gap: "12px",
+                      marginBottom:
+                        "14px",
+                    }}
+                  >
+                    <div>
+                      <h3
+                        style={{
+                          margin: 0,
+                          fontSize:
+                            "20px",
+                        }}
+                      >
+                        اختيار موقع
+                        الموعد
+                      </h3>
+
+                      <div
+                        style={{
+                          marginTop:
+                            "5px",
+                          color:
+                            "#7a5a43",
+                          fontSize:
+                            "13px",
+                          fontWeight:
+                            "700",
+                        }}
+                      >
+                        {
+                          scheduleLocationModal
+                            .clientName
+                        }
+                        {" — "}
+                        اختاري العنوان
+                        الذي سيظهر في
+                        التوصيل
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setScheduleLocationModal(
+                          null
+                        )
+                      }
+                      style={{
+                        width: "36px",
+                        height: "36px",
+                        borderRadius:
+                          "50%",
+                        border:
+                          "1px solid #d6c7b8",
+                        background:
+                          "#fffaf3",
+                        color:
+                          "#4b2e1f",
+                        fontSize:
+                          "20px",
+                        fontWeight:
+                          "900",
+                        cursor:
+                          "pointer",
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: "10px",
+                    }}
+                  >
+                    {(
+                      scheduleLocationModal
+                        .locations || []
+                    ).map(
+                      (location) => (
+                        <button
+                          key={
+                            location.id
+                          }
+                          type="button"
+                          onClick={async () => {
+                            const saved =
+                              await saveScheduleLocationForAppointment(
+                                {
+                                  scheduleDate:
+                                    scheduleLocationModal
+                                      .scheduleDate,
+
+                                  rowIndex:
+                                    scheduleLocationModal
+                                      .rowIndex,
+
+                                  clientId:
+                                    scheduleLocationModal
+                                      .clientId,
+
+                                  location,
+
+                                  rowSnapshot:
+                                    scheduleLocationModal
+                                      .rowSnapshot,
+                                }
+                              );
+
+                            if (saved) {
+                              setScheduleLocationModal(
+                                null
+                              );
+                            }
+                          }}
+                          style={{
+                            width:
+                              "100%",
+                            padding:
+                              "14px",
+                            borderRadius:
+                              "17px",
+                            border:
+                              location
+                                .isPrimary
+                                ? "1.5px solid #8f694f"
+                                : "1px solid rgba(75,46,31,0.18)",
+                            background:
+                              location
+                                .isPrimary
+                                ? "#f3e5d8"
+                                : "#fffaf3",
+                            color:
+                              "#4b2e1f",
+                            cursor:
+                              "pointer",
+                            textAlign:
+                              "right",
+                            boxShadow:
+                              "0 6px 16px rgba(75,46,31,0.07)",
+                          }}
+                        >
+                          <div
+                            style={{
+                              display:
+                                "flex",
+                              alignItems:
+                                "center",
+                              justifyContent:
+                                "space-between",
+                              gap: "8px",
+                              marginBottom:
+                                "8px",
+                            }}
+                          >
+                            <strong
+                              style={{
+                                fontSize:
+                                  "17px",
+                              }}
+                            >
+                              {location.district ||
+                                "الحي غير محدد"}
+                            </strong>
+
+                            {location.isPrimary && (
+                              <span
+                                style={{
+                                  padding:
+                                    "4px 8px",
+                                  borderRadius:
+                                    "999px",
+                                  background:
+                                    "#dfc9b4",
+                                  fontSize:
+                                    "10px",
+                                  fontWeight:
+                                    "900",
+                                }}
+                              >
+                                افتراضي
+                              </span>
+                            )}
+                          </div>
+
+                          <div
+                            style={{
+                              display:
+                                "grid",
+                              gap: "4px",
+                              color:
+                                "#72523e",
+                              fontSize:
+                                "13px",
+                              fontWeight:
+                                "700",
+                              lineHeight:
+                                1.6,
+                            }}
+                          >
+                            {location.buildingNumber && (
+                              <div>
+                                المبنى:{" "}
+                                {
+                                  location.buildingNumber
+                                }
+                              </div>
+                            )}
+
+                            {location.floor && (
+                              <div>
+                                الدور:{" "}
+                                {
+                                  location.floor
+                                }
+                              </div>
+                            )}
+
+                            {location.apartment && (
+                              <div>
+                                الشقة:{" "}
+                                {
+                                  location.apartment
+                                }
+                              </div>
+                            )}
+
+                            {location.addressNote && (
+                              <div>
+                                الملاحظة:{" "}
+                                {
+                                  location.addressNote
+                                }
+                              </div>
+                            )}
+                          </div>
+                        </button>
+                      )
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const client =
+                        scheduleLocationModal
+                          .client;
+
+                      setScheduleLocationModal(
+                        null
+                      );
+
+                      if (client) {
+                        openClientProfile(
+                          client
+                        );
+                      }
+                    }}
+                    style={{
+                      ...buttonStyle,
+                      width: "100%",
+                      marginTop: "12px",
+                      padding:
+                        "11px 14px",
+                      background:
+                        "#ead8c9",
+                      color:
+                        "#4b2e1f",
+                      border:
+                        "1px solid #d0b8a4",
+                      borderRadius:
+                        "14px",
+                    }}
+                  >
+                    تعديل العناوين من
+                    بروفايل العميلة
+                  </button>
+                </div>
+              </div>,
+              document.body
+            )}
 
           {giftDoneLinkModal && (() => {
             const cleanSearch = String(
@@ -62540,19 +63686,124 @@ if (screen === "potentialClients") {
         const fileName =
           `Paradise-Gift-${selectedGiftCardTemplate.id}-${safeRecipientName}-${getCurrentLocalDate()}.png`;
 
+        const imageBlob =
+          await new Promise(
+            (resolve) => {
+              finalCanvas.toBlob(
+                resolve,
+                "image/png",
+                1
+              );
+            }
+          );
+
+        if (!imageBlob) {
+          throw new Error(
+            "Gift card PNG blob unavailable"
+          );
+        }
+
+        const isIOSDevice =
+          /iPad|iPhone|iPod/i.test(
+            navigator.userAgent
+          ) ||
+          (
+            navigator.platform ===
+              "MacIntel" &&
+            navigator.maxTouchPoints >
+              1
+          );
+
+        /*
+          iPhone / iPad:
+          Web Share مع ملف فعلي هو
+          المسار الأكثر ثباتًا لحفظ
+          الصورة في Photos / Files.
+        */
+        if (
+          isIOSDevice &&
+          typeof navigator.share ===
+            "function"
+        ) {
+          const giftCardFile =
+            new File(
+              [imageBlob],
+              fileName,
+              {
+                type: "image/png",
+              }
+            );
+
+          let canShareFile = true;
+
+          if (
+            typeof navigator.canShare ===
+            "function"
+          ) {
+            try {
+              canShareFile =
+                navigator.canShare({
+                  files: [
+                    giftCardFile,
+                  ],
+                });
+            } catch {
+              canShareFile = false;
+            }
+          }
+
+          if (canShareFile) {
+            try {
+              await navigator.share({
+                files: [
+                  giftCardFile,
+                ],
+                title:
+                  "Paradise Gift Card",
+              });
+
+              return;
+            } catch (shareError) {
+              if (
+                shareError?.name ===
+                "AbortError"
+              ) {
+                return;
+              }
+
+              console.log(
+                "iOS gift card share fallback:",
+                shareError
+              );
+            }
+          }
+        }
+
+        /*
+          Android / Desktop،
+          وكذلك fallback للـ iPhone.
+        */
+        const objectUrl =
+          URL.createObjectURL(
+            imageBlob
+          );
+
         const link =
           document.createElement(
             "a"
           );
 
+        link.href =
+          objectUrl;
+
         link.download =
           fileName;
 
-        link.href =
-          finalCanvas.toDataURL(
-            "image/png",
-            1
-          );
+        if (isIOSDevice) {
+          link.target = "_blank";
+          link.rel =
+            "noopener noreferrer";
+        }
 
         document.body.appendChild(
           link
@@ -62560,6 +63811,15 @@ if (screen === "potentialClients") {
 
         link.click();
         link.remove();
+
+        setTimeout(
+          () => {
+            URL.revokeObjectURL(
+              objectUrl
+            );
+          },
+          60000
+        );
       } catch (error) {
         console.log(
           "Gift card image save error:",
