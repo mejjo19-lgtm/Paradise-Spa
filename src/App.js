@@ -11454,7 +11454,17 @@ const stepScheduleOrder = (rowIndex, currentOrder, direction) => {
 
   updateScheduleRow(rowIndex, "order", nextOrder);
 };
-  const paymentOptions = ["", "Cash", "Debit", "Credit", "Bank Transfer", "Split Payment", "Tabby", "Tamara"];
+  const paymentOptions = [
+    "",
+    "Cash",
+    "Debit",
+    "Credit",
+    "Bank Transfer",
+    "Bank Transfer R",
+    "Split Payment",
+    "Tabby",
+    "Tamara",
+  ];
   const serviceOptions = [
     "",
     
