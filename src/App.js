@@ -3918,6 +3918,11 @@ function fetchSharedClientLists() {
       )
   );
 
+  const [
+    financeDashboardView,
+    setFinanceDashboardView,
+  ] = useState("main");
+
   /*
     المصدر الرسمي للدخل:
 
@@ -11461,6 +11466,7 @@ const stepScheduleOrder = (rowIndex, currentOrder, direction) => {
     "Credit",
     "Bank Transfer",
     "Bank Transfer R",
+    "Cash R",
     "Split Payment",
     "Tabby",
     "Tamara",
@@ -22984,8 +22990,154 @@ const normalizeOrderLabelForStats = (orderValue) =>
     }));
   };
 
-  const getFinanceDayStats = (date, monthlySettings) => {
+  const isFinanceDashboardClientIncluded = ({
+    dashboardView,
+    row,
+    client,
+    extraClientIndex = null,
+  }) => {
+    if (dashboardView === "main") {
+      return true;
+    }
+
+    if (dashboardView === "invoice") {
+      if (extraClientIndex === null) {
+        return Boolean(
+          row?.invoiceLinks?.primary
+        );
+      }
+
+      return Boolean(
+        getAdditionalClientInvoiceLink(
+          row,
+          client,
+          extraClientIndex
+        )
+      );
+    }
+
+    if (dashboardView === "r") {
+      const paymentMethod =
+        String(
+          client?.paymentMethod || ""
+        ).trim();
+
+      return (
+        paymentMethod ===
+          "Bank Transfer R" ||
+        paymentMethod === "Cash R"
+      );
+    }
+
+    return false;
+  };
+
+  const getFinanceRowsForDashboard = (
+    date,
+    dashboardView = "main"
+  ) => {
     const rows = getRowsForDate(date);
+
+    if (dashboardView === "main") {
+      return rows;
+    }
+
+    return rows
+      .map((row) => {
+        const additionalClients =
+          getAdditionalClientsForRow(
+            row
+          );
+
+        const filteredAdditionalClients =
+          additionalClients.filter(
+            (
+              extraClient,
+              extraClientIndex
+            ) =>
+              isFinanceDashboardClientIncluded(
+                {
+                  dashboardView,
+                  row,
+                  client:
+                    extraClient,
+                  extraClientIndex,
+                }
+              )
+          );
+
+        const primaryIncluded =
+          isFinanceDashboardClientIncluded(
+            {
+              dashboardView,
+              row,
+              client: row,
+            }
+          );
+
+        if (primaryIncluded) {
+          return {
+            ...row,
+
+            additionalClients:
+              filteredAdditionalClients,
+          };
+        }
+
+        if (
+          filteredAdditionalClients.length ===
+          0
+        ) {
+          return null;
+        }
+
+        return {
+          ...row,
+
+          clientId: "",
+          client: "",
+          frame: false,
+          order: "",
+          services: "",
+          number: "",
+          transportation: "",
+          serviceAmount: "",
+          paymentMethod: "",
+          paymentBreakdown: [],
+          cashReceivedBy: "",
+          status: "",
+          sendTo: "",
+          giftClientId: "",
+          giftFrom: "",
+          giftPhone: "",
+
+          additionalClients:
+            filteredAdditionalClients.map(
+              (extraClient) => ({
+                ...extraClient,
+
+                status:
+                  extraClient.status ||
+                  row.status ||
+                  "",
+              })
+            ),
+        };
+      })
+      .filter(Boolean);
+  };
+
+  const getFinanceDayStats = (
+    date,
+    monthlySettings,
+    dashboardView = "main"
+  ) => {
+    const rows =
+      getFinanceRowsForDashboard(
+        date,
+        dashboardView
+      );
+
     const manual = getManualForDate(date);
     const daysCount = getMonthDaysCount(getMonthKeyFromDate(date));
     const fixedDailyExpenses = fixedMonthlyExpenseFields.reduce(
@@ -23001,7 +23153,13 @@ const normalizeOrderLabelForStats = (orderValue) =>
           row.number ||
           row.services ||
           row.serviceAmount ||
-          row.transportation
+          row.transportation ||
+          (
+            dashboardView !== "main" &&
+            getAdditionalClientsForRow(
+              row
+            ).length > 0
+          )
         )
     );
 
@@ -23067,6 +23225,13 @@ const normalizeOrderLabelForStats = (orderValue) =>
       Tabby: 0,
       Tamara: 0,
       "Bank Transfer": 0,
+
+      ...(dashboardView === "main"
+        ? {}
+        : {
+            "Bank Transfer R": 0,
+            "Cash R": 0,
+          }),
     };
 
     const addPaymentAmountToFinanceStats = (
@@ -23244,16 +23409,29 @@ const normalizeOrderLabelForStats = (orderValue) =>
     };
   };
 
-  const getFinanceMonthStats = (monthKey) => {
+  const getFinanceMonthStats = (
+    monthKey,
+    dashboardView = "main"
+  ) => {
     const monthlySettings = getFinanceMonthSettings(monthKey);
     const monthDates = getFinanceMonthDates(monthKey);
     const currentMonthKey = currentDate.slice(0, 7);
     const financeCalculationDates = monthKey === currentMonthKey
       ? monthDates.filter((date) => date <= currentDate)
       : monthDates;
-    const dayStats = monthDates.map((date) => getFinanceDayStats(date, monthlySettings));
+    const dayStats = monthDates.map((date) =>
+      getFinanceDayStats(
+        date,
+        monthlySettings,
+        dashboardView
+      )
+    );
     const calculationDayStats = financeCalculationDates.map((date) =>
-      getFinanceDayStats(date, monthlySettings)
+      getFinanceDayStats(
+        date,
+        monthlySettings,
+        dashboardView
+      )
     );
     const calculationDaysCount = Math.max(1, calculationDayStats.length || monthDates.length || 1);
     const fixedExpenseRatio = calculationDaysCount / Math.max(1, monthDates.length || 1);
@@ -23265,6 +23443,23 @@ const normalizeOrderLabelForStats = (orderValue) =>
       Tabby: sum((day) => day.paymentTotals.Tabby),
       Tamara: sum((day) => day.paymentTotals.Tamara),
       "Bank Transfer": sum((day) => day.paymentTotals["Bank Transfer"]),
+
+      ...(dashboardView === "main"
+        ? {}
+        : {
+            "Bank Transfer R": sum(
+              (day) =>
+                day.paymentTotals[
+                  "Bank Transfer R"
+                ]
+            ),
+            "Cash R": sum(
+              (day) =>
+                day.paymentTotals[
+                  "Cash R"
+                ]
+            ),
+          }),
     };
     const servicesTotals = {
       Massage: sum((day) => day.servicesTotals.Massage),
@@ -24243,12 +24438,24 @@ const normalizeOrderLabelForStats = (orderValue) =>
         );
     };
 
-  const exportFinanceMonthToExcel = (monthKey) => {
+  const exportFinanceMonthToExcel = (
+    monthKey,
+    dashboardView = "main"
+  ) => {
   const monthDates = getFinanceMonthDates(monthKey);
   const monthLabel = getFinanceMonthLabel(monthKey);
   const monthlySettings = getFinanceMonthSettings(monthKey);
-  const stats = getFinanceMonthStats(monthKey);
+  const stats = getFinanceMonthStats(
+    monthKey,
+    dashboardView
+  );
   const daysCount = Math.max(1, monthDates.length || 1);
+  const dashboardViewLabel =
+    dashboardView === "invoice"
+      ? "Dashboard 1"
+      : dashboardView === "r"
+        ? "Dashboard 2"
+        : "";
 
   const escapeXml = (value) =>
     String(value ?? "")
@@ -24350,7 +24557,11 @@ const normalizeOrderLabelForStats = (orderValue) =>
   const dashboardWidths = [185, 130, 185, 130];
 
   const dayStatsList = monthDates.map((date) => {
-    const dayStats = getFinanceDayStats(date, monthlySettings);
+    const dayStats = getFinanceDayStats(
+      date,
+      monthlySettings,
+      dashboardView
+    );
 
     return {
       date,
@@ -24360,7 +24571,17 @@ const normalizeOrderLabelForStats = (orderValue) =>
   });
 
   const dashboardRows = [
-    row([textCell(`Paradise Spa - ${monthLabel} Report`, "Title", 3)], 38),
+    row([
+      textCell(
+        `Paradise Spa - ${monthLabel}${
+          dashboardViewLabel
+            ? ` - ${dashboardViewLabel}`
+            : ""
+        } Report`,
+        "Title",
+        3
+      ),
+    ], 38),
     blankRow(10),
 
     sectionTitle(`${monthLabel} Summary`),
@@ -24383,6 +24604,22 @@ const normalizeOrderLabelForStats = (orderValue) =>
     labelValueRow("Cash", stats.paymentTotals?.Cash, "Debit", stats.paymentTotals?.Debit),
     labelValueRow("Credit", stats.paymentTotals?.Credit, "Tabby", stats.paymentTotals?.Tabby),
     labelValueRow("Tamara", stats.paymentTotals?.Tamara, "Bank Transfer", stats.paymentTotals?.["Bank Transfer"]),
+
+    ...(dashboardView === "main"
+      ? []
+      : [
+          labelValueRow(
+            "Bank Transfer R",
+            stats.paymentTotals?.[
+              "Bank Transfer R"
+            ],
+            "Cash R",
+            stats.paymentTotals?.[
+              "Cash R"
+            ]
+          ),
+        ]),
+
     labelValueRow("Payment Total", stats.paymentTotal, "", "", "TotalValue"),
     blankRow(),
 
@@ -24536,7 +24773,11 @@ const normalizeOrderLabelForStats = (orderValue) =>
   };
 
   const createDailyReportRows = (date) => {
-    const dayStats = getFinanceDayStats(date, monthlySettings);
+    const dayStats = getFinanceDayStats(
+      date,
+      monthlySettings,
+      dashboardView
+    );
     const manual = getManualForDate(date);
     const dayAverageServicePrice =
       dayStats.totalServices ? dayStats.income / dayStats.totalServices : 0;
@@ -24582,6 +24823,35 @@ const normalizeOrderLabelForStats = (orderValue) =>
         ],
         24
       ),
+
+      ...(dashboardView === "main"
+        ? []
+        : [
+            row(
+              [
+                textCell(
+                  "Bank Transfer R",
+                  "Label"
+                ),
+                numberCell(
+                  dayStats.paymentTotals?.[
+                    "Bank Transfer R"
+                  ]
+                ),
+                textCell(
+                  "Cash R",
+                  "Label"
+                ),
+                numberCell(
+                  dayStats.paymentTotals?.[
+                    "Cash R"
+                  ]
+                ),
+                ...emptyCells(13),
+              ],
+              24
+            ),
+          ]),
 
       row(
         [
@@ -24777,12 +25047,109 @@ const normalizeOrderLabelForStats = (orderValue) =>
   };
 
   const createDailySheetRows = (date) => {
-    const rows = getRowsForDate(date);
+    const rows =
+      getFinanceRowsForDashboard(
+        date,
+        dashboardView
+      );
+
+    const scheduleRows =
+      dashboardView === "main"
+        ? rows
+        : rows.flatMap(
+            (appointment) => {
+              const exportRows = [];
+
+              const primaryHasData =
+                appointment.client ||
+                appointment.number ||
+                appointment.services ||
+                appointment.serviceAmount ||
+                appointment.transportation ||
+                appointment.paymentMethod ||
+                appointment.order;
+
+              if (primaryHasData) {
+                exportRows.push(
+                  appointment
+                );
+              }
+
+              getAdditionalClientsForRow(
+                appointment
+              ).forEach(
+                (extraClient) => {
+                  exportRows.push({
+                    clientBy:
+                      extraClient.clientBy ||
+                      appointment.clientBy ||
+                      "",
+                    serviceTime:
+                      extraClient.serviceTime ||
+                      appointment.serviceTime ||
+                      "نفس المنزل",
+                    driver:
+                      extraClient.driver ||
+                      appointment.driver ||
+                      "",
+                    therapist:
+                      extraClient.therapist ||
+                      appointment.therapist ||
+                      "",
+                    district:
+                      extraClient.district ||
+                      appointment.district ||
+                      "",
+                    client:
+                      extraClient.name ||
+                      "",
+                    frame: Boolean(
+                      extraClient.frame
+                    ),
+                    order:
+                      extraClient.order ||
+                      "",
+                    services:
+                      extraClient.service ||
+                      "",
+                    number:
+                      extraClient.phone ||
+                      "",
+                    transportation:
+                      extraClient.transportation ||
+                      "",
+                    serviceAmount:
+                      extraClient.serviceAmount ||
+                      "",
+                    paymentMethod:
+                      extraClient.paymentMethod ||
+                      "",
+                    cashReceivedBy:
+                      extraClient.cashReceivedBy ||
+                      appointment.cashReceivedBy ||
+                      "",
+                    status:
+                      extraClient.status ||
+                      appointment.status ||
+                      "",
+                    sendTo:
+                      extraClient.sendTo ||
+                      "",
+                    note:
+                      extraClient.note ||
+                      "",
+                  });
+                }
+              );
+
+              return exportRows;
+            }
+          );
 
     return [
       ...createDailyReportRows(date),
 
-      ...rows.map((appointment) =>
+      ...scheduleRows.map((appointment) =>
         row(
           scheduleColumns.map((column) => {
             const value = getScheduleValue(appointment, column.key);
@@ -25001,7 +25368,11 @@ const normalizeOrderLabelForStats = (orderValue) =>
 
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
-  link.download = `Paradise-${monthLabel.replace(/\s+/g, "-")}-Collection.xls`;
+  link.download = `Paradise-${monthLabel.replace(/\s+/g, "-")}${
+    dashboardViewLabel
+      ? `-${dashboardViewLabel.replace(/\s+/g, "-")}`
+      : ""
+  }-Collection.xls`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -27901,7 +28272,18 @@ messageType === "reminder"
         ],
         [
           "finance",
-          "لوحة الأداء",
+          "لوحة الأداء الرئيسية",
+          "main",
+        ],
+        [
+          "finance",
+          "لوحة الأداء 1",
+          "invoice",
+        ],
+        [
+          "finance",
+          "لوحة الأداء 2",
+          "r",
         ],
         [
           "incomeExpenses",
@@ -28010,16 +28392,26 @@ messageType === "reminder"
   const mobileScreenLabel =
     screen === "clientProfile"
       ? "بروفايل العميلة"
-      : dashboardMenuSections
-          .flatMap(
-            (section) =>
-              section.items
+      : screen === "finance"
+        ? (
+            financeDashboardView ===
+            "invoice"
+              ? "لوحة الأداء 1"
+              : financeDashboardView ===
+                  "r"
+                ? "لوحة الأداء 2"
+                : "لوحة الأداء الرئيسية"
           )
-          .find(
-            ([key]) =>
-              key === screen
-          )?.[1] ||
-        "Paradise Spa";
+        : dashboardMenuSections
+            .flatMap(
+              (section) =>
+                section.items
+            )
+            .find(
+              ([key]) =>
+                key === screen
+            )?.[1] ||
+          "Paradise Spa";
 
   const mobilePrimaryKeys =
     mobilePrimaryNavigation.map(
@@ -41006,84 +41398,115 @@ const welcomeBoardNameStyle = {
 
           {sectionIsOpen && (
             <div className="paradise-luxury-menu-items">
-              {visibleItems.map(([key, label]) => (
-                <button
-                  key={key}
-                  className={`paradise-navigation-button ${
-                    screen === key
-                      ? "paradise-navigation-button-active"
-                      : ""
-                  }`}
-                  aria-current={
-                    screen === key
-                      ? "page"
-                      : undefined
-                  }
-                  onClick={() => {
-                    setOpenSidebarSectionId(
-                      section.id
+              {visibleItems.map(
+                ([
+                  key,
+                  label,
+                  dashboardView,
+                ]) => {
+                  const itemIsActive =
+                    screen === key &&
+                    (
+                      key !== "finance" ||
+                      (
+                        dashboardView ||
+                        "main"
+                      ) ===
+                        financeDashboardView
                     );
 
-                    setScreen(key);
-                  }}
-                  onMouseEnter={(event) => {
-                    event.currentTarget.style.transform =
-                      "translateY(-2px) scale(1.015)";
+                  return (
+                    <button
+                      key={`${key}-${
+                        dashboardView ||
+                        "default"
+                      }`}
+                      className={`paradise-navigation-button ${
+                        itemIsActive
+                          ? "paradise-navigation-button-active"
+                          : ""
+                      }`}
+                      aria-current={
+                        itemIsActive
+                          ? "page"
+                          : undefined
+                      }
+                      onClick={() => {
+                        setOpenSidebarSectionId(
+                          section.id
+                        );
 
-                    event.currentTarget.style.boxShadow =
-                      "0 10px 20px rgba(75,46,31,0.10)";
-                  }}
-                  onMouseLeave={(event) => {
-                    event.currentTarget.style.transform =
-                      "translateY(0) scale(1)";
+                        if (
+                          key === "finance"
+                        ) {
+                          setFinanceDashboardView(
+                            dashboardView ||
+                              "main"
+                          );
+                        }
 
-                    event.currentTarget.style.boxShadow =
-                      screen === key
-                        ? "0 10px 22px rgba(58,36,24,0.18)"
-                        : "none";
-                  }}
-                  onMouseDown={(event) => {
-                    event.currentTarget.style.transform =
-                      "translateY(0) scale(0.99)";
-                  }}
-                  onMouseUp={(event) => {
-                    event.currentTarget.style.transform =
-                      "translateY(-2px) scale(1.015)";
-                  }}
-                  style={{
-                    ...buttonStyle,
-                    width: "100%",
-                    marginBottom: "0",
-                    textAlign: "right",
-                    background:
-                      screen === key
-                        ? "linear-gradient(135deg, #3a2418, #7a5a43)"
-                        : "rgba(255,255,255,0.74)",
-                    color:
-                      screen === key
-                        ? "white"
-                        : "#4b2e1f",
-                    border:
-                      screen === key
-                        ? "1px solid rgba(255,255,255,0.28)"
-                        : "1px solid rgba(214,199,184,0.62)",
-                    borderRadius: "16px",
-                    transition:
-                      "transform 0.18s ease, background 0.25s ease, color 0.25s ease, box-shadow 0.2s ease",
-                    transform:
-                      "translateY(0) scale(1)",
-                    boxShadow:
-                      screen === key
-                        ? "0 10px 22px rgba(58,36,24,0.18)"
-                        : "none",
-                    fontSize: "12.5px",
-                    fontWeight: "850",
-                    padding: "10px 11px",
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
+                        setScreen(key);
+                      }}
+                      onMouseEnter={(event) => {
+                        event.currentTarget.style.transform =
+                          "translateY(-2px) scale(1.015)";
+
+                        event.currentTarget.style.boxShadow =
+                          "0 10px 20px rgba(75,46,31,0.10)";
+                      }}
+                      onMouseLeave={(event) => {
+                        event.currentTarget.style.transform =
+                          "translateY(0) scale(1)";
+
+                        event.currentTarget.style.boxShadow =
+                          itemIsActive
+                            ? "0 10px 22px rgba(58,36,24,0.18)"
+                            : "none";
+                      }}
+                      onMouseDown={(event) => {
+                        event.currentTarget.style.transform =
+                          "translateY(0) scale(0.99)";
+                      }}
+                      onMouseUp={(event) => {
+                        event.currentTarget.style.transform =
+                          "translateY(-2px) scale(1.015)";
+                      }}
+                      style={{
+                        ...buttonStyle,
+                        width: "100%",
+                        marginBottom: "0",
+                        textAlign: "right",
+                        background:
+                          itemIsActive
+                            ? "linear-gradient(135deg, #3a2418, #7a5a43)"
+                            : "rgba(255,255,255,0.74)",
+                        color:
+                          itemIsActive
+                            ? "white"
+                            : "#4b2e1f",
+                        border:
+                          itemIsActive
+                            ? "1px solid rgba(255,255,255,0.28)"
+                            : "1px solid rgba(214,199,184,0.62)",
+                        borderRadius: "16px",
+                        transition:
+                          "transform 0.18s ease, background 0.25s ease, color 0.25s ease, box-shadow 0.2s ease",
+                        transform:
+                          "translateY(0) scale(1)",
+                        boxShadow:
+                          itemIsActive
+                            ? "0 10px 22px rgba(58,36,24,0.18)"
+                            : "none",
+                        fontSize: "12.5px",
+                        fontWeight: "850",
+                        padding: "10px 11px",
+                      }}
+                    >
+                      {label}
+                    </button>
+                  );
+                }
+              )}
             </div>
           )}
         </div>
@@ -41897,33 +42320,59 @@ const welcomeBoardNameStyle = {
                             ([
                               key,
                               label,
-                            ]) => (
-                              <button
-                                key={
-                                  key
-                                }
-                                type="button"
-                                className={`paradise-mobile-v2-menu-item ${
-                                  screen ===
-                                  key
-                                    ? "paradise-mobile-v2-menu-item-active"
-                                    : ""
-                                }`}
-                                onClick={() => {
-                                  setMobileMoreOpen(
-                                    false
-                                  );
+                              dashboardView,
+                            ]) => {
+                              const itemIsActive =
+                                screen ===
+                                  key &&
+                                (
+                                  key !==
+                                    "finance" ||
+                                  (
+                                    dashboardView ||
+                                    "main"
+                                  ) ===
+                                    financeDashboardView
+                                );
 
-                                  goToScreen(
-                                    key
-                                  );
-                                }}
-                              >
-                                {
-                                  label
-                                }
-                              </button>
-                            )
+                              return (
+                                <button
+                                  key={`${key}-${
+                                    dashboardView ||
+                                    "default"
+                                  }`}
+                                  type="button"
+                                  className={`paradise-mobile-v2-menu-item ${
+                                    itemIsActive
+                                      ? "paradise-mobile-v2-menu-item-active"
+                                      : ""
+                                  }`}
+                                  onClick={() => {
+                                    setMobileMoreOpen(
+                                      false
+                                    );
+
+                                    if (
+                                      key ===
+                                      "finance"
+                                    ) {
+                                      setFinanceDashboardView(
+                                        dashboardView ||
+                                          "main"
+                                      );
+                                    }
+
+                                    goToScreen(
+                                      key
+                                    );
+                                  }}
+                                >
+                                  {
+                                    label
+                                  }
+                                </button>
+                              );
+                            }
                           )}
                         </div>
                       </div>
@@ -42318,9 +42767,12 @@ if (screen === "menu") {
 
           <button
             className="paradise-menu-button"
-            onClick={() =>
-              setScreen("finance")
-            }
+            onClick={() => {
+              setFinanceDashboardView(
+                "main"
+              );
+              setScreen("finance");
+            }}
             style={{
               ...buttonStyle,
               width: "85%",
@@ -56836,7 +57288,10 @@ if (screen === "finance") {
     const activeFinanceMonth = financeMonths.includes(selectedFinanceMonth)
       ? selectedFinanceMonth
       : financeMonths[financeMonths.length - 1] || "2026-05";
-    const financeStats = getFinanceMonthStats(activeFinanceMonth);
+    const financeStats = getFinanceMonthStats(
+      activeFinanceMonth,
+      financeDashboardView
+    );
     const financeCardStyle = {
       minWidth: 0,
       height: "auto",
@@ -57336,7 +57791,8 @@ if (screen === "finance") {
                     className="paradise-finance-header-button"
                     onClick={() =>
                       exportFinanceMonthToExcel(
-                        activeFinanceMonth
+                        activeFinanceMonth,
+                        financeDashboardView
                       )
                     }
                     style={{
@@ -58375,6 +58831,27 @@ if (screen === "finance") {
                           "Bank Transfer"
                         ],
                     ],
+
+                    ...(financeDashboardView ===
+                    "main"
+                      ? []
+                      : [
+                          [
+                            "Bank Transfer R",
+                            financeStats
+                              .paymentTotals[
+                                "Bank Transfer R"
+                              ],
+                          ],
+                          [
+                            "Cash R",
+                            financeStats
+                              .paymentTotals[
+                                "Cash R"
+                              ],
+                          ],
+                        ]),
+
                     [
                       "Total",
                       financeStats.paymentTotal,
