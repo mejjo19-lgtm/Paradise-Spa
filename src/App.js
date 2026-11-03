@@ -24605,9 +24605,8 @@ const normalizeOrderLabelForStats = (orderValue) =>
     labelValueRow("Credit", stats.paymentTotals?.Credit, "Tabby", stats.paymentTotals?.Tabby),
     labelValueRow("Tamara", stats.paymentTotals?.Tamara, "Bank Transfer", stats.paymentTotals?.["Bank Transfer"]),
 
-    ...(dashboardView === "main"
-      ? []
-      : [
+    ...(dashboardView === "r"
+      ? [
           labelValueRow(
             "Bank Transfer R",
             stats.paymentTotals?.[
@@ -24618,7 +24617,8 @@ const normalizeOrderLabelForStats = (orderValue) =>
               "Cash R"
             ]
           ),
-        ]),
+        ]
+      : []),
 
     labelValueRow("Payment Total", stats.paymentTotal, "", "", "TotalValue"),
     blankRow(),
@@ -24824,9 +24824,8 @@ const normalizeOrderLabelForStats = (orderValue) =>
         24
       ),
 
-      ...(dashboardView === "main"
-        ? []
-        : [
+      ...(dashboardView === "r"
+        ? [
             row(
               [
                 textCell(
@@ -24851,7 +24850,8 @@ const normalizeOrderLabelForStats = (orderValue) =>
               ],
               24
             ),
-          ]),
+          ]
+        : []),
 
       row(
         [
@@ -58833,9 +58833,8 @@ if (screen === "finance") {
                     ],
 
                     ...(financeDashboardView ===
-                    "main"
-                      ? []
-                      : [
+                    "r"
+                      ? [
                           [
                             "Bank Transfer R",
                             financeStats
@@ -58850,7 +58849,8 @@ if (screen === "finance") {
                                 "Cash R"
                               ],
                           ],
-                        ]),
+                        ]
+                      : []),
 
                     [
                       "Total",
