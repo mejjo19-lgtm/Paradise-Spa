@@ -23001,6 +23001,18 @@ const normalizeOrderLabelForStats = (orderValue) =>
     }
 
     if (dashboardView === "invoice") {
+      const paymentMethod =
+        String(
+          client?.paymentMethod || ""
+        ).trim();
+
+      if (
+        paymentMethod === "Cash" ||
+        paymentMethod === "Cash R"
+      ) {
+        return true;
+      }
+
       if (extraClientIndex === null) {
         return Boolean(
           row?.invoiceLinks?.primary
@@ -23238,8 +23250,14 @@ const normalizeOrderLabelForStats = (orderValue) =>
       method,
       amount
     ) => {
-      const cleanMethod =
+      const rawMethod =
         String(method || "").trim();
+
+      const cleanMethod =
+        dashboardView === "invoice" &&
+        rawMethod === "Cash R"
+          ? "Cash"
+          : rawMethod;
 
       const safeAmount =
         Number(amount || 0);
