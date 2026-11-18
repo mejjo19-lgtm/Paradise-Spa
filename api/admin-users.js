@@ -21,6 +21,7 @@ const allowedMenuPermissions =
     "finance",
     "incomeExpenses",
     "settings",
+    "privateBudget",
   ]);
 
 const allowedActionPermissions =

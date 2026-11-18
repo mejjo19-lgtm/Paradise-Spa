@@ -6,6 +6,9 @@ const backupTables =
   Object.freeze([
     "app_data",
     "client_last_order_backfill_audit",
+    "client_notes",
+    "client_referral_links",
+    "client_service_history",
     "clients",
     "daily_reports",
     "employee_accounts",
@@ -24,6 +27,8 @@ const backupTables =
     "invoice_zatca_submissions",
     "invoices",
     "potential_clients",
+    "private_budget_months",
+    "private_expenses",
     "purchases",
     "referred_clients",
     "schedule_rows",

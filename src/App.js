@@ -111,6 +111,7 @@ function App() {
     "giftCards",
     "printFrame",
     "settings",
+    "privateBudget",
   ]);
 
   const [screen, setScreen] = useState(() => {
@@ -3922,6 +3923,83 @@ function fetchSharedClientLists() {
     financeDashboardView,
     setFinanceDashboardView,
   ] = useState("main");
+
+  const [
+    selectedPrivateBudgetMonth,
+    setSelectedPrivateBudgetMonth,
+  ] = useState(
+    () =>
+      getCurrentLocalDate().slice(
+        0,
+        7
+      )
+  );
+
+  const [
+    privateBudgetMonthlyAmount,
+    setPrivateBudgetMonthlyAmount,
+  ] = useState(0);
+
+  const [
+    privateBudgetMonthExists,
+    setPrivateBudgetMonthExists,
+  ] = useState(false);
+
+  const [
+    privateBudgetBudgetDraft,
+    setPrivateBudgetBudgetDraft,
+  ] = useState("");
+
+  const [
+    privateBudgetExpenses,
+    setPrivateBudgetExpenses,
+  ] = useState([]);
+
+  const [
+    privateBudgetLoading,
+    setPrivateBudgetLoading,
+  ] = useState(false);
+
+  const [
+    privateBudgetSaving,
+    setPrivateBudgetSaving,
+  ] = useState(false);
+
+  const [
+    privateBudgetError,
+    setPrivateBudgetError,
+  ] = useState("");
+
+  const [
+    showPrivateExpenseForm,
+    setShowPrivateExpenseForm,
+  ] = useState(false);
+
+  const [
+    editingPrivateExpenseId,
+    setEditingPrivateExpenseId,
+  ] = useState(null);
+
+  const [
+    privateExpenseDraft,
+    setPrivateExpenseDraft,
+  ] = useState({
+    expenseDate:
+      getCurrentLocalDate(),
+    amount: "",
+    person: "majed",
+    description: "",
+  });
+
+  const privateBudgetPeople = [
+    ["majed", "ماجد"],
+    ["tahani", "تهاني"],
+    ["ayla", "آيلا"],
+    [
+      "majed_tahani",
+      "ماجد و تهاني",
+    ],
+  ];
 
   /*
     المصدر الرسمي للدخل:
@@ -22949,6 +23027,892 @@ const normalizeOrderLabelForStats = (orderValue) =>
     });
   };
 
+  const getPrivateBudgetMonthStart = (
+    monthKey
+  ) =>
+    `${String(monthKey || "").slice(
+      0,
+      7
+    )}-01`;
+
+  const getPrivateBudgetNextMonthStart = (
+    monthKey
+  ) => {
+    const [year, month] =
+      String(monthKey || "")
+        .split("-")
+        .map(Number);
+
+    if (
+      !Number.isInteger(year) ||
+      !Number.isInteger(month)
+    ) {
+      return "";
+    }
+
+    return new Date(
+      Date.UTC(
+        year,
+        month,
+        1
+      )
+    )
+      .toISOString()
+      .slice(0, 10);
+  };
+
+  const getPrivateBudgetPersonName = (
+    personKey
+  ) =>
+    privateBudgetPeople.find(
+      ([key]) =>
+        key === personKey
+    )?.[1] ||
+    personKey ||
+    "-";
+
+  const resetPrivateExpenseDraft = (
+    monthKey =
+      selectedPrivateBudgetMonth
+  ) => {
+    const currentMonth =
+      currentDate.slice(0, 7);
+
+    const defaultDate =
+      monthKey === currentMonth
+        ? currentDate
+        : `${monthKey}-01`;
+
+    setEditingPrivateExpenseId(
+      null
+    );
+
+    setPrivateExpenseDraft({
+      expenseDate: defaultDate,
+      amount: "",
+      person: "majed",
+      description: "",
+    });
+  };
+
+  const loadPrivateBudgetData =
+    async (
+      monthKey =
+        selectedPrivateBudgetMonth
+    ) => {
+      const normalizedMonth =
+        String(monthKey || "")
+          .slice(0, 7);
+
+      if (!normalizedMonth) {
+        return;
+      }
+
+      const monthStart =
+        getPrivateBudgetMonthStart(
+          normalizedMonth
+        );
+
+      const nextMonthStart =
+        getPrivateBudgetNextMonthStart(
+          normalizedMonth
+        );
+
+      setPrivateBudgetLoading(
+        true
+      );
+
+      setPrivateBudgetError(
+        ""
+      );
+
+      try {
+        const [
+          budgetResult,
+          expensesResult,
+        ] = await Promise.all([
+          supabase
+            .from(
+              "private_budget_months"
+            )
+            .select(
+              [
+                "month_start",
+                "monthly_budget",
+                "created_at",
+                "updated_at",
+              ].join(",")
+            )
+            .eq(
+              "month_start",
+              monthStart
+            )
+            .maybeSingle(),
+
+          supabase
+            .from(
+              "private_expenses"
+            )
+            .select(
+              [
+                "id",
+                "expense_date",
+                "amount",
+                "person",
+                "description",
+                "category",
+                "created_by",
+                "updated_by",
+                "created_at",
+                "updated_at",
+              ].join(",")
+            )
+            .gte(
+              "expense_date",
+              monthStart
+            )
+            .lt(
+              "expense_date",
+              nextMonthStart
+            )
+            .order(
+              "expense_date",
+              {
+                ascending:
+                  false,
+              }
+            )
+            .order(
+              "created_at",
+              {
+                ascending:
+                  false,
+              }
+            ),
+        ]);
+
+        if (budgetResult.error) {
+          throw budgetResult.error;
+        }
+
+        if (
+          expensesResult.error
+        ) {
+          throw expensesResult.error;
+        }
+
+        const monthlyBudget =
+          Number(
+            budgetResult
+              .data
+              ?.monthly_budget ||
+              0
+          );
+
+        setPrivateBudgetMonthExists(
+          Boolean(
+            budgetResult.data
+          )
+        );
+
+        setPrivateBudgetMonthlyAmount(
+          Number.isFinite(
+            monthlyBudget
+          )
+            ? monthlyBudget
+            : 0
+        );
+
+        setPrivateBudgetBudgetDraft(
+          budgetResult.data
+            ? String(
+                monthlyBudget
+              )
+            : ""
+        );
+
+        setPrivateBudgetExpenses(
+          (
+            expensesResult.data ||
+            []
+          ).map(
+            (expense) => ({
+              ...expense,
+
+              amount:
+                Number(
+                  expense.amount ||
+                    0
+                ),
+            })
+          )
+        );
+      } catch (error) {
+        console.error(
+          "Private budget load error:",
+          error
+        );
+
+        setPrivateBudgetError(
+          error?.message ||
+            "تعذر تحميل بيانات الميزانية الخاصة."
+        );
+      } finally {
+        setPrivateBudgetLoading(
+          false
+        );
+      }
+    };
+
+  useEffect(() => {
+    if (
+      !isLoggedIn ||
+      screen !==
+        "privateBudget"
+    ) {
+      return;
+    }
+
+    loadPrivateBudgetData(
+      selectedPrivateBudgetMonth
+    );
+
+    resetPrivateExpenseDraft(
+      selectedPrivateBudgetMonth
+    );
+
+    setShowPrivateExpenseForm(
+      false
+    );
+  }, [
+    isLoggedIn,
+    screen,
+    selectedPrivateBudgetMonth,
+  ]);
+
+  const savePrivateMonthlyBudget =
+    async () => {
+      if (
+        !ensureSystemWritable()
+      ) {
+        return;
+      }
+
+      const normalizedValue =
+        String(
+          privateBudgetBudgetDraft ||
+            ""
+        ).trim();
+
+      const budgetAmount =
+        Number(normalizedValue);
+
+      if (
+        !normalizedValue ||
+        !Number.isInteger(
+          budgetAmount
+        ) ||
+        budgetAmount < 0
+      ) {
+        alert(
+          "أدخل مبلغ الميزانية بالريال بدون كسور."
+        );
+
+        return;
+      }
+
+      if (
+        privateBudgetMonthExists &&
+        !canEditData
+      ) {
+        alert(
+          "لا تملك صلاحية تعديل الميزانية."
+        );
+
+        return;
+      }
+
+      if (
+        !privateBudgetMonthExists &&
+        !canAddData
+      ) {
+        alert(
+          "لا تملك صلاحية إضافة الميزانية."
+        );
+
+        return;
+      }
+
+      setPrivateBudgetSaving(
+        true
+      );
+
+      const monthStart =
+        getPrivateBudgetMonthStart(
+          selectedPrivateBudgetMonth
+        );
+
+      try {
+        let saveResult;
+
+        if (
+          privateBudgetMonthExists
+        ) {
+          saveResult =
+            await supabase
+              .from(
+                "private_budget_months"
+              )
+              .update({
+                monthly_budget:
+                  budgetAmount,
+
+                updated_by:
+                  loggedInAuthUserId ||
+                  null,
+              })
+              .eq(
+                "month_start",
+                monthStart
+              );
+        } else {
+          saveResult =
+            await supabase
+              .from(
+                "private_budget_months"
+              )
+              .insert({
+                month_start:
+                  monthStart,
+
+                monthly_budget:
+                  budgetAmount,
+
+                created_by:
+                  loggedInAuthUserId ||
+                  null,
+
+                updated_by:
+                  loggedInAuthUserId ||
+                  null,
+              });
+        }
+
+        if (saveResult.error) {
+          throw saveResult.error;
+        }
+
+        await loadPrivateBudgetData(
+          selectedPrivateBudgetMonth
+        );
+      } catch (error) {
+        console.error(
+          "Private budget save error:",
+          error
+        );
+
+        alert(
+          error?.message ||
+            "تعذر حفظ الميزانية."
+        );
+      } finally {
+        setPrivateBudgetSaving(
+          false
+        );
+      }
+    };
+
+  const startEditingPrivateExpense =
+    (expense) => {
+      if (!canEditData) {
+        alert(
+          "لا تملك صلاحية تعديل المصروف."
+        );
+
+        return;
+      }
+
+      setEditingPrivateExpenseId(
+        expense.id
+      );
+
+      setPrivateExpenseDraft({
+        expenseDate:
+          expense.expense_date ||
+          `${selectedPrivateBudgetMonth}-01`,
+
+        amount:
+          String(
+            expense.amount || ""
+          ),
+
+        person:
+          expense.person ||
+          "majed",
+
+        description:
+          expense.description ||
+          "",
+      });
+
+      setShowPrivateExpenseForm(
+        true
+      );
+
+      window.scrollTo({
+        top: 0,
+        behavior: "smooth",
+      });
+    };
+
+  const savePrivateExpense =
+    async () => {
+      if (
+        !ensureSystemWritable()
+      ) {
+        return;
+      }
+
+      const isEditing =
+        Boolean(
+          editingPrivateExpenseId
+        );
+
+      if (
+        isEditing &&
+        !canEditData
+      ) {
+        alert(
+          "لا تملك صلاحية تعديل المصروف."
+        );
+
+        return;
+      }
+
+      if (
+        !isEditing &&
+        !canAddData
+      ) {
+        alert(
+          "لا تملك صلاحية إضافة مصروف."
+        );
+
+        return;
+      }
+
+      const expenseDate =
+        String(
+          privateExpenseDraft
+            .expenseDate || ""
+        ).slice(0, 10);
+
+      const amount =
+        Number(
+          privateExpenseDraft
+            .amount
+        );
+
+      const person =
+        String(
+          privateExpenseDraft
+            .person || ""
+        );
+
+      const description =
+        String(
+          privateExpenseDraft
+            .description || ""
+        ).trim();
+
+      if (
+        !expenseDate ||
+        expenseDate.slice(
+          0,
+          7
+        ) !==
+          selectedPrivateBudgetMonth
+      ) {
+        alert(
+          "تاريخ المصروف يجب أن يكون داخل الشهر المحدد."
+        );
+
+        return;
+      }
+
+      if (
+        !Number.isInteger(amount) ||
+        amount <= 0
+      ) {
+        alert(
+          "أدخل مبلغًا صحيحًا أكبر من صفر بدون كسور."
+        );
+
+        return;
+      }
+
+      if (
+        !privateBudgetPeople.some(
+          ([key]) =>
+            key === person
+        )
+      ) {
+        alert(
+          "اختر صاحب المصروف."
+        );
+
+        return;
+      }
+
+      setPrivateBudgetSaving(
+        true
+      );
+
+      try {
+        let saveResult;
+
+        if (isEditing) {
+          saveResult =
+            await supabase
+              .from(
+                "private_expenses"
+              )
+              .update({
+                expense_date:
+                  expenseDate,
+
+                amount,
+
+                person,
+
+                description,
+
+                updated_by:
+                  loggedInAuthUserId ||
+                  null,
+              })
+              .eq(
+                "id",
+                editingPrivateExpenseId
+              );
+        } else {
+          saveResult =
+            await supabase
+              .from(
+                "private_expenses"
+              )
+              .insert({
+                expense_date:
+                  expenseDate,
+
+                amount,
+
+                person,
+
+                description,
+
+                category: "",
+
+                created_by:
+                  loggedInAuthUserId ||
+                  null,
+
+                updated_by:
+                  loggedInAuthUserId ||
+                  null,
+              });
+        }
+
+        if (saveResult.error) {
+          throw saveResult.error;
+        }
+
+        resetPrivateExpenseDraft(
+          selectedPrivateBudgetMonth
+        );
+
+        setShowPrivateExpenseForm(
+          false
+        );
+
+        await loadPrivateBudgetData(
+          selectedPrivateBudgetMonth
+        );
+      } catch (error) {
+        console.error(
+          "Private expense save error:",
+          error
+        );
+
+        alert(
+          error?.message ||
+            "تعذر حفظ المصروف."
+        );
+      } finally {
+        setPrivateBudgetSaving(
+          false
+        );
+      }
+    };
+
+  const deletePrivateExpense =
+    async (
+      expense
+    ) => {
+      if (
+        !ensureDeleteAllowed()
+      ) {
+        return;
+      }
+
+      const confirmed =
+        window.confirm(
+          `هل تريد حذف مصروف ${formatCurrency(
+            expense.amount
+          )} ريال؟`
+        );
+
+      if (!confirmed) {
+        return;
+      }
+
+      setPrivateBudgetSaving(
+        true
+      );
+
+      try {
+        const {
+          error,
+        } = await supabase
+          .from(
+            "private_expenses"
+          )
+          .delete()
+          .eq(
+            "id",
+            expense.id
+          );
+
+        if (error) {
+          throw error;
+        }
+
+        await loadPrivateBudgetData(
+          selectedPrivateBudgetMonth
+        );
+      } catch (error) {
+        console.error(
+          "Private expense delete error:",
+          error
+        );
+
+        alert(
+          error?.message ||
+            "تعذر حذف المصروف."
+        );
+      } finally {
+        setPrivateBudgetSaving(
+          false
+        );
+      }
+    };
+
+  const getPrivateBudgetStats =
+    () => {
+      const monthlyBudget =
+        Math.max(
+          0,
+          Math.floor(
+            Number(
+              privateBudgetMonthlyAmount ||
+                0
+            )
+          )
+        );
+
+      const monthDates =
+        getFinanceMonthDates(
+          selectedPrivateBudgetMonth
+        );
+
+      const daysCount =
+        monthDates.length;
+
+      const baseDailyLimit =
+        daysCount > 0
+          ? Math.floor(
+              monthlyBudget /
+                daysCount
+            )
+          : 0;
+
+      const monthRemainder =
+        monthlyBudget -
+        baseDailyLimit *
+          daysCount;
+
+      const expensesByDate =
+        privateBudgetExpenses.reduce(
+          (
+            result,
+            expense
+          ) => {
+            const date =
+              String(
+                expense
+                  .expense_date ||
+                  ""
+              ).slice(
+                0,
+                10
+              );
+
+            if (!result[date]) {
+              result[date] = [];
+            }
+
+            result[date].push(
+              expense
+            );
+
+            return result;
+          },
+          {}
+        );
+
+      let carryAmount = 0;
+
+      const dailyRows =
+        monthDates.map(
+          (
+            date,
+            index
+          ) => {
+            const dailyLimit =
+              baseDailyLimit +
+              (
+                index ===
+                monthDates.length -
+                  1
+                  ? monthRemainder
+                  : 0
+              );
+
+            const carriedFromPrevious =
+              carryAmount;
+
+            const availableToday =
+              dailyLimit +
+              carriedFromPrevious;
+
+            const spentToday =
+              (
+                expensesByDate[
+                  date
+                ] || []
+              ).reduce(
+                (
+                  total,
+                  expense
+                ) =>
+                  total +
+                  Number(
+                    expense.amount ||
+                      0
+                  ),
+                0
+              );
+
+            const remaining =
+              availableToday -
+              spentToday;
+
+            carryAmount =
+              remaining;
+
+            return {
+              date,
+              dayNumber:
+                index + 1,
+              dailyLimit,
+              carriedFromPrevious,
+              availableToday,
+              spentToday,
+              remaining,
+            };
+          }
+        );
+
+      const personTotals =
+        privateBudgetPeople.reduce(
+          (
+            result,
+            [personKey]
+          ) => {
+            result[
+              personKey
+            ] =
+              privateBudgetExpenses
+                .filter(
+                  (expense) =>
+                    expense.person ===
+                    personKey
+                )
+                .reduce(
+                  (
+                    total,
+                    expense
+                  ) =>
+                    total +
+                    Number(
+                      expense.amount ||
+                        0
+                    ),
+                  0
+                );
+
+            return result;
+          },
+          {}
+        );
+
+      const totalSpent =
+        privateBudgetExpenses.reduce(
+          (
+            total,
+            expense
+          ) =>
+            total +
+            Number(
+              expense.amount ||
+                0
+            ),
+          0
+        );
+
+      const todayRow =
+        selectedPrivateBudgetMonth ===
+        currentDate.slice(0, 7)
+          ? dailyRows.find(
+              (row) =>
+                row.date ===
+                currentDate
+            )
+          : null;
+
+      return {
+        monthlyBudget,
+        baseDailyLimit,
+        monthRemainder,
+        totalSpent,
+        monthlyRemaining:
+          monthlyBudget -
+          totalSpent,
+        dailyRows,
+        personTotals,
+        todayRow,
+      };
+    };
+
   const getAvailableFinanceMonths = () => {
     const months = new Set(["2026-05", currentDate.slice(0, 7)]);
     const start = new Date("2026-05-01T12:00:00");
@@ -27946,7 +28910,6 @@ const appointmentServicesText = (() => {
 
 "Mani/Pedi With Color Hand Only":
     "كلاسيك بدكير منكير مع لون يد",
-    
     }[cleanService] || cleanService;
 
     return formatEnglishDigits(translatedService);
@@ -28334,6 +29297,10 @@ messageType === "reminder"
         [
           "settings",
           "الإعدادات",
+        ],
+        [
+          "privateBudget",
+          "الميزانية الخاصة",
         ],
       ],
     },
@@ -28902,6 +29869,10 @@ messageType === "reminder"
     [
       "settings",
       "الإعدادات",
+    ],
+    [
+      "privateBudget",
+      "الميزانية الخاصة",
     ],
   ];
 
@@ -30705,7 +31676,6 @@ messageType === "reminder"
   background: "linear-gradient(135deg, #d8c5b3, #f3e8df)",
   color: "black",
   borderRadius: "14px",
-  
   fontSize: "12px",
   padding: "0 10px",
   margin: 0,
@@ -32284,8 +33254,6 @@ const welcomeBoardNameStyle = {
           margin: "0 auto",
         }}
       >
-        
-
         <div
           className="paradise-welcome-surface"
           style={{
@@ -32330,7 +33298,6 @@ const welcomeBoardNameStyle = {
                 fontWeight: "700",
               }}
             >
-             
             </p>
           </div>
 
@@ -32402,7 +33369,6 @@ const welcomeBoardNameStyle = {
                         transition: "0.2s",
                       }}
                     >
-                      
                       <span>{board.title}</span>
                     </button>
                   );
@@ -35961,6 +36927,14 @@ const welcomeBoardNameStyle = {
     {
       tableName: "employee_accounts",
       label: "حسابات الموظفين",
+    },
+    {
+      tableName: "private_budget_months",
+      label: "الميزانية الخاصة الشهرية",
+    },
+    {
+      tableName: "private_expenses",
+      label: "المصروفات الخاصة",
     },
     {
       tableName: "gift_clients",
@@ -59767,6 +60741,1120 @@ if (screen === "printFrame") {
 }
   if (screen === "settings") {
     return withGreeting(renderSettingsScreen());
+  }
+
+  if (screen === "privateBudget") {
+    if (
+      !canViewMenu(
+        "privateBudget"
+      )
+    ) {
+      return withGreeting(
+        <div
+          style={{
+            minHeight: "70vh",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "24px",
+          }}
+        >
+          <div
+            style={{
+              padding: "24px",
+              borderRadius: "20px",
+              background: "#fffaf5",
+              color: "#4b2e1f",
+              fontWeight: 900,
+              textAlign: "center",
+            }}
+          >
+            لا تملك صلاحية الوصول إلى الميزانية الخاصة.
+          </div>
+        </div>
+      );
+    }
+
+    const privateBudgetStats =
+      getPrivateBudgetStats();
+
+    const privateBudgetCardStyle = {
+      padding: "18px",
+      borderRadius: "20px",
+      border:
+        "1px solid rgba(194,159,130,0.34)",
+      background:
+        "linear-gradient(145deg, #fffdf9 0%, #f7eee7 100%)",
+      boxShadow:
+        "0 9px 22px rgba(103,75,55,0.07)",
+    };
+
+    const privateBudgetMetricStyle = {
+      ...privateBudgetCardStyle,
+      minHeight: "105px",
+      display: "flex",
+      flexDirection: "column",
+      justifyContent: "space-between",
+      gap: "10px",
+    };
+
+    const getPrivateExpenseCreatorName =
+      (expense) =>
+        employeeAccounts.find(
+          (account) =>
+            String(
+              account.authUserId ||
+                ""
+            ) ===
+            String(
+              expense.created_by ||
+                ""
+            )
+        )?.displayName ||
+        "-";
+
+    return withGreeting(
+      <div
+        style={{
+          minHeight: "70vh",
+          padding: "20px",
+          direction: "rtl",
+        }}
+      >
+        <div
+          style={{
+            maxWidth: "1500px",
+            margin: "0 auto",
+            display: "grid",
+            gap: "18px",
+          }}
+        >
+          <div
+            style={{
+              ...privateBudgetCardStyle,
+              padding: "22px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent:
+                  "space-between",
+                gap: "16px",
+                flexWrap: "wrap",
+              }}
+            >
+              <div>
+                <h2
+                  style={{
+                    margin: 0,
+                    color: "#3a2418",
+                    fontWeight: 950,
+                  }}
+                >
+                  الميزانية الخاصة
+                </h2>
+
+                <div
+                  style={{
+                    marginTop: "7px",
+                    color: "#7a5a43",
+                    fontWeight: 800,
+                    fontSize: "13px",
+                  }}
+                >
+                  المصروفات والميزانية الشهرية
+                </div>
+              </div>
+
+              <input
+                type="month"
+                value={
+                  selectedPrivateBudgetMonth
+                }
+                onChange={(event) =>
+                  setSelectedPrivateBudgetMonth(
+                    event.target.value
+                  )
+                }
+                style={{
+                  minHeight: "44px",
+                  border:
+                    "1px solid #d8c4b4",
+                  borderRadius: "13px",
+                  padding: "0 12px",
+                  background: "#fff",
+                  color: "#4b2e1f",
+                  fontWeight: 900,
+                }}
+              />
+            </div>
+          </div>
+
+          {privateBudgetError ? (
+            <div
+              style={{
+                ...privateBudgetCardStyle,
+                color: "#9b3f32",
+                fontWeight: 900,
+              }}
+            >
+              {privateBudgetError}
+            </div>
+          ) : null}
+
+          <div
+            style={{
+              ...privateBudgetCardStyle,
+              display: "grid",
+              gap: "12px",
+            }}
+          >
+            <div
+              style={{
+                fontWeight: 950,
+                color: "#3a2418",
+                fontSize: "15px",
+              }}
+            >
+              ميزانية الشهر
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                gap: "10px",
+                flexWrap: "wrap",
+              }}
+            >
+              <input
+                type="number"
+                min="0"
+                step="1"
+                inputMode="numeric"
+                placeholder="مثال: 2000"
+                value={
+                  privateBudgetBudgetDraft
+                }
+                onChange={(event) =>
+                  setPrivateBudgetBudgetDraft(
+                    event.target.value
+                  )
+                }
+                style={{
+                  flex:
+                    "1 1 180px",
+                  minHeight: "46px",
+                  border:
+                    "1px solid #d8c4b4",
+                  borderRadius: "13px",
+                  padding: "0 14px",
+                  background: "#fff",
+                  color: "#3a2418",
+                  fontWeight: 900,
+                  fontSize: "15px",
+                }}
+              />
+
+              <button
+                type="button"
+                disabled={
+                  privateBudgetSaving
+                }
+                onClick={
+                  savePrivateMonthlyBudget
+                }
+                style={{
+                  ...buttonStyle,
+                  minHeight: "46px",
+                  background:
+                    "#6f4b35",
+                  color: "#fff",
+                  opacity:
+                    privateBudgetSaving
+                      ? 0.6
+                      : 1,
+                }}
+              >
+                {privateBudgetMonthExists
+                  ? "حفظ تعديل الميزانية"
+                  : "حفظ الميزانية"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  resetPrivateExpenseDraft(
+                    selectedPrivateBudgetMonth
+                  );
+
+                  setShowPrivateExpenseForm(
+                    true
+                  );
+                }}
+                style={{
+                  ...buttonStyle,
+                  minHeight: "46px",
+                  background:
+                    "#b58f72",
+                  color: "#fff",
+                }}
+              >
+                + إضافة مصروف
+              </button>
+            </div>
+          </div>
+
+          {showPrivateExpenseForm ? (
+            <div
+              style={{
+                ...privateBudgetCardStyle,
+                display: "grid",
+                gap: "14px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent:
+                    "space-between",
+                  alignItems: "center",
+                  gap: "12px",
+                }}
+              >
+                <strong
+                  style={{
+                    color: "#3a2418",
+                    fontSize: "16px",
+                  }}
+                >
+                  {editingPrivateExpenseId
+                    ? "تعديل المصروف"
+                    : "إضافة مصروف"}
+                </strong>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPrivateExpenseForm(
+                      false
+                    );
+
+                    resetPrivateExpenseDraft(
+                      selectedPrivateBudgetMonth
+                    );
+                  }}
+                  style={{
+                    ...buttonStyle,
+                    padding:
+                      "8px 12px",
+                    background:
+                      "#eee1d5",
+                    color: "#4b2e1f",
+                  }}
+                >
+                  إغلاق
+                </button>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns:
+                    "repeat(auto-fit, minmax(180px, 1fr))",
+                  gap: "12px",
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      marginBottom:
+                        "6px",
+                      fontWeight: 900,
+                      color: "#654a38",
+                    }}
+                  >
+                    التاريخ
+                  </div>
+
+                  <input
+                    type="date"
+                    value={
+                      privateExpenseDraft
+                        .expenseDate
+                    }
+                    onChange={(event) =>
+                      setPrivateExpenseDraft(
+                        (
+                          previous
+                        ) => ({
+                          ...previous,
+
+                          expenseDate:
+                            event
+                              .target
+                              .value,
+                        })
+                      )
+                    }
+                    style={{
+                      width: "100%",
+                      minHeight: "44px",
+                      boxSizing:
+                        "border-box",
+                      border:
+                        "1px solid #d8c4b4",
+                      borderRadius:
+                        "12px",
+                      padding:
+                        "0 11px",
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <div
+                    style={{
+                      marginBottom:
+                        "6px",
+                      fontWeight: 900,
+                      color: "#654a38",
+                    }}
+                  >
+                    المبلغ
+                  </div>
+
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    inputMode="numeric"
+                    value={
+                      privateExpenseDraft
+                        .amount
+                    }
+                    onChange={(event) =>
+                      setPrivateExpenseDraft(
+                        (
+                          previous
+                        ) => ({
+                          ...previous,
+
+                          amount:
+                            event
+                              .target
+                              .value,
+                        })
+                      )
+                    }
+                    style={{
+                      width: "100%",
+                      minHeight: "44px",
+                      boxSizing:
+                        "border-box",
+                      border:
+                        "1px solid #d8c4b4",
+                      borderRadius:
+                        "12px",
+                      padding:
+                        "0 11px",
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <div
+                    style={{
+                      marginBottom:
+                        "6px",
+                      fontWeight: 900,
+                      color: "#654a38",
+                    }}
+                  >
+                    الشخص
+                  </div>
+
+                  <select
+                    value={
+                      privateExpenseDraft
+                        .person
+                    }
+                    onChange={(event) =>
+                      setPrivateExpenseDraft(
+                        (
+                          previous
+                        ) => ({
+                          ...previous,
+
+                          person:
+                            event
+                              .target
+                              .value,
+                        })
+                      )
+                    }
+                    style={{
+                      width: "100%",
+                      minHeight: "44px",
+                      boxSizing:
+                        "border-box",
+                      border:
+                        "1px solid #d8c4b4",
+                      borderRadius:
+                        "12px",
+                      padding:
+                        "0 11px",
+                      background:
+                        "#fff",
+                      fontWeight: 900,
+                    }}
+                  >
+                    {privateBudgetPeople.map(
+                      ([
+                        key,
+                        label,
+                      ]) => (
+                        <option
+                          key={key}
+                          value={key}
+                        >
+                          {label}
+                        </option>
+                      )
+                    )}
+                  </select>
+                </div>
+
+                <div>
+                  <div
+                    style={{
+                      marginBottom:
+                        "6px",
+                      fontWeight: 900,
+                      color: "#654a38",
+                    }}
+                  >
+                    البيان
+                  </div>
+
+                  <input
+                    type="text"
+                    placeholder="اختياري"
+                    value={
+                      privateExpenseDraft
+                        .description
+                    }
+                    onChange={(event) =>
+                      setPrivateExpenseDraft(
+                        (
+                          previous
+                        ) => ({
+                          ...previous,
+
+                          description:
+                            event
+                              .target
+                              .value,
+                        })
+                      )
+                    }
+                    style={{
+                      width: "100%",
+                      minHeight: "44px",
+                      boxSizing:
+                        "border-box",
+                      border:
+                        "1px solid #d8c4b4",
+                      borderRadius:
+                        "12px",
+                      padding:
+                        "0 11px",
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <button
+                  type="button"
+                  disabled={
+                    privateBudgetSaving
+                  }
+                  onClick={
+                    savePrivateExpense
+                  }
+                  style={{
+                    ...buttonStyle,
+                    minHeight: "44px",
+                    background:
+                      "#6f4b35",
+                    color: "#fff",
+                  }}
+                >
+                  {editingPrivateExpenseId
+                    ? "حفظ التعديل"
+                    : "حفظ المصروف"}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(170px, 1fr))",
+              gap: "12px",
+            }}
+          >
+            {[
+              [
+                "الميزانية الشهرية",
+                privateBudgetStats
+                  .monthlyBudget,
+              ],
+              [
+                "الحد الأساسي اليومي",
+                privateBudgetStats
+                  .baseDailyLimit,
+              ],
+              [
+                "إجمالي المصروف",
+                privateBudgetStats
+                  .totalSpent,
+              ],
+              [
+                "المتبقي من الميزانية",
+                privateBudgetStats
+                  .monthlyRemaining,
+              ],
+              [
+                privateBudgetStats
+                  .todayRow
+                  ? "المتاح اليوم"
+                  : "الرصيد بعد المصروفات",
+                privateBudgetStats
+                  .todayRow
+                  ?.availableToday ??
+                  privateBudgetStats
+                    .monthlyRemaining,
+              ],
+            ].map(
+              ([
+                label,
+                value,
+              ]) => (
+                <div
+                  key={label}
+                  style={
+                    privateBudgetMetricStyle
+                  }
+                >
+                  <div
+                    style={{
+                      color: "#7a5a43",
+                      fontWeight: 850,
+                      fontSize: "12px",
+                    }}
+                  >
+                    {label}
+                  </div>
+
+                  <strong
+                    style={{
+                      color:
+                        Number(
+                          value
+                        ) < 0
+                          ? "#a43f32"
+                          : "#3a2418",
+                      fontSize: "25px",
+                      fontWeight: 950,
+                    }}
+                  >
+                    {formatCurrency(
+                      value
+                    )}{" "}
+                    ريال
+                  </strong>
+                </div>
+              )
+            )}
+          </div>
+
+          <div
+            style={{
+              ...privateBudgetCardStyle,
+              display: "grid",
+              gap: "14px",
+            }}
+          >
+            <div
+              style={{
+                color: "#3a2418",
+                fontWeight: 950,
+                fontSize: "16px",
+              }}
+            >
+              المصروف حسب الشخص
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(180px, 1fr))",
+                gap: "12px",
+              }}
+            >
+              {privateBudgetPeople.map(
+                ([
+                  key,
+                  label,
+                ]) => (
+                  <div
+                    key={key}
+                    style={{
+                      padding:
+                        "16px",
+                      borderRadius:
+                        "17px",
+                      background:
+                        "#fff",
+                      border:
+                        "1px solid rgba(194,159,130,0.30)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        color:
+                          "#7a5a43",
+                        fontWeight:
+                          900,
+                      }}
+                    >
+                      {label}
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop:
+                          "9px",
+                        color:
+                          "#3a2418",
+                        fontSize:
+                          "23px",
+                        fontWeight:
+                          950,
+                      }}
+                    >
+                      {formatCurrency(
+                        privateBudgetStats
+                          .personTotals[
+                          key
+                        ] || 0
+                      )}{" "}
+                      ريال
+                    </div>
+                  </div>
+                )
+              )}
+            </div>
+          </div>
+
+          <div
+            style={{
+              ...privateBudgetCardStyle,
+              overflowX: "auto",
+            }}
+          >
+            <div
+              style={{
+                marginBottom: "14px",
+                color: "#3a2418",
+                fontWeight: 950,
+                fontSize: "16px",
+              }}
+            >
+              جدول الشهر
+            </div>
+
+            <table
+              style={{
+                width: "100%",
+                minWidth: "800px",
+                borderCollapse:
+                  "separate",
+                borderSpacing: 0,
+              }}
+            >
+              <thead>
+                <tr
+                  style={{
+                    background:
+                      "#5e4332",
+                    color: "#fff",
+                  }}
+                >
+                  {[
+                    "اليوم",
+                    "الحد اليومي",
+                    "مرحل من السابق",
+                    "المتاح",
+                    "مصروف اليوم",
+                    "المتبقي",
+                  ].map(
+                    (header) => (
+                      <th
+                        key={
+                          header
+                        }
+                        style={{
+                          padding:
+                            "12px 10px",
+                          textAlign:
+                            "center",
+                          fontSize:
+                            "12px",
+                        }}
+                      >
+                        {header}
+                      </th>
+                    )
+                  )}
+                </tr>
+              </thead>
+
+              <tbody>
+                {privateBudgetStats.dailyRows.map(
+                  (
+                    row,
+                    index
+                  ) => (
+                    <tr
+                      key={
+                        row.date
+                      }
+                      style={{
+                        background:
+                          row.date ===
+                          currentDate
+                            ? "#f3e3d6"
+                            : index %
+                                  2 ===
+                                0
+                              ? "#fffdf9"
+                              : "#f8f2ec",
+                      }}
+                    >
+                      <td
+                        style={{
+                          padding:
+                            "11px",
+                          textAlign:
+                            "center",
+                          fontWeight:
+                            950,
+                        }}
+                      >
+                        {row.dayNumber}
+                      </td>
+
+                      {[
+                        row.dailyLimit,
+                        row.carriedFromPrevious,
+                        row.availableToday,
+                        row.spentToday,
+                        row.remaining,
+                      ].map(
+                        (
+                          value,
+                          valueIndex
+                        ) => (
+                          <td
+                            key={
+                              valueIndex
+                            }
+                            style={{
+                              padding:
+                                "11px",
+                              textAlign:
+                                "center",
+                              fontWeight:
+                                850,
+                              color:
+                                valueIndex ===
+                                  4 &&
+                                Number(
+                                  value
+                                ) < 0
+                                  ? "#a43f32"
+                                  : "#4b2e1f",
+                            }}
+                          >
+                            {formatCurrency(
+                              value
+                            )}
+                          </td>
+                        )
+                      )}
+                    </tr>
+                  )
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div
+            style={{
+              ...privateBudgetCardStyle,
+              overflowX: "auto",
+            }}
+          >
+            <div
+              style={{
+                marginBottom: "14px",
+                color: "#3a2418",
+                fontWeight: 950,
+                fontSize: "16px",
+              }}
+            >
+              سجل المصروفات
+            </div>
+
+            {privateBudgetLoading ? (
+              <div
+                style={{
+                  padding: "20px",
+                  textAlign: "center",
+                  fontWeight: 900,
+                  color: "#7a5a43",
+                }}
+              >
+                جاري تحميل البيانات...
+              </div>
+            ) : privateBudgetExpenses.length ===
+              0 ? (
+              <div
+                style={{
+                  padding: "20px",
+                  textAlign: "center",
+                  fontWeight: 900,
+                  color: "#7a5a43",
+                }}
+              >
+                لا توجد مصروفات مسجلة في هذا الشهر.
+              </div>
+            ) : (
+              <table
+                style={{
+                  width: "100%",
+                  minWidth: "850px",
+                  borderCollapse:
+                    "separate",
+                  borderSpacing: 0,
+                }}
+              >
+                <thead>
+                  <tr
+                    style={{
+                      background:
+                        "#5e4332",
+                      color: "#fff",
+                    }}
+                  >
+                    {[
+                      "التاريخ",
+                      "الشخص",
+                      "البيان",
+                      "المبلغ",
+                      "بواسطة",
+                      "الإجراء",
+                    ].map(
+                      (header) => (
+                        <th
+                          key={
+                            header
+                          }
+                          style={{
+                            padding:
+                              "12px 10px",
+                            textAlign:
+                              "center",
+                            fontSize:
+                              "12px",
+                          }}
+                        >
+                          {header}
+                        </th>
+                      )
+                    )}
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {privateBudgetExpenses.map(
+                    (
+                      expense,
+                      index
+                    ) => (
+                      <tr
+                        key={
+                          expense.id
+                        }
+                        style={{
+                          background:
+                            index %
+                                2 ===
+                              0
+                              ? "#fffdf9"
+                              : "#f8f2ec",
+                        }}
+                      >
+                        <td
+                          style={{
+                            padding:
+                              "11px",
+                            textAlign:
+                              "center",
+                            fontWeight:
+                              850,
+                          }}
+                        >
+                          {
+                            expense.expense_date
+                          }
+                        </td>
+
+                        <td
+                          style={{
+                            padding:
+                              "11px",
+                            textAlign:
+                              "center",
+                            fontWeight:
+                              950,
+                          }}
+                        >
+                          {getPrivateBudgetPersonName(
+                            expense.person
+                          )}
+                        </td>
+
+                        <td
+                          style={{
+                            padding:
+                              "11px",
+                            textAlign:
+                              "right",
+                          }}
+                        >
+                          {expense.description ||
+                            "-"}
+                        </td>
+
+                        <td
+                          style={{
+                            padding:
+                              "11px",
+                            textAlign:
+                              "center",
+                            fontWeight:
+                              950,
+                          }}
+                        >
+                          {formatCurrency(
+                            expense.amount
+                          )}{" "}
+                          ريال
+                        </td>
+
+                        <td
+                          style={{
+                            padding:
+                              "11px",
+                            textAlign:
+                              "center",
+                          }}
+                        >
+                          {getPrivateExpenseCreatorName(
+                            expense
+                          )}
+                        </td>
+
+                        <td
+                          style={{
+                            padding:
+                              "8px",
+                            textAlign:
+                              "center",
+                          }}
+                        >
+                          <div
+                            style={{
+                              display:
+                                "flex",
+                              gap: "6px",
+                              justifyContent:
+                                "center",
+                            }}
+                          >
+                            {canEditData ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  startEditingPrivateExpense(
+                                    expense
+                                  )
+                                }
+                                style={{
+                                  ...buttonStyle,
+                                  padding:
+                                    "7px 10px",
+                                  background:
+                                    "#e8d7c8",
+                                  color:
+                                    "#4b2e1f",
+                                }}
+                              >
+                                تعديل
+                              </button>
+                            ) : null}
+
+                            {canDeleteData ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  deletePrivateExpense(
+                                    expense
+                                  )
+                                }
+                                style={{
+                                  ...buttonStyle,
+                                  padding:
+                                    "7px 10px",
+                                  background:
+                                    "#a85447",
+                                  color:
+                                    "#fff",
+                                }}
+                              >
+                                حذف
+                              </button>
+                            ) : null}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  )}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (screen === "incomeExpenses") {
