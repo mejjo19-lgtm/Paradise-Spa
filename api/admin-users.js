@@ -5,6 +5,7 @@ const {
 const allowedMenuPermissions =
   new Set([
     "appointments",
+    "delivery",
     "clients",
     "loyalty",
     "giftClients",
@@ -14,6 +15,7 @@ const allowedMenuPermissions =
     "availableAppointments",
     "giftCards",
     "printFrame",
+    "governmentReports",
     "invoices",
     "purchases",
     "finance",
