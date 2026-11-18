@@ -60791,11 +60791,12 @@ if (screen === "printFrame") {
 
     const privateBudgetMetricStyle = {
       ...privateBudgetCardStyle,
-      minHeight: "105px",
+      minHeight: "auto",
+      padding: "14px 16px",
       display: "flex",
       flexDirection: "column",
-      justifyContent: "space-between",
-      gap: "10px",
+      justifyContent: "center",
+      gap: "6px",
     };
 
     const getPrivateExpenseCreatorName =
@@ -61417,7 +61418,7 @@ if (screen === "printFrame") {
                     key={key}
                     style={{
                       padding:
-                        "16px",
+                        "12px 14px",
                       borderRadius:
                         "17px",
                       background:
